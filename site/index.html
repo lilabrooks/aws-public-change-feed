@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A reference architecture for turning public AWS announcements into explainable, route-scoped Slack review candidates.">
+  <meta name="description" content="An AI-assisted reference architecture for turning public AWS announcements into explainable, route-scoped Slack review candidates.">
   <meta name="author" content="Lila Brooks">
   <meta name="theme-color" content="#111827">
   <meta property="og:type" content="website">
   <meta property="og:title" content="AWS Public Change Alerting">
-  <meta property="og:description" content="Public AWS change intelligence with deterministic matching, route-scoped evidence, and durable Slack delivery.">
+  <meta property="og:description" content="How AI helped shape a deterministic AWS architecture for public-change intelligence and durable Slack delivery.">
   <meta property="og:url" content="https://lilabrooks.github.io/aws-public-change-feed/">
   <link rel="canonical" href="https://lilabrooks.github.io/aws-public-change-feed/">
   <link rel="license" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/LICENSE">
@@ -25,7 +25,7 @@
     }
 
     .site-note {
-      margin-top: 20px;
+      margin-top: 24px;
       padding: 18px 20px;
       border-left: 3px solid var(--compact-accent);
       background: var(--compact-accent-soft);
@@ -39,14 +39,12 @@
       margin-top: 10px;
     }
 
-    .site-card-list,
-    .site-link-list {
+    .site-list {
       margin: 18px 0 0;
       padding-left: 1.2rem;
     }
 
-    .site-card-list li + li,
-    .site-link-list li + li {
+    .site-list li + li {
       margin-top: 8px;
     }
 
@@ -93,44 +91,6 @@
       white-space: pre-wrap;
     }
 
-    .architecture-steps {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1px;
-      margin: 28px 0 0;
-      padding: 1px;
-      list-style: none;
-      background: var(--compact-rule);
-    }
-
-    .architecture-steps li {
-      position: relative;
-      min-height: 150px;
-      padding: 24px 24px 24px 72px;
-      background: var(--compact-panel);
-    }
-
-    .architecture-step-number {
-      position: absolute;
-      top: 23px;
-      left: 24px;
-      color: var(--compact-accent);
-      font-family: var(--compact-mono);
-      font-size: 0.82rem;
-      font-weight: 600;
-    }
-
-    .architecture-steps h3 {
-      margin: 0;
-      font-family: var(--compact-mono);
-      font-size: 1rem;
-    }
-
-    .architecture-steps p {
-      margin: 12px 0 0;
-      color: var(--compact-muted);
-    }
-
     .decision-reference {
       display: block;
       margin-top: 18px;
@@ -159,17 +119,7 @@
       font-size: 1rem;
     }
 
-    .evidence-panel ul {
-      margin: 18px 0 0;
-      padding-left: 1.2rem;
-    }
-
-    .evidence-panel li + li {
-      margin-top: 8px;
-    }
-
     @media (max-width: 760px) {
-      .architecture-steps,
       .evidence-grid {
         grid-template-columns: 1fr;
       }
@@ -191,9 +141,9 @@
     </a>
     <div class="compact-header-actions">
       <nav class="compact-nav" aria-label="Primary navigation">
-        <a href="#value">Value</a>
-        <a href="#flow">Flow</a>
-        <a href="#decisions">Decisions</a>
+        <a href="#ai">AI contribution</a>
+        <a href="#flow">AWS architecture</a>
+        <a href="#decisions">Reasons</a>
         <a href="#evidence">Evidence</a>
       </nav>
       <button class="compact-theme-toggle" type="button" data-theme-toggle hidden>Theme</button>
@@ -203,15 +153,15 @@
   <main id="content">
     <div class="compact-hero compact-shell" id="overview">
       <div>
-        <p class="compact-eyebrow">Reference architecture</p>
-        <h1 class="compact-title">Public AWS changes, reduced to <em>explainable review work.</em></h1>
+        <p class="compact-eyebrow">AI-assisted reference architecture</p>
+        <h1 class="compact-title">Explainable AWS public-change alerting, <em>designed through explicit decisions.</em></h1>
         <div class="compact-actions">
-          <a class="compact-button compact-button-primary" href="#flow">See how it works</a>
-          <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed">View the repository</a>
+          <a class="compact-button compact-button-primary" href="#ai">How AI was used</a>
+          <a class="compact-button" href="#flow">See the AWS flow</a>
         </div>
       </div>
       <div>
-        <p class="compact-lede">AWS Public Change Alerting turns approved public announcements into route-scoped Slack candidates for teams operating repeated AWS stacks. Every candidate carries the source revision, matching evidence, potentially relevant environments, and exact policy release that produced it.</p>
+        <p class="compact-lede">AWS Public Change Alerting turns approved public announcements into route-scoped Slack candidates for teams operating repeated AWS stacks. Each candidate records the source revision, matching evidence, potentially relevant environments, and exact policy release.</p>
         <div class="site-status" role="group" aria-label="Project status">
           <span class="compact-tag">Architecture defined</span>
           <span class="compact-tag">Contracts validated</span>
@@ -223,39 +173,61 @@
     <section class="compact-section" id="value">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Value proposition</p>
+          <p class="compact-eyebrow">Value</p>
           <div>
-            <h2 class="compact-section-title">A smaller, traceable review queue from a broad public stream.</h2>
-            <p class="compact-section-copy">AWS publishes service changes across What's New, blogs, and security bulletins. General feed readers can collect those items, yet they lack the service profiles, risk rules, environment mapping, and team routes needed to make each item actionable. This architecture supplies that context without customer-account permissions.</p>
+            <h2 class="compact-section-title">A focused review queue from a broad AWS announcement stream.</h2>
+            <p class="compact-section-copy">General feed readers collect AWS news. This design adds declared service profiles, risk rules, environment mapping, and team routes. Platform teams receive explainable review candidates without granting the service access to customer AWS accounts.</p>
           </div>
         </div>
 
         <div class="compact-grid">
           <article class="compact-card">
-            <span class="compact-tag">For platform teams</span>
-            <h3 class="compact-card-title">Review the changes that match declared services</h3>
-            <p>Static profiles connect service definitions to environments. A candidate identifies the environments that are potentially relevant and routes the review to the right Slack destination.</p>
+            <span class="compact-tag">Useful output</span>
+            <h3 class="compact-card-title">Evidence attached to every candidate</h3>
+            <p>The result names the public source, service, risk evidence, announcement revision, route, audience, application version, and immutable configuration release.</p>
           </article>
           <article class="compact-card">
-            <span class="compact-tag">For reviewers</span>
-            <h3 class="compact-card-title">See the reason behind every candidate</h3>
-            <p>Each result names the matched service, risk type, rule evidence, public source, announcement revision, route, audience, application version, and immutable configuration release.</p>
+            <span class="compact-tag">Honest boundary</span>
+            <h3 class="compact-card-title">Potential relevance requires human review</h3>
+            <p>Public announcements cannot prove account or resource impact. Operators use the candidate as a review prompt and confirm applicability with their existing AWS tooling.</p>
           </article>
-          <article class="compact-card">
-            <span class="compact-tag">For operators</span>
-            <h3 class="compact-card-title">Keep delivery state recoverable</h3>
-            <p>DynamoDB retains candidates, outbox work, pacing, retries, and terminal outcomes. SQS carries ready work. Slack responses that may have succeeded remain visible as <code>delivery_unknown</code>.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="compact-section" id="ai">
+      <div class="compact-shell">
+        <div class="compact-section-head">
+          <p class="compact-eyebrow">AI contribution</p>
+          <div>
+            <h2 class="compact-section-title">OpenAI Codex helped turn architecture decisions into executable evidence.</h2>
+            <p class="compact-section-copy">OpenAI Codex, using GPT-5, worked as an architecture and engineering assistant under Lila Brooks's direction. The work was iterative: define the product question, challenge ambiguous boundaries, record decisions, encode contracts, run checks, and revise until the repository agreed with itself.</p>
+          </div>
+        </div>
+
+        <div class="evidence-grid">
+          <article class="evidence-panel">
+            <h3>What AI did</h3>
+            <ul class="site-list">
+              <li>Drafted and revised the numbered specifications and ADRs from owner decisions.</li>
+              <li>Created strict schemas, canonical examples, semantic validators, and mutation tests.</li>
+              <li>Checked scope language, identity rules, cross-file references, hashes, and CI behavior.</li>
+              <li>Built repository automation, security settings, and this public architecture page.</li>
+            </ul>
           </article>
-          <article class="compact-card">
-            <span class="compact-tag">Evidence boundary</span>
-            <h3 class="compact-card-title">Treat relevance as an inference</h3>
-            <p>A public announcement plus a declared service profile establishes potential relevance. Operators confirm account or resource impact with their existing account-specific tools.</p>
+          <article class="evidence-panel">
+            <h3>What remained human-owned</h3>
+            <ul class="site-list">
+              <li>The product goal and the decision to focus on public AWS feeds.</li>
+              <li>Acceptance of the trust boundaries, delivery semantics, and implementation limits.</li>
+              <li>Selection of the Compact Theme, licensing terms, public wording, and repository policy.</li>
+              <li>Final review, authorship, copyright, and responsibility for future production use.</li>
+            </ul>
           </article>
         </div>
 
-        <aside class="site-note" aria-label="Product boundary">
-          <p><strong>Product boundary:</strong> approved AWS RSS and Atom feeds, deterministic matching, static profile and route mapping, durable candidate history, and Slack delivery.</p>
-          <p>Customer-account access, account telemetry, spend collection, security-finding ingestion, remediation, ticketing, and incident ownership remain outside this repository.</p>
+        <aside class="site-note" aria-label="AI evidence boundary">
+          <p><strong>AI-assisted engineering is part of the project record.</strong> Automated checks validate repository contracts and consistency. Production claims still require implemented runtime code, deployment tests, measured feed quality, and live delivery evidence.</p>
         </aside>
       </div>
     </section>
@@ -263,10 +235,10 @@
     <section class="compact-section" id="flow">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Processing flow</p>
+          <p class="compact-eyebrow">AWS architecture</p>
           <div>
-            <h2 class="compact-section-title">Deterministic processing with a durable delivery boundary.</h2>
-            <p class="compact-section-copy">The watcher turns public source material into immutable route-scoped candidates. Delivery proceeds through a durable outbox, destination-ordered transport, and a worker that records every known or ambiguous Slack outcome.</p>
+            <h2 class="compact-section-title">Deterministic matching before a durable Slack delivery boundary.</h2>
+            <p class="compact-section-copy">The design uses Lambda for scheduled and event-driven work, S3 for immutable releases and feed snapshots, DynamoDB for source and delivery state, SQS FIFO for destination-ordered transport, and CloudWatch plus SNS for operations.</p>
           </div>
         </div>
 
@@ -294,128 +266,71 @@
           </figcaption>
         </figure>
 
-        <ol class="architecture-steps" aria-label="End-to-end processing sequence">
-          <li>
-            <span class="architecture-step-number">01</span>
-            <h3>Publish one immutable release</h3>
-            <p>Reviewed configuration and inventory are validated together, written to exact S3 object versions, hashed, and promoted through a compare-and-swap manifest.</p>
-          </li>
-          <li>
-            <span class="architecture-step-number">02</span>
-            <h3>Acquire public feeds safely</h3>
-            <p>The watcher fetches approved HTTPS RSS and Atom sources with host, DNS, TLS, redirect, response-size, parser, and timeout controls.</p>
-          </li>
-          <li>
-            <span class="architecture-step-number">03</span>
-            <h3>Normalize and match evidence</h3>
-            <p>Items are normalized, coalesced by canonical URL, tracked by content revision, and matched using service aliases plus distinct positive risk evidence.</p>
-          </li>
-          <li>
-            <span class="architecture-step-number">04</span>
-            <h3>Build route-scoped candidates</h3>
-            <p>Profiles map a matched service to enabled environments. Environments are grouped by route, sorted, and bound into deterministic candidate identities.</p>
-          </li>
-          <li>
-            <span class="architecture-step-number">05</span>
-            <h3>Cross the durable outbox boundary</h3>
-            <p>The candidate and delivery request become durable before feed validators advance. A dispatcher sends due work to an SQS FIFO group for the Slack destination.</p>
-          </li>
-          <li>
-            <span class="architecture-step-number">06</span>
-            <h3>Deliver and retain the outcome</h3>
-            <p>The Slack worker verifies the exact release, applies pacing, posts once for its claim, and records success, retryable failure, terminal failure, or an unknown outcome.</p>
-          </li>
-        </ol>
+        <div class="compact-grid">
+          <article class="compact-card">
+            <span class="compact-tag">01 · Acquire</span>
+            <h3 class="compact-card-title">Fetch approved public sources</h3>
+            <p>The watcher applies HTTPS allowlists, DNS and IP checks, TLS verification, redirect rejection, response limits, parser limits, and per-feed checkpoints.</p>
+          </article>
+          <article class="compact-card">
+            <span class="compact-tag">02 · Match</span>
+            <h3 class="compact-card-title">Create route-scoped evidence</h3>
+            <p>Normalized announcements are matched against service aliases and distinct risk evidence, then mapped through static profiles to sorted route audiences.</p>
+          </article>
+          <article class="compact-card">
+            <span class="compact-tag">03 · Persist</span>
+            <h3 class="compact-card-title">Cross the durable outbox boundary</h3>
+            <p>DynamoDB stores each candidate and delivery request before the watcher advances its feed checkpoint. Replays reconstruct the same logical identity.</p>
+          </article>
+          <article class="compact-card">
+            <span class="compact-tag">04 · Deliver</span>
+            <h3 class="compact-card-title">Order, pace, and recover Slack work</h3>
+            <p>SQS FIFO groups work by destination. The worker applies pacing and records posted, retryable, terminal, or unknown outcomes for recovery.</p>
+          </article>
+        </div>
       </div>
     </section>
 
     <section class="compact-section" id="decisions">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Architecture decisions</p>
+          <p class="compact-eyebrow">Why this architecture</p>
           <div>
-            <h2 class="compact-section-title">The design follows explicit evidence, state, and trust boundaries.</h2>
-            <p class="compact-section-copy">The current architecture is governed by 13 accepted decision records. ADR-017 narrowed an earlier multi-lane design to public-feed intelligence and Slack delivery, archiving the AWS Health, cost, and external-adapter paths. The resulting product answers one question well: which public AWS changes deserve review for the services a team has declared?</p>
+            <h2 class="compact-section-title">The design follows the evidence and failure model.</h2>
+            <p class="compact-section-copy">Thirteen accepted ADRs govern the current architecture. ADR-017 narrowed an earlier design to public-feed intelligence and Slack delivery, removing account-scoped health, cost, and external-adapter paths from the product.</p>
           </div>
         </div>
 
         <div class="compact-grid">
           <article class="compact-card">
-            <span class="compact-tag">Scope</span>
-            <h3 class="compact-card-title">Public feeds form the evidence source</h3>
-            <p>Public announcements have one consistent evidence model and require no customer-account trust. The architecture labels environment matches as potentially relevant and leaves confirmed impact to account-specific tooling.</p>
-            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/017-public-feed-only-product-scope.md">ADR-017 · Public-feed-only scope</a>
+            <span class="compact-tag">Scope and trust</span>
+            <h3 class="compact-card-title">Public feeds and static profiles</h3>
+            <p>One public evidence class keeps the product narrow. Static mappings provide environment context without cross-account roles, resource discovery, or customer telemetry.</p>
+            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/017-public-feed-only-product-scope.md">ADR-017 · Product scope</a>
           </article>
           <article class="compact-card">
-            <span class="compact-tag">Explainability</span>
-            <h3 class="compact-card-title">Rules are deterministic and reviewable</h3>
-            <p>Service aliases and risk terms use defined normalization, phrase boundaries, positive and excluded evidence, and distinct match spans. Replays produce the same identity from the same normalized inputs.</p>
-            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/009-feed-acquisition-and-deterministic-matching.md">ADR-009 · Acquisition and matching</a>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Isolation</span>
-            <h3 class="compact-card-title">Candidate identity stops at the route boundary</h3>
-            <p>One candidate contains one route and its complete sorted environment audience. This keeps customer and team context from crossing Slack destinations during delivery or replay.</p>
+            <span class="compact-tag">Evidence and identity</span>
+            <h3 class="compact-card-title">Deterministic rules and null-framed hashes</h3>
+            <p>Reviewers can trace why a service and risk matched. Stable identity domains keep replay, edits, route isolation, and dedupe behavior testable.</p>
             <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/002-route-scoped-slack-delivery-and-dedupe.md">ADR-002 · Route-scoped identity</a>
           </article>
           <article class="compact-card">
-            <span class="compact-tag">State ownership</span>
-            <h3 class="compact-card-title">DynamoDB owns delivery state</h3>
-            <p>The outbox records intent and outcome before SQS transports ready work. Time-limited queue dedupe cannot replace durable candidate, dispatch, retry, pacing, and recovery state.</p>
-            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/007-central-slack-delivery-queue-and-worker.md">ADR-007 · Durable outbox and worker</a>
+            <span class="compact-tag">State and transport</span>
+            <h3 class="compact-card-title">DynamoDB outbox with SQS FIFO</h3>
+            <p>DynamoDB owns durable intent and outcomes. SQS handles ready-work transport and destination ordering; its time-limited dedupe cannot replace lasting state.</p>
+            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/007-central-slack-delivery-queue-and-worker.md">ADR-007 · Durable delivery</a>
           </article>
           <article class="compact-card">
-            <span class="compact-tag">Delivery semantics</span>
-            <h3 class="compact-card-title">Ambiguity becomes an explicit state</h3>
-            <p>A Slack HTTP call cannot commit atomically with DynamoDB. A timeout or expired sending lease becomes <code>delivery_unknown</code> and waits for operator review instead of risking an automatic duplicate.</p>
-            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004 · Explicit Slack guarantees</a>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Reproducibility</span>
-            <h3 class="compact-card-title">Every result names its exact release</h3>
-            <p>Configuration and inventory are published under immutable object versions. Candidates retain their hashes, schema versions, release ID, and application version for later replay or investigation.</p>
-            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/014-immutable-release-artifacts-and-retention.md">ADR-014 · Immutable releases</a>
+            <span class="compact-tag">Replay and uncertainty</span>
+            <h3 class="compact-card-title">Immutable releases and explicit unknown outcomes</h3>
+            <p>Exact S3 object versions reproduce the policy behind a candidate. Slack timeouts become <code>delivery_unknown</code> because an HTTP call cannot commit atomically with DynamoDB.</p>
+            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004 · Slack guarantees</a>
           </article>
         </div>
 
         <div class="compact-actions">
-          <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/architecture/README.md#architecture-decision-records">Read all accepted ADRs</a>
-          <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/tree/main/docs/adr/archive">Review the archived decisions</a>
-        </div>
-      </div>
-    </section>
-
-    <section class="compact-section" id="guarantees">
-      <div class="compact-shell">
-        <div class="compact-section-head">
-          <p class="compact-eyebrow">System properties</p>
-          <div>
-            <h2 class="compact-section-title">The architecture makes its guarantees and limits testable.</h2>
-            <p class="compact-section-copy">Identity, configuration shape, route isolation, retries, and state transitions are expressed as contracts or acceptance cases. Operational claims require deployment evidence before production use.</p>
-          </div>
-        </div>
-
-        <div class="compact-grid">
-          <article class="compact-card">
-            <span class="compact-tag">Identity</span>
-            <h3 class="compact-card-title">Stable across replay</h3>
-            <p>Null-framed SHA-256 domains identify announcements, revisions, audiences, candidates, requests, and queue dispatches. Material source or audience changes create new work.</p>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Configuration</span>
-            <h3 class="compact-card-title">Immutable and exact</h3>
-            <p>Owned schemas reject unknown fields. Runtime loads exact configuration and inventory object versions and verifies their hashes before processing or delivery.</p>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Security</span>
-            <h3 class="compact-card-title">Credentials stay with delivery</h3>
-            <p>The feed watcher and dispatcher cannot read Slack secrets. The Slack worker reads only configured secret resources and performs the external delivery call.</p>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Operations</span>
-            <h3 class="compact-card-title">Failures remain visible</h3>
-            <p>Feed freshness, outbox age, queue age, terminal failures, unknown outcomes, DLQ depth, and recovery work have explicit metrics and alarm requirements.</p>
-          </article>
+          <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/architecture/README.md#architecture-decision-records">Read the ADR index</a>
+          <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/architecture/specification/01-overview.md">Read the specification</a>
         </div>
       </div>
     </section>
@@ -423,88 +338,49 @@
     <section class="compact-section" id="evidence">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Current evidence</p>
+          <p class="compact-eyebrow">Evidence and status</p>
           <div>
-            <h2 class="compact-section-title">Contract validation is complete; implementation evidence comes next.</h2>
-            <p class="compact-section-copy">The repository currently contains the architecture package and executable contract bundle. Its status language separates verified repository behavior from planned runtime behavior.</p>
+            <h2 class="compact-section-title">Repository contracts are validated; runtime evidence remains planned.</h2>
+            <p class="compact-section-copy">The current repository proves that its schemas, examples, semantic rules, deterministic identities, documentation, and CI checks agree. It does not yet prove deployed AWS behavior or live Slack delivery.</p>
           </div>
         </div>
 
         <div class="evidence-grid">
           <article class="evidence-panel">
-            <h3>Available now</h3>
-            <ul>
-              <li>6 numbered architecture specifications with acceptance cases</li>
-              <li>13 accepted ADRs governing scope and system behavior</li>
-              <li>6 strict JSON Schema contracts and one mutually valid example bundle</li>
-              <li>Semantic checks for projections, references, hashes, identities, routes, retention, and size limits</li>
-              <li>Regression tests for rejected configuration and event-contract mutations</li>
+            <h3>Available evidence</h3>
+            <ul class="site-list">
+              <li>6 numbered specifications and 13 accepted ADRs</li>
+              <li>6 strict schemas with one valid cross-file example bundle</li>
+              <li>Semantic validation, deterministic identity vectors, and mutation tests</li>
+              <li>Repository quality, page drift, link, Mermaid, and HTML checks</li>
             </ul>
           </article>
           <article class="evidence-panel">
-            <h3>Implementation milestones</h3>
-            <ul>
-              <li>Historical announcement corpus with measured match quality</li>
-              <li>Python runtime packages and immutable release tooling</li>
-              <li>Terraform bootstrap and central service roots</li>
-              <li>Feed, delivery, recovery, load, security, and production preflight evidence</li>
-              <li>Confirmed synthetic Slack delivery for every configured destination</li>
+            <h3>Required implementation evidence</h3>
+            <ul class="site-list">
+              <li>Historical feed corpus with measured match quality</li>
+              <li>Python runtime and Terraform bootstrap and service roots</li>
+              <li>Feed, delivery, recovery, load, and security tests</li>
+              <li>Production preflight and confirmed Slack destination checks</li>
             </ul>
           </article>
         </div>
-
-        <aside class="site-note" aria-label="Validation meaning">
-          <p><strong>What “contracts validated” means:</strong> the committed examples satisfy their schemas and shared semantic rules, and rejected mutations fail regression tests.</p>
-          <p>The label makes no claim that the planned AWS service has been deployed or that live Slack delivery has passed production acceptance.</p>
-        </aside>
       </div>
     </section>
 
     <section class="compact-section" id="source">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Source material</p>
+          <p class="compact-eyebrow">Authoritative source</p>
           <div>
-            <h2 class="compact-section-title">Follow the architecture from intent to executable contracts.</h2>
-            <p class="compact-section-copy">The public page explains the system. The repository remains authoritative for normative requirements, accepted decisions, schemas, examples, validators, and tests.</p>
+            <h2 class="compact-section-title">The repository owns the detailed requirements.</h2>
+            <p class="compact-section-copy">This page is the concise explanation. The goal, numbered specification, accepted ADRs, schemas, examples, validators, and tests govern the architecture.</p>
+            <div class="compact-actions">
+              <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed">Open the repository</a>
+              <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/GOAL.md">Read the goal</a>
+              <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/tree/main/schemas">Browse contracts</a>
+            </div>
           </div>
-        </div>
-
-        <div class="compact-grid">
-          <article class="compact-card">
-            <span class="compact-tag">Outcome</span>
-            <h3 class="compact-card-title">Goal and milestones</h3>
-            <p>Product outcome, scope exclusions, quality bar, implementation order, and completion criteria.</p>
-            <ul class="site-link-list">
-              <li><a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/GOAL.md">Read the goal</a></li>
-            </ul>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Requirements</span>
-            <h3 class="compact-card-title">Numbered specification</h3>
-            <p>Product boundary, state model, configuration, feed processing, delivery, security, operations, and acceptance.</p>
-            <ul class="site-link-list">
-              <li><a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/architecture/README.md">Open the architecture index</a></li>
-            </ul>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Contracts</span>
-            <h3 class="compact-card-title">Schemas and canonical examples</h3>
-            <p>Machine-readable boundaries plus one valid end-to-end fixture set from deployment input to Slack work item.</p>
-            <ul class="site-link-list">
-              <li><a href="https://github.com/lilabrooks/aws-public-change-feed/tree/main/schemas">Browse the schemas</a></li>
-              <li><a href="https://github.com/lilabrooks/aws-public-change-feed/tree/main/examples">Inspect the examples</a></li>
-            </ul>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Verification</span>
-            <h3 class="compact-card-title">Checks and regression tests</h3>
-            <p>The repository quality gate covers schema and semantic checks, Python quality, YAML, references, and whitespace.</p>
-            <ul class="site-link-list">
-              <li><a href="https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml">View repository quality runs</a></li>
-              <li><a href="https://github.com/lilabrooks/aws-public-change-feed/tree/main/tests">Browse regression tests</a></li>
-            </ul>
-          </article>
         </div>
       </div>
     </section>
