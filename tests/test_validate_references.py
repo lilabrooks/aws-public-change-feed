@@ -16,6 +16,7 @@ VALID_LYCHEE_CONFIG = (ROOT / "lychee.toml").read_text(encoding="utf-8")
 LYCHEE_ACTION = "lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8"
 CHECKOUT_ACTION = "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
 SETUP_PYTHON_ACTION = "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405"
+CACHE_ACTION = "actions/cache/{operation}@27d5ce7f107fe9357f9df03efb73ab90386fccae"
 
 
 class ReferenceValidatorTests(unittest.TestCase):
@@ -315,6 +316,11 @@ class ReferenceValidatorTests(unittest.TestCase):
         lychee_step = next(step for step in steps if step.get("name") == "Check external reference links")
         self.assertEqual(lychee_step["uses"], LYCHEE_ACTION)
         self.assertEqual(lychee_step["with"]["lycheeVersion"], "v0.24.2")
+
+        restore_step = next(step for step in steps if step.get("name") == "Restore link-check cache")
+        save_step = next(step for step in steps if step.get("name") == "Save link-check cache")
+        self.assertEqual(restore_step["uses"], CACHE_ACTION.format(operation="restore"))
+        self.assertEqual(save_step["uses"], CACHE_ACTION.format(operation="save"))
 
     def test_quality_workflow_runs_pinned_python_312_checks(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/quality.yml").read_text(encoding="utf-8"))
