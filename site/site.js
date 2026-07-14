@@ -39,8 +39,11 @@ if (diagram) {
       theme: "base",
       themeVariables: themeVariables(),
       flowchart: {
-        curve: "basis",
+        curve: "linear",
+        diagramPadding: 6,
         htmlLabels: false,
+        nodeSpacing: 24,
+        rankSpacing: 36,
         useMaxWidth: true
       }
     });

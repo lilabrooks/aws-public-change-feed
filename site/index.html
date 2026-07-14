@@ -49,7 +49,9 @@
     }
 
     .architecture-figure {
-      margin: 28px 0 0;
+      width: min(1600px, calc(100vw - 32px));
+      margin: 28px 0 0 50%;
+      transform: translateX(-50%);
     }
 
     .architecture-figure figcaption {
@@ -59,9 +61,9 @@
     }
 
     .mermaid {
-      min-height: 320px;
+      min-height: 440px;
       margin: 0;
-      padding: 24px;
+      padding: clamp(12px, 1.5vw, 22px);
       overflow: auto;
       border: 1px solid var(--compact-rule);
       border-radius: 4px;
@@ -82,7 +84,7 @@
 
     .mermaid svg {
       width: 100%;
-      min-width: 920px;
+      min-width: 1040px;
       height: auto;
     }
 
@@ -125,8 +127,7 @@
       }
 
       .mermaid {
-        min-height: 260px;
-        padding: 16px;
+        min-height: 360px;
       }
     }
   </style>
@@ -201,7 +202,7 @@
           <p class="compact-eyebrow">AI contribution</p>
           <div>
             <h2 class="compact-section-title">OpenAI Codex helped turn architecture decisions into executable evidence.</h2>
-            <p class="compact-section-copy">OpenAI Codex, using GPT-5, worked as an architecture and engineering assistant under Lila Brooks's direction. The work was iterative: define the product question, challenge ambiguous boundaries, record decisions, encode contracts, run checks, and revise until the repository agreed with itself.</p>
+            <p class="compact-section-copy">OpenAI Codex, using GPT-5, worked as an architecture and engineering assistant under my architectural direction. The work was iterative: define the product question, challenge ambiguous boundaries, record decisions, encode contracts, run checks, and revise until the repository agreed with itself.</p>
           </div>
         </div>
 
@@ -217,7 +218,7 @@
           </article>
           <article class="evidence-panel">
             <h3>What the human architect owned</h3>
-            <p>Lila Brooks reviewed and studied each architecture proposal and ADR, challenged its assumptions, and made the final decision represented by every accepted record.</p>
+            <p>I reviewed and studied each architecture proposal and ADR, challenged its assumptions, and made the final decision represented by every accepted record.</p>
             <ul class="site-list">
               <li>Evaluated alternatives, failure modes, trust boundaries, and operational consequences before accepting a design.</li>
               <li>Decided the product scope, identity model, state ownership, delivery guarantees, version policy, and implementation limits.</li>
@@ -244,23 +245,38 @@
         </div>
 
         <figure class="architecture-figure">
-          <pre class="mermaid" data-architecture-diagram>flowchart LR
+          <pre class="mermaid" data-architecture-diagram>flowchart TB
     accTitle: AWS Public Change Alerting processing flow
     accDescr: Approved public AWS feeds and an immutable configuration release enter deterministic processing. Route-scoped candidates are stored in DynamoDB, dispatched through SQS FIFO, and delivered to Slack with recovery state retained in DynamoDB.
 
-    Feeds["Approved AWS RSS and Atom feeds"] --> Watcher["Feed watcher"]
-    Release["Immutable configuration and inventory release"] --> Watcher
-    Watcher --> Normalize["Normalize, coalesce, and track revisions"]
-    Normalize --> Matcher["Service and risk matcher"]
+    subgraph Inputs["Approved inputs"]
+        direction LR
+        Feeds["AWS RSS and Atom feeds"]
+        Release["Immutable configuration and inventory release"]
+    end
+
+    subgraph Decisioning["Deterministic candidate generation"]
+        direction LR
+        Watcher["Feed watcher"] --> Normalize["Normalize, coalesce, and track revisions"]
+        Normalize --> Matcher["Service and risk matcher"]
+        Matcher --> Routes["Profile and route mapping"]
+        Routes --> Outbox["DynamoDB candidates and durable outbox"]
+    end
+
+    subgraph Delivery["Durable Slack delivery"]
+        direction LR
+        Dispatcher["Outbox dispatcher"] --> Queue["SQS FIFO by Slack destination"]
+        Queue --> Worker["Slack delivery worker"]
+        Worker --> Slack["Slack channel"]
+        Reconciler["Recovery reconciler"]
+    end
+
+    Feeds --> Watcher
+    Release --> Watcher
     Release --> Matcher
-    Matcher --> Routes["Profile and route mapping"]
-    Routes --> Outbox["DynamoDB candidates and durable outbox"]
-    Outbox --> Dispatcher["Outbox dispatcher"]
-    Dispatcher --> Queue["SQS FIFO by Slack destination"]
-    Queue --> Worker["Slack delivery worker"]
-    Worker --> Slack["Slack channel"]
+    Outbox --> Dispatcher
     Worker -->|"Known or unknown outcome"| Outbox
-    Reconciler["Recovery reconciler"] --> Outbox</pre>
+    Reconciler --> Outbox</pre>
           <figcaption>
             <span data-diagram-status aria-live="polite">Loading the architecture diagram.</span>
             The <a href="./architecture.mmd">Mermaid source</a> is committed beside this page and checked for content drift.
