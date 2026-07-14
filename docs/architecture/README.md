@@ -44,6 +44,10 @@ ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the pro
 
 [`validate_config.py`](../../scripts/validate_config.py) enforces schema and cross-document rules. [`test_validate_config.py`](../../tests/test_validate_config.py) keeps a regression case for each rejected mutation.
 
+The six files under [`examples/`](../../examples/) form one executable contract bundle. The validator loads them together, checks each file against the contract in the same table row, and then verifies their shared projections, references, release hashes, deterministic identities, routes, retention rules, and size limits. This proves both individual file shape and cross-file behavior.
+
+Tests create mutations from this canonical valid bundle and confirm that each invalid change is rejected. A contract edit updates every affected schema, example, semantic validator, and regression test in the same change. Edits that affect release, candidate, or request identity also recalculate every dependent hash.
+
 ## Folder structure
 
 ```text
@@ -58,7 +62,7 @@ ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the pro
 │   ├── adr/                     Accepted decisions and superseded archive
 │   └── runbooks/                Operational procedures
 ├── schemas/                     JSON Schema contracts
-├── examples/                    Canonical valid fixtures
+├── examples/                    Canonical executable contract fixtures
 ├── scripts/                     Repository validators
 ├── tests/                       Regression tests
 ├── Makefile                     Local quality entry points

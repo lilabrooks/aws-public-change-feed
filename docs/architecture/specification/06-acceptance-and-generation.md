@@ -2,7 +2,9 @@
 
 ## Contract acceptance
 
-- Given the canonical examples, every document passes its JSON Schema and all semantic checks.
+- Given a clean checkout, the six canonical examples load as one bundle, every document passes its paired JSON Schema, and all cross-document semantic checks pass.
+- Given documents that pass their schemas individually but disagree on projections, references, routes, or release data, bundle validation fails.
+- Given an example edit that changes release or event identity inputs without recalculating dependent hashes, bundle validation fails.
 - Given an unknown field in any owned object, validation fails.
 - Given a mismatched release hash, version, key, route, environment policy, profile, service, alias, destination, or identity field, validation fails.
 - Given a rejected configuration or event mutation, a regression test proves the rejection.

@@ -1,13 +1,13 @@
 # AWS Public Change Alerting
 
-[![Status](https://img.shields.io/badge/status-architecture%20validated-00AA77)](#repository-status)
+[![Status](https://img.shields.io/badge/status-contracts%20validated-00AA77)](#validation-status)
 [![Repository quality](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml)
 [![Reference links](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/reference-links.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/reference-links.yml)
 [![Validators: Python 3.12+](https://img.shields.io/badge/validators-Python%203.12%2B-3776AB?logo=python&logoColor=white)](#local-validation)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
 [![JSON Schema](https://img.shields.io/badge/contracts-JSON%20Schema-4B32C3?logo=json&logoColor=white)](schemas/)
-[![Specs + ADRs](https://img.shields.io/badge/specs%20%2B%20ADRs-validated-00AA77)](docs/architecture/README.md)
+[![Specs + ADRs](https://img.shields.io/badge/specs%20%2B%20ADRs-included-00AA77)](docs/architecture/README.md)
 [![OpenAI Codex](https://img.shields.io/badge/built%20with-OpenAI%20Codex-412991?logo=openai&logoColor=white)](AGENTS.md)
 
 AWS Public Change Alerting turns public AWS announcements into route-scoped review work for teams that operate repeated AWS stacks. It fetches approved AWS feeds, matches announcements against declared services and risk rules, maps matches to potentially relevant environments, and delivers the resulting feed through Slack.
@@ -71,7 +71,18 @@ The watcher persists every candidate and delivery record before advancing a feed
 
 ## Repository status
 
-This repository currently contains a validated architecture package, contracts, examples, regression tests, and implementation requirements. The Terraform roots and Python runtime named by the design remain implementation milestones. Do not describe the repository as deployable until those artifacts and production acceptance tests exist.
+This repository currently contains a contract-validated architecture package: numbered specifications, accepted ADRs, machine-readable contracts, canonical examples, semantic validators, and regression tests. The Terraform roots and Python runtime named by the design remain implementation milestones. Do not describe the repository as deployable until those artifacts and production acceptance tests exist.
+
+## Validation status
+
+The `contracts validated` badge means the repository artifacts pass automated contract checks. [`make check`](Makefile) and the [Repository quality workflow](.github/workflows/quality.yml) provide the evidence:
+
+- Each of the six canonical examples passes its paired JSON Schema.
+- The complete example bundle passes cross-document checks for projections, references, routes, release hashes, deterministic identities, retention, and byte limits.
+- Regression tests mutate valid fixtures and confirm that rejected configuration and event-contract changes fail validation.
+- Python formatting, lint, typing, YAML, local links, reference dates, and Git whitespace pass the repository quality gate.
+
+The [Reference links workflow](.github/workflows/reference-links.yml) checks external sources separately. The specifications and accepted ADRs define the planned system behavior and remain subject to document review. Runtime execution, Terraform deployment, live feed acquisition, Slack delivery, and production acceptance evidence are future implementation milestones recorded in the [goal](docs/GOAL.md).
 
 ## Start here
 
@@ -79,7 +90,7 @@ This repository currently contains a validated architecture package, contracts, 
 2. Read [the architecture index](docs/architecture/README.md) for document ownership and folder structure.
 3. Read [the overview](docs/architecture/specification/01-overview.md), then continue through the numbered specification.
 4. Review [the accepted decisions](docs/architecture/README.md#architecture-decision-records).
-5. Inspect the validated files in `examples/` and their contracts in `schemas/`.
+5. Inspect the executable contract bundle in [`examples/`](examples/) and its paired contracts in [`schemas/`](schemas/).
 
 ## Local validation
 
@@ -100,7 +111,11 @@ make references-online
 
 The local validation covers JSON Schema, cross-document semantics, deterministic identities, rejected configuration mutations, local links, reference review dates, Python formatting, lint, type checking, YAML, and Git whitespace.
 
-## Configuration model
+## Executable contract examples
+
+The six files in [`examples/`](examples/) form one canonical, mutually valid contract bundle. Repository validation and tests consume these fixtures directly. Production deployments supply separate reviewed values.
+
+Together, the examples trace one complete contract path from deployment and matching inputs through an immutable release to a route-scoped candidate and its Slack delivery request:
 
 - `examples/deployment.yaml` holds infrastructure-coupled settings, destinations, environment inventory inputs, retention, fetch limits, and the supported scale declaration.
 - `examples/config.yaml` holds feeds, service definitions, profiles, environment policy, risk rules, and message limits.
@@ -108,7 +123,9 @@ The local validation covers JSON Schema, cross-document semantics, deterministic
 - `examples/active-versions.json` binds exact configuration and inventory object versions into one immutable release.
 - `examples/alert-candidate.json` and `examples/delivery-request.json` show the feed and delivery boundaries.
 
-The examples contain placeholders. They are fixtures, not production credentials or account data.
+`make check` validates each file against its paired JSON Schema, then checks the bundle's cross-document rules. Those checks cover projections, references, release hashes, deterministic identities, route mapping, retention, and byte limits. Regression tests mutate copies of the examples to prove that rejected changes stay rejected.
+
+Contract changes update every affected schema, example, semantic check, and mutation test together. Changes to release, candidate, or request identity inputs also require recalculating their dependent hashes. The examples contain placeholders and test data, with no production credentials or customer account data.
 
 ## Security summary
 

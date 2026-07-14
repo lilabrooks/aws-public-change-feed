@@ -93,4 +93,14 @@ Reviewers assess rule quality, route isolation, support-envelope impact, and sou
 
 ## Examples and validators
 
-The canonical files in `examples/` must remain mutually valid. `scripts/validate_config.py` is the local reference validator. Any new rejection path includes a mutation test in `tests/test_validate_config.py`.
+The six committed files in `examples/` form one canonical executable contract bundle:
+
+- `deployment.yaml`, `config.yaml`, and `inventory.json` provide a mutually consistent deployment, policy, and runtime projection.
+- `active-versions.json` binds the exact configuration and inventory bytes into one immutable release.
+- `alert-candidate.json` and `delivery-request.json` provide valid route-scoped output contracts tied to that release.
+
+`scripts/validate_config.py` loads all six files directly. It validates each document against its paired schema before checking cross-document projections, references, release hashes, deterministic identities, route mapping, retention, and byte limits. `tests/test_validate_config.py` starts from the same bundle and mutates copies to prove that invalid configurations and event contracts are rejected.
+
+The bundle is the implementation reference for future publisher, watcher, dispatcher, and worker code. Production deployments create separate reviewed values; the committed fixtures contain placeholders and test data.
+
+Every contract change updates the affected schemas, examples, semantic checks, and mutation tests together. An edit that changes `config.yaml` or `inventory.json` bytes requires recalculating the manifest hashes and release ID. An edit to candidate identity fields requires recalculating the audience, announcement, revision, candidate, and request identities that depend on it.

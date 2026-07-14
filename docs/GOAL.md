@@ -46,6 +46,7 @@ Slack carries the generated feed. It is not the source of truth for candidates o
 - Python requires version 3.12 or newer.
 - Terraform requires `>= 1.10.0, < 2.0.0` until a 2.x release is qualified.
 - Configuration, inventory, manifests, candidates, and delivery requests reject unknown fields.
+- Canonical examples remain mutually valid executable test vectors for schemas, cross-document rules, release hashes, and deterministic identities.
 - Every semantic rejection has a regression test.
 - Candidate and request identities are deterministic across replays.
 - Feed checkpoints advance only after candidate and outbox work is durable.
