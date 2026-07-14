@@ -26,4 +26,4 @@ Committed examples must pass the same validator used by promotion. Each rejected
 References verified: 2026-07-13.
 
 - [JSON Schema draft 2020-12](https://json-schema.org/draft/2020-12)
-- [JSON Schema additional properties](https://json-schema.org/understanding-json-schema/reference/object#additional-properties)
+- [JSON Schema object properties](https://json-schema.org/understanding-json-schema/reference/object)

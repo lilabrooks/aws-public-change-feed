@@ -34,7 +34,7 @@ For the standard AWS partition, the default Health Region strategy is `simplifie
 
 An optional `high_availability` strategy creates rules in each configured workload Region and its AWS-documented backup Region. Backup copies are deduplicated using `eventArn`, `communicationId`, and `affectedAccount`.
 
-The deployment Region does not set every AWS client endpoint. Health API polling uses supported Health endpoints. Cost Explorer uses `https://ce.us-east-1.amazonaws.com`.
+The deployment Region does not set every AWS client endpoint. Health API polling uses supported Health endpoints. Cost Explorer uses `ce.us-east-1.amazonaws.com`.
 
 ## Consequences
 
