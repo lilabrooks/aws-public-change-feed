@@ -1,1 +1,4 @@
 # Each future pattern needs a reason and ISO expiry on the two comment lines directly above it.
+# Reason: private-repository workflow pages and badges require an authenticated GitHub session
+# Expires: 2026-10-13
+^https://github\.com/lilabrooks/aws-public-change-feed/actions/workflows/(quality|reference-links)\.yml(?:/badge\.svg\?branch=main)?$
