@@ -1,0 +1,144 @@
+version: 4
+
+message_policy:
+  max_potentially_relevant_environments_in_slack: 30
+  max_message_characters: 4000
+  max_blocks: 40
+  max_title_characters: 150
+  max_summary_characters: 1200
+  max_explanation_characters: 1000
+  max_recommended_action_characters: 1000
+  max_candidate_bytes: 196608
+  max_delivery_request_bytes: 245760
+  oversize_behavior: failed_terminal
+
+state_retention:
+  feed_state_ttl_days: 730
+  announcement_state_ttl_days: 730
+  delivery_state_ttl_days: 365
+
+feeds:
+  - name: aws-whats-new
+    url: https://aws.amazon.com/about-aws/whats-new/recent/feed/
+    source_type: public_rss
+
+  - name: aws-news-blog
+    url: https://aws.amazon.com/blogs/aws/feed/
+    source_type: public_rss
+
+  - name: aws-security-bulletins
+    url: https://aws.amazon.com/security/security-bulletins/rss/feed/
+    source_type: public_rss
+
+  - name: aws-security-blog
+    url: https://aws.amazon.com/blogs/security/feed/
+    source_type: public_rss
+
+services:
+  eks:
+    display_name: Amazon EKS
+    aliases:
+      - Amazon EKS
+      - Amazon Elastic Kubernetes Service
+    recommended_action: Review supported Kubernetes versions and plan required cluster upgrades.
+
+  rds:
+    display_name: Amazon RDS
+    aliases:
+      - Amazon RDS
+      - Amazon Relational Database Service
+      - Amazon Aurora
+    recommended_action: Review database engine versions, support dates, and maintenance requirements.
+
+  lambda:
+    display_name: AWS Lambda
+    aliases:
+      - AWS Lambda
+      - Lambda function
+    recommended_action: Review runtime support dates and plan function runtime updates.
+
+service_profiles:
+  standard-customer-stack:
+    service_ids:
+      - eks
+      - rds
+      - lambda
+
+environment_policies:
+  acme-prod:
+    feed_monitoring: enabled
+    profile: standard-customer-stack
+  globex-prod:
+    feed_monitoring: enabled
+    profile: standard-customer-stack
+  globex-staging:
+    feed_monitoring: enabled
+    profile: standard-customer-stack
+
+risk_rules:
+  - id: watched-service-end-of-support
+    risk_type: end-of-support
+    priority: high
+    fields:
+      - title
+      - summary
+    match:
+      any:
+        - end of support
+        - end-of-support
+        - end of life
+        - end-of-life
+        - support ending
+        - no longer supported
+      all: []
+      none: []
+
+  - id: watched-service-breaking-change
+    risk_type: breaking-change
+    priority: high
+    fields:
+      - title
+      - summary
+    match:
+      any:
+        - breaking change
+        - required action
+        - migration required
+        - upgrade required
+        - default change
+        - API change
+      all: []
+      none: []
+
+  - id: watched-service-version-update
+    risk_type: service-version-update
+    priority: medium
+    fields:
+      - title
+      - summary
+    match:
+      any:
+        - new version
+        - version update
+        - runtime update
+        - engine version
+        - Kubernetes version
+      all: []
+      none:
+        - now available in
+        - available in the
+
+  - id: security-bulletin
+    risk_type: security
+    priority: high
+    fields:
+      - title
+      - summary
+    match:
+      any:
+        - vulnerability
+        - CVE
+        - security bulletin
+        - security update
+      all: []
+      none: []

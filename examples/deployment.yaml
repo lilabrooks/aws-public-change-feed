@@ -1,0 +1,84 @@
+schema_version: 3
+deployment_id: aws-public-change-alerting-prod
+deployment_region: ca-central-1
+secret_store: secrets_manager
+deploy_operational_sns_topic: true
+operational_sns_topic_name: aws-public-change-alerting-operations
+log_retention_days: 30
+config_bucket_name: aws-public-change-alerting-123456789012-ca-central-1
+release_prefix: aws-public-change-alerting/releases
+config_filename: config.yaml
+inventory_filename: inventory.json
+active_versions_object_key: aws-public-change-alerting/active-versions.json
+
+slack:
+  delivery_mode: incoming_webhook
+  default_route_id: shared-alerts
+  approved_webhook_hosts:
+    - hooks.slack.com
+  rate_control:
+    per_destination_min_interval_seconds: 1
+    slack_request_timeout_seconds: 10
+    max_retry_after_seconds: 900
+    max_network_attempts: 5
+    queue_max_receive_count: 100
+    worker_reserved_concurrency: 2
+  routes:
+    shared-alerts:
+      channel_label: "#aws-change-alerts"
+      destination_key: shared-aws-change-alerts
+      credential_secret_id: aws-public-change-alerting/slack/shared-alerts-webhook
+      high_priority_usergroup_id: SRETEAM01
+
+environments:
+  - id: acme-prod
+    customer: Acme
+    account_id: "123456789012"
+    regions:
+      - us-east-1
+      - us-west-2
+    route_id: shared-alerts
+
+  - id: globex-prod
+    customer: Globex
+    account_id: "210987654321"
+    regions:
+      - ca-central-1
+    route_id: shared-alerts
+
+  - id: globex-staging
+    customer: Globex
+    account_id: "210987654321"
+    regions:
+      - ca-central-1
+    route_id: shared-alerts
+
+s3_lifecycle:
+  manifest_noncurrent_version_expiration_days: 400
+  retired_release_retention_days: 400
+  minimum_retained_releases: 10
+  abort_incomplete_multipart_upload_days: 7
+  transition_current_versions: false
+  raw_feed_snapshots_expiration_days: 30
+
+feed_fetch_policy:
+  allowed_feed_hosts:
+    - aws.amazon.com
+  connect_timeout_seconds: 5
+  response_timeout_seconds: 15
+  max_redirects: 0
+  max_response_bytes: 5242880
+  max_items_per_feed: 200
+  max_item_characters: 50000
+  max_concurrent_fetches: 5
+
+scale_envelope:
+  max_accounts: 100
+  max_environments: 500
+  max_feeds: 25
+  max_slack_routes: 20
+  max_service_definitions: 100
+  max_service_profiles: 100
+  max_risk_rules: 50
+  max_delivery_requests_per_hour: 300
+  max_delivery_requests_per_destination_per_hour: 300

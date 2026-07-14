@@ -1,0 +1,23 @@
+cache = true
+max_cache_age = "1d"
+cache_exclude_status = "400.."
+
+max_redirects = 10
+max_retries = 5
+max_concurrency = 16
+
+timeout = 30
+retry_wait_time = 3
+method = "get"
+require_https = true
+include_fragments = "anchor-only"
+include_verbatim = true
+
+host_concurrency = 2
+host_request_interval = "250ms"
+
+extensions = ["md"]
+scheme = ["http", "https"]
+exclude_all_private = true
+include_mail = false
+no_progress = true

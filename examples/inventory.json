@@ -1,0 +1,50 @@
+{
+  "schema_version": 3,
+  "deployment_id": "aws-public-change-alerting-prod",
+  "generated_at": "2026-07-13T16:00:00Z",
+  "deployment_region": "ca-central-1",
+  "slack": {
+    "delivery_mode": "incoming_webhook",
+    "default_route_id": "shared-alerts",
+    "approved_webhook_hosts": ["hooks.slack.com"],
+    "rate_control": {
+      "per_destination_min_interval_seconds": 1,
+      "slack_request_timeout_seconds": 10,
+      "max_retry_after_seconds": 900,
+      "max_network_attempts": 5,
+      "queue_max_receive_count": 100,
+      "worker_reserved_concurrency": 2
+    },
+    "routes": {
+      "shared-alerts": {
+        "channel_label": "#aws-change-alerts",
+        "destination_key": "shared-aws-change-alerts",
+        "credential_secret_id": "aws-public-change-alerting/slack/shared-alerts-webhook",
+        "high_priority_usergroup_id": "SRETEAM01"
+      }
+    }
+  },
+  "environments": [
+    {
+      "id": "acme-prod",
+      "customer": "Acme",
+      "account_id": "123456789012",
+      "regions": ["us-east-1", "us-west-2"],
+      "route_id": "shared-alerts"
+    },
+    {
+      "id": "globex-prod",
+      "customer": "Globex",
+      "account_id": "210987654321",
+      "regions": ["ca-central-1"],
+      "route_id": "shared-alerts"
+    },
+    {
+      "id": "globex-staging",
+      "customer": "Globex",
+      "account_id": "210987654321",
+      "regions": ["ca-central-1"],
+      "route_id": "shared-alerts"
+    }
+  ]
+}

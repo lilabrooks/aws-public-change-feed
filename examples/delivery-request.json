@@ -1,0 +1,68 @@
+{
+  "contract_version": 3,
+  "request_id": "3caa23409f0af34d22d6200c67f6010a72486e5a521734659d46b08020582149",
+  "candidate": {
+    "contract_version": 3,
+    "candidate_id": "a9ba064df89aa4365e6fd3e4267c656678b6fcbf0605c2044d63f927ad88ee70",
+    "audience_fingerprint": "89938c455af195ada9983138830efe8dd1d49f5b93718d43436153d0d0fcb33e",
+    "created_at": "2026-07-13T17:00:00Z",
+    "announcement": {
+      "source_type": "public_feed",
+      "announcement_id": "90db9cbac12531c02ed63b2775a21edc335d3a11512f51df86b658305f3d7ba3",
+      "revision_id": "82b4173abeb5792ec6df3009ebe50b7a6c0b9277e5c6b10ecce55cdc79236c03",
+      "content_fingerprint": "a67bb97ee256600e9e6ed71fb822c789d239e998cd1076199bd99ef692487e91",
+      "title": "Amazon EKS Kubernetes version 1.34 available",
+      "summary": "Amazon EKS now supports Kubernetes version 1.34 in all configured Regions.",
+      "url": "https://aws.amazon.com/about-aws/whats-new/2026/example-eks-update/",
+      "published_at": "2026-07-13T12:00:00Z",
+      "observed_at": "2026-07-13T16:59:00Z",
+      "is_update": false,
+      "provenance": [
+        {
+          "feed_name": "aws-whats-new",
+          "feed_url": "https://aws.amazon.com/about-aws/whats-new/recent/feed/",
+          "source_item_id": "https://aws.amazon.com/about-aws/whats-new/2026/example-eks-update/",
+          "source_item_url": "https://aws.amazon.com/about-aws/whats-new/2026/example-eks-update/"
+        }
+      ]
+    },
+    "service": {
+      "id": "eks",
+      "display_name": "Amazon EKS"
+    },
+    "risk": {
+      "rule_id": "watched-service-version-update",
+      "risk_type": "service-version-update",
+      "priority": "medium"
+    },
+    "route_id": "shared-alerts",
+    "environment_ids": ["acme-prod", "globex-prod", "globex-staging"],
+    "relevance_basis": "inferred_profile_match",
+    "explainability": {
+      "matched_profile_ids": ["standard-customer-stack"],
+      "matched_aliases": ["Amazon EKS"],
+      "matched_terms": ["Kubernetes version"],
+      "matched_fields": ["title", "summary"],
+      "reason": "The announcement matched the Amazon EKS service definition and the configured version-update rule."
+    },
+    "recommended_action": "Review supported Kubernetes versions and plan required cluster upgrades.",
+    "release": {
+      "release_id": "8e71c5a35e39a8ceeecfdf28ef187343e7c6534ad3e8b887cc41dc729bbfd0a4",
+      "config": {
+        "key": "aws-public-change-alerting/releases/8e71c5a35e39a8ceeecfdf28ef187343e7c6534ad3e8b887cc41dc729bbfd0a4/config.yaml",
+        "version_id": "example-config-version-id",
+        "sha256": "6e773320690ac081dcd6406f2abf30d09eafa1055149ebeddaa3bed5a68fa1b6",
+        "schema_version": 4
+      },
+      "inventory": {
+        "key": "aws-public-change-alerting/releases/8e71c5a35e39a8ceeecfdf28ef187343e7c6534ad3e8b887cc41dc729bbfd0a4/inventory.json",
+        "version_id": "example-inventory-version-id",
+        "sha256": "00b84f7cc404fb7740fe778387eac40327511b6b94439beec46f51f383cb93f1",
+        "schema_version": 3
+      },
+      "application_version": "0.1.0-design-fixture"
+    }
+  },
+  "destination_key": "shared-aws-change-alerts",
+  "created_at": "2026-07-13T17:00:01Z"
+}

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aws-alerting:schema:active-versions:2",
+  "title": "AWS public change alerting active config and inventory versions",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "release_id", "promoted_at", "config", "inventory"],
+  "properties": {
+    "schema_version": {"const": 2},
+    "release_id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "promoted_at": {"type": "string", "format": "date-time"},
+    "config": {"$ref": "#/$defs/versioned_object"},
+    "inventory": {"$ref": "#/$defs/versioned_object"}
+  },
+  "$defs": {
+    "versioned_object": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "version_id", "sha256", "schema_version"],
+      "properties": {
+        "key": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "version_id": {"type": "string", "minLength": 1, "maxLength": 1024},
+        "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "schema_version": {"type": "integer", "minimum": 1}
+      }
+    }
+  }
+}

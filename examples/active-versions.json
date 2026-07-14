@@ -1,0 +1,17 @@
+{
+  "schema_version": 2,
+  "release_id": "8e71c5a35e39a8ceeecfdf28ef187343e7c6534ad3e8b887cc41dc729bbfd0a4",
+  "promoted_at": "2026-07-13T16:30:00Z",
+  "config": {
+    "key": "aws-public-change-alerting/releases/8e71c5a35e39a8ceeecfdf28ef187343e7c6534ad3e8b887cc41dc729bbfd0a4/config.yaml",
+    "version_id": "example-config-version-id",
+    "sha256": "6e773320690ac081dcd6406f2abf30d09eafa1055149ebeddaa3bed5a68fa1b6",
+    "schema_version": 4
+  },
+  "inventory": {
+    "key": "aws-public-change-alerting/releases/8e71c5a35e39a8ceeecfdf28ef187343e7c6534ad3e8b887cc41dc729bbfd0a4/inventory.json",
+    "version_id": "example-inventory-version-id",
+    "sha256": "00b84f7cc404fb7740fe778387eac40327511b6b94439beec46f51f383cb93f1",
+    "schema_version": 3
+  }
+}

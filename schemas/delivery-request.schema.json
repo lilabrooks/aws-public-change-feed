@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aws-alerting:schema:delivery-request:3",
+  "title": "AWS public change Slack delivery request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "request_id", "candidate", "destination_key", "created_at"],
+  "properties": {
+    "contract_version": {"const": 3},
+    "request_id": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+    "candidate": {"$ref": "urn:aws-alerting:schema:alert-candidate:3"},
+    "destination_key": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}
