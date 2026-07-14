@@ -1,0 +1,17 @@
+flowchart LR
+    accTitle: AWS Public Change Alerting processing flow
+    accDescr: Approved public AWS feeds and an immutable configuration release enter deterministic processing. Route-scoped candidates are stored in DynamoDB, dispatched through SQS FIFO, and delivered to Slack with recovery state retained in DynamoDB.
+
+    Feeds["Approved AWS RSS and Atom feeds"] --> Watcher["Feed watcher"]
+    Release["Immutable configuration and inventory release"] --> Watcher
+    Watcher --> Normalize["Normalize, coalesce, and track revisions"]
+    Normalize --> Matcher["Service and risk matcher"]
+    Release --> Matcher
+    Matcher --> Routes["Profile and route mapping"]
+    Routes --> Outbox["DynamoDB candidates and durable outbox"]
+    Outbox --> Dispatcher["Outbox dispatcher"]
+    Dispatcher --> Queue["SQS FIFO by Slack destination"]
+    Queue --> Worker["Slack delivery worker"]
+    Worker --> Slack["Slack channel"]
+    Worker -->|"Known or unknown outcome"| Outbox
+    Reconciler["Recovery reconciler"] --> Outbox
