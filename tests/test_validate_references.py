@@ -14,9 +14,9 @@ import validate_references as validator  # noqa: E402
 AS_OF = date(2026, 7, 13)
 VALID_LYCHEE_CONFIG = (ROOT / "lychee.toml").read_text(encoding="utf-8")
 LYCHEE_ACTION = "lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8"
-CHECKOUT_ACTION = "actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd"
-SETUP_PYTHON_ACTION = "actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405"
-CACHE_ACTION = "actions/cache/{operation}@27d5ce7f107fe9357f9df03efb73ab90386fccae"
+CHECKOUT_ACTION = "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+SETUP_PYTHON_ACTION = "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"
+CACHE_ACTION = "actions/cache/{operation}@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
 
 
 class ReferenceValidatorTests(unittest.TestCase):

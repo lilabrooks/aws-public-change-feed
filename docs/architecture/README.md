@@ -2,6 +2,8 @@
 
 This page is the map for the files that define AWS Public Change Alerting. Read the numbered specification in order. Use ADRs for the reason behind settled choices and the runbook for operational response.
 
+The [public architecture page](https://lilabrooks.github.io/aws-public-change-feed/) presents the value proposition, decision rationale, processing flow, and current evidence. This index and the numbered specification remain authoritative when the public explanation and normative requirements differ.
+
 ## Normative specification
 
 1. [Overview and product boundary](specification/01-overview.md)
@@ -63,6 +65,7 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 │   └── runbooks/                Operational procedures
 ├── schemas/                     JSON Schema contracts
 ├── examples/                    Canonical executable contract fixtures
+├── site/                        GitHub Pages source and Mermaid processing flow
 ├── scripts/                     Repository validators
 ├── tests/                       Regression tests
 ├── Makefile                     Local quality entry points
@@ -70,6 +73,14 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 ```
 
 The planned implementation adds `infra/bootstrap/`, `infra/central/`, and `src/` when those directories contain working files. Keep a concept in one owning document and link to it elsewhere. Do not copy full requirements between the goal, specification, ADRs, and runbook.
+
+## Public page maintenance
+
+[`site/index.html`](../../site/index.html) is the concise public explanation of this architecture. Its Mermaid source is committed separately in [`site/architecture.mmd`](../../site/architecture.mmd) and must match the copy embedded in the page.
+
+[`validate_site.py`](../../scripts/validate_site.py) checks page structure, local assets, the pinned Mermaid runtime, diagram parity, and the README link. During pull requests, the repository quality workflow also requires `site/index.html` to change whenever the goal, architecture, ADRs, schemas, examples, Mermaid source, or supporting site assets change. This makes public-page review part of every change that can alter its claims.
+
+References verified: 2026-07-13.
 
 ## Reference maintenance
 
