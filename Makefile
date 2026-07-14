@@ -1,7 +1,7 @@
 PYTHON ?= python3
 LYCHEE ?= lychee
 PYTHON_PATHS := scripts tests $(wildcard src)
-YAML_PATHS := .yamllint.yaml examples $(wildcard .github/workflows)
+YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml $(wildcard .github/workflows)
 
 .PHONY: help install format format-check lint lint-python lint-yaml typecheck validate validate-config \
 	validate-references references-online test whitespace check clean
