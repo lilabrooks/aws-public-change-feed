@@ -1,0 +1,770 @@
+#!/usr/bin/env bash
+# Destination in your repo: scripts/okf
+# No chmod required if you run it as `bash scripts/okf ...`.
+
+set -u
+
+ROOT="${OKF_ROOT:-$(git rev-parse --show-toplevel 2>/dev/null || pwd)}"
+BASE="${OKF_BASE:-HEAD}"
+
+if [ -n "${OKF_MAP_FILE:-}" ]; then
+  MAP_FILE="$OKF_MAP_FILE"
+elif [ -f "$ROOT/docs/okf-map.yml" ]; then
+  MAP_FILE="$ROOT/docs/okf-map.yml"
+elif [ -f "$ROOT/okf-map.yml" ]; then
+  MAP_FILE="$ROOT/okf-map.yml"
+else
+  MAP_FILE="$ROOT/docs/okf-map.yml"
+fi
+
+# Optional layout block in the map file (ADR 0018): a brownfield repo that
+# already keeps its specs or ADRs elsewhere points the kit at them here.
+# Absent keys fall back to the canonical tree, so existing installs are
+# unaffected.
+layout_value() {
+  key="$1"
+  default="$2"
+  value=""
+  if [ -f "$MAP_FILE" ]; then
+    value="$(awk -v key="$key" '
+      function clean(s) {
+        gsub(/#.*/, "", s)
+        gsub(/^[[:space:]"'\'']+/, "", s)
+        gsub(/[[:space:]"'\'']+$/, "", s)
+        return s
+      }
+      /^layout:/ { in_layout = 1; next }
+      /^[^[:space:]#]/ { in_layout = 0 }
+      in_layout {
+        line = $0
+        sub(/^[[:space:]]+/, "", line)
+        if (index(line, key ":") == 1) {
+          sub(key ":", "", line)
+          print clean(line)
+          exit
+        }
+      }
+    ' "$MAP_FILE")"
+  fi
+  if [ -n "$value" ]; then
+    printf '%s\n' "${value%/}"
+  else
+    printf '%s\n' "$default"
+  fi
+}
+
+SPECS_DIR="$(layout_value specs_dir docs/specs)"
+ADR_DIR="$(layout_value adr_dir docs/adr)"
+DRAFTS_DIR="$SPECS_DIR/_drafts"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  scripts/okf check-stale             # source changed but mapped spec/ADR was not touched
+  scripts/okf draft [paths...]        # generate/update draft specs from observable module facts
+  scripts/okf adr-suggest             # propose ADRs only for decision-shaped changes
+  scripts/okf new-adr <slug> [title]  # scaffold the next-numbered proposed ADR and index it
+  scripts/okf new-spec <slug> [title] # scaffold a spec skeleton and index it
+  scripts/okf pending                 # list ADRs still status: proposed (and any missing status)
+
+Environment:
+  OKF_ROOT      Repo root. Defaults to git top-level or current directory.
+  OKF_BASE      Diff base for changed files. Defaults to HEAD.
+  OKF_MAP_FILE  Mapping file. Defaults to docs/okf-map.yml after install,
+                or root okf-map.yml in this source-kit layout.
+
+Layout:
+  An optional `layout:` block in the map file relocates the knowledge homes
+  for repos that already keep specs or ADRs elsewhere (defaults shown):
+
+    layout:
+      specs_dir: docs/specs      # spec home; drafts in <specs_dir>/_drafts
+      adr_dir: docs/adr          # ADR home; index at <adr_dir>/index.md
+      stamp_file: docs/index.md  # version stamps read by the SessionStart hook
+EOF
+}
+
+changed_files() {
+  {
+    git -C "$ROOT" diff --name-only "$BASE" 2>/dev/null
+    git -C "$ROOT" ls-files --others --exclude-standard 2>/dev/null
+  } | sort -u
+}
+
+strip_quotes() {
+  printf '%s' "$1" | sed -E 's/^[[:space:]"'\'']+//; s/[[:space:]"'\'']+$//'
+}
+
+mapping_pairs() {
+  [ -f "$MAP_FILE" ] || return 0
+
+  awk '
+    function clean(s) {
+      gsub(/#.*/, "", s)
+      gsub(/^[[:space:]"'\''-]+/, "", s)
+      gsub(/[[:space:]"'\'']+$/, "", s)
+      return s
+    }
+
+    # A new top-level key (layout:, mirrors:, ...) ends the mappings list;
+    # without this reset its list items would leak into the last mapping.
+    /^[A-Za-z_]+:/ {
+      source = ""
+      in_docs = 0
+    }
+
+    /^[[:space:]]*-[[:space:]]*source:/ {
+      source = $0
+      sub(/^[[:space:]]*-[[:space:]]*source:[[:space:]]*/, "", source)
+      source = clean(source)
+      in_docs = 0
+      next
+    }
+
+    source != "" && /^[[:space:]]*docs:/ {
+      in_docs = 1
+      next
+    }
+
+    in_docs && /^[[:space:]]*-[[:space:]]*/ {
+      doc = $0
+      sub(/^[[:space:]]*-[[:space:]]*/, "", doc)
+      doc = clean(doc)
+      if (doc != "") print source "\t" doc
+      next
+    }
+
+    /^[[:space:]]*-[[:space:]]*[A-Za-z_]+:/ && $0 !~ /source:/ {
+      in_docs = 0
+    }
+  ' "$MAP_FILE"
+}
+
+matches_pattern() {
+  file="$1"
+  pattern="$2"
+  pattern=$(strip_quotes "$pattern")
+  # shellcheck disable=SC2053
+  [[ "$file" == $pattern ]]
+}
+
+# Workflow and agent-config paths check-stale skips entirely; .codex/ and
+# AGENTS.md cover a second agent run against the same checkout.
+is_workflow_file() {
+  case "$1" in
+    docs/*|.claude/*|.codex/*|CLAUDE.md|CLAUDE.local.md|AGENTS.md|scripts/okf) return 0 ;;
+  esac
+  # Layout-relocated knowledge homes count as workflow files even when they
+  # sit outside docs/.
+  case "$1" in
+    "$SPECS_DIR"/*|"$ADR_DIR"/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Repo-meta files that never need an okf-map.yml mapping of their own. Together
+# with is_workflow_file these are the Stop hook's non-implementation list.
+is_meta_file() {
+  case "$1" in
+    README.md|CHANGELOG.md|LICENSE|.gitignore|.editorconfig|.env.example) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+check_stale() {
+  if [ ! -f "$MAP_FILE" ]; then
+    [ "${OKF_HOOK:-}" = "1" ] && exit 0
+    printf 'No OKF map found. Add docs/okf-map.yml after install, or okf-map.yml in this source-kit layout.\n'
+    return 0
+  fi
+
+  changed="$(changed_files)"
+  [ -n "$changed" ] || {
+    [ "${OKF_HOOK:-}" = "1" ] && exit 0
+    printf 'No changed files detected against %s.\n' "$BASE"
+    return 0
+  }
+
+  stale=""
+  unmapped=""
+  pairs="$(mapping_pairs)"
+  log_changed=0
+  if printf '%s\n' "$changed" | grep -Fxq "docs/log.md"; then
+    log_changed=1
+  fi
+
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    is_workflow_file "$file" && continue
+
+    matched_docs=""
+    mapped_doc_changed=0
+
+    while IFS="$(printf '\t')" read -r source doc; do
+      [ -n "${source:-}" ] || continue
+      if matches_pattern "$file" "$source"; then
+        matched_docs="${matched_docs}${doc}, "
+        if ! printf '%s\n' "$changed" | grep -Fxq "$doc"; then
+          :
+        else
+          mapped_doc_changed=1
+        fi
+      fi
+    done <<EOF
+$pairs
+EOF
+
+    if [ -n "$matched_docs" ] && [ "$mapped_doc_changed" -eq 0 ] && [ "$log_changed" -eq 0 ]; then
+      matched_docs="${matched_docs%, }"
+      stale="${stale}${file} -> one of: ${matched_docs}"$'\n'
+    fi
+
+    if [ -z "$matched_docs" ] && ! is_meta_file "$file"; then
+      unmapped="${unmapped}${file}"$'\n'
+    fi
+  done <<EOF
+$changed
+EOF
+
+  print_unmapped_note() {
+    [ -n "$unmapped" ] || return 0
+    printf '\nNote: changed files with no okf-map.yml mapping (non-blocking):\n'
+    printf '%s' "$unmapped" | sort -u | sed 's/^/- /'
+    printf 'Add mappings as these areas gain their governing specs or ADRs.\n'
+  }
+
+  if [ -n "$stale" ]; then
+    if [ "${OKF_HOOK:-}" = "1" ]; then
+      cat <<'EOF'
+{"decision":"block","reason":"OKF stale mapping check failed: a source file changed without its mapped spec or ADR. Run `scripts/okf check-stale`, then update the mapped doc or add a dated `/docs/log.md` rationale if no doc change is warranted."}
+EOF
+      return 0
+    fi
+
+    printf 'Stale OKF mappings found:\n'
+    printf '%s' "$stale" | sort -u | sed 's/^/- /'
+    printf '\nUpdate a mapped spec/ADR, or add a dated docs/log.md rationale if no doc change is warranted.\n'
+    print_unmapped_note
+    return 1
+  fi
+
+  [ "${OKF_HOOK:-}" = "1" ] && exit 0
+  printf 'OKF mappings are current.\n'
+  print_unmapped_note
+}
+
+draft_targets_from_map() {
+  mapping_pairs | cut -f1 | sed -E 's#/\*\*.*$##; s#/\*.*$##' | sort -u
+}
+
+safe_name() {
+  printf '%s' "$1" | sed -E 's#^\./##; s#[^A-Za-z0-9._-]+#-#g; s#^-+##; s#-+$##'
+}
+
+language_counts() {
+  target="$1"
+  find "$ROOT/$target" -type f 2>/dev/null \
+    | sed -E 's/.*\.//' \
+    | sort \
+    | uniq -c \
+    | sort -nr \
+    | head -n 8 \
+    | awk '{print "- " $2 ": " $1}'
+}
+
+public_surface_clues() {
+  target="$1"
+  rg -n --glob '!node_modules/**' --glob '!vendor/**' \
+    '(^export |^module\.exports|^class |^def |^func |^function |router\.|app\.(get|post|put|patch|delete)|@app\.route|GraphQL|openapi|proto3)' \
+    "$ROOT/$target" 2>/dev/null \
+    | head -n 40 \
+    | sed "s#$ROOT/##" \
+    | sed 's/^/- /'
+}
+
+draft_one() {
+  target="${1#./}"
+  [ -e "$ROOT/$target" ] || {
+    printf 'Skipping %s: path does not exist.\n' "$target" >&2
+    return 0
+  }
+
+  out_dir="$ROOT/$DRAFTS_DIR"
+  mkdir -p "$out_dir"
+  out="$out_dir/$(safe_name "$target").md"
+  timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  file_count="$(find "$ROOT/$target" -type f 2>/dev/null | wc -l | tr -d ' ')"
+  test_files="$(find "$ROOT/$target" -type f \( -name '*test*' -o -name '*spec*' \) 2>/dev/null | sed "s#$ROOT/##" | head -n 20)"
+  mapped_docs="$(mapping_pairs | awk -v target="$target" -F '\t' '$1 ~ "^" target {print "- " $2}' | sort -u)"
+
+  {
+    printf -- '---\n'
+    printf 'type: Spec Draft\n'
+    printf 'title: %s draft\n' "$target"
+    printf 'description: Agent-generated draft from repository facts; verify before promoting.\n'
+    printf 'tags: [draft, generated]\n'
+    printf 'timestamp: %s\n' "$timestamp"
+    printf -- '---\n\n'
+    printf '# Scope\n\n'
+    printf -- '%s\n' "- Source path: \`$target\`"
+    printf -- '- Files observed: %s\n\n' "$file_count"
+
+    printf '# Observed languages\n\n'
+    language_counts "$target"
+    printf '\n# Public surface clues\n\n'
+    clues="$(public_surface_clues "$target")"
+    if [ -n "$clues" ]; then
+      printf '%s\n' "$clues"
+    else
+      printf -- '- No obvious exports, routes, schema, or API declarations found by the draft scanner.\n'
+    fi
+
+    printf '\n# Tests found\n\n'
+    if [ -n "$test_files" ]; then
+      printf '%s\n' "$test_files" | sed 's/^/- /'
+    else
+      printf -- '- No colocated test files found by filename.\n'
+    fi
+
+    printf '\n# Mapped docs\n\n'
+    if [ -n "$mapped_docs" ]; then
+      printf '%s\n' "$mapped_docs"
+    else
+      printf -- '- No existing docs/okf-map.yml entry points at this path.\n'
+    fi
+
+    printf '\n# Review notes\n\n'
+    printf -- '%s\n' "- Confirm the intended behavior and contracts before moving this draft out of \`_drafts/\`."
+    printf -- '- Replace scanner clues with human-readable product and engineering commitments.\n'
+  } > "$out"
+
+  printf 'Wrote %s\n' "${out#"$ROOT"/}"
+}
+
+draft_specs() {
+  if [ "$#" -gt 0 ]; then
+    targets="$*"
+  else
+    targets="$(draft_targets_from_map)"
+    if [ -z "$targets" ]; then
+      targets="$(find "$ROOT" -maxdepth 1 -type d ! -path "$ROOT" 2>/dev/null \
+        | sed "s#$ROOT/##" \
+        | grep -vE '^(\.git|\.github|\.claude|\.obsidian|docs|scripts|node_modules|vendor|dist|build|coverage)$' \
+        | sort)"
+    fi
+  fi
+
+  [ -n "${targets:-}" ] || {
+    printf 'No draft targets found. Pass paths, or add docs/okf-map.yml mappings.\n'
+    return 0
+  }
+
+  for target in $targets; do
+    draft_one "$target"
+  done
+}
+
+adr_suggest() {
+  changed="$(changed_files)"
+  [ -n "$changed" ] || {
+    printf 'No changed files detected against %s.\n' "$BASE"
+    return 0
+  }
+
+  suggestions=""
+
+  if printf '%s\n' "$changed" | grep -Eq '(^|/)(package-lock\.json|package\.json|pnpm-lock\.yaml|yarn\.lock|requirements.*\.txt|pyproject\.toml|poetry\.lock|go\.mod|Cargo\.toml|Gemfile|composer\.json)$'; then
+    suggestions="${suggestions}Runtime dependency or package manager change"$'\n'
+  fi
+
+  if printf '%s\n' "$changed" | grep -Eiq '(^|/)(Dockerfile|docker-compose|compose\.ya?ml|k8s|kubernetes|terraform|\.tf$|fly\.toml|render\.ya?ml|vercel\.json|netlify\.toml|cloudbuild\.ya?ml|\.github/workflows/)'; then
+    suggestions="${suggestions}Deployment, infrastructure, or CI topology change"$'\n'
+  fi
+
+  if printf '%s\n' "$changed" | grep -Eiq '(migration|prisma|sql|db/|database|models/)'; then
+    suggestions="${suggestions}Persistence model or data migration change"$'\n'
+  fi
+
+  if printf '%s\n' "$changed" | grep -Eiq '(auth|session|oauth|jwt|permission|rbac|encrypt|secret|retention|privacy)'; then
+    suggestions="${suggestions}Security, identity, privacy, or retention policy change"$'\n'
+  fi
+
+  if printf '%s\n' "$changed" | grep -Eiq '(redis|cache|queue|kafka|rabbit|sqs|pubsub|worker|cron|scheduler)'; then
+    suggestions="${suggestions}Caching, queueing, worker, or scheduling change"$'\n'
+  fi
+
+  # `schema` sits here, not under persistence: machine-readable contract
+  # schemas (JSON Schema, GraphQL, proto) are contract surfaces, and DB schema
+  # work still matches the persistence pattern via migration/sql/db/.
+  if printf '%s\n' "$changed" | grep -Eiq '(openapi|swagger|graphql|schema|\.proto$|api/|routes/)'; then
+    suggestions="${suggestions}Public API, schema, or cross-service contract change"$'\n'
+  fi
+
+  if [ -z "$suggestions" ]; then
+    printf 'No ADR-shaped changes detected.\n'
+    return 0
+  fi
+
+  printf 'ADR suggestions:\n'
+  printf '%s' "$suggestions" | sort -u | while IFS= read -r suggestion; do
+    [ -n "$suggestion" ] || continue
+    slug="$(printf '%s' "$suggestion" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')"
+    printf -- '- %s\n' "$suggestion"
+    printf '  Draft path: %s/NNNN-%s.md\n' "$ADR_DIR" "$slug"
+    printf '  Scaffold: bash scripts/okf new-adr %s "Title"\n' "$slug"
+    printf '  Cover: context, decision, alternatives considered, consequences, rollback/revisit trigger.\n'
+  done
+
+  printf '\nChanged files considered:\n'
+  printf '%s\n' "$changed" | sed 's/^/- /'
+}
+
+title_from_slug() {
+  printf '%s' "$1" | tr '-' ' ' | awk '{ $1 = toupper(substr($1,1,1)) substr($1,2); print }'
+}
+
+index_title_of() {
+  knowledge_file="$1"
+  found_title="$(grep -m1 -E '^title:' "$knowledge_file" 2>/dev/null | sed -E 's/^title:[[:space:]]*//; s/[[:space:]]+$//')"
+  if [ -z "$found_title" ]; then
+    found_title="$(grep -m1 -E '^#[[:space:]]' "$knowledge_file" 2>/dev/null | sed -E 's/^#[[:space:]]+//; s/[[:space:]]+$//')"
+  fi
+  [ -n "$found_title" ] || found_title="$(basename "$knowledge_file" .md)"
+  printf '%s\n' "$found_title"
+}
+
+index_append() {
+  index_file="$1"
+  heading="$2"
+  entry="$3"
+  if [ ! -f "$index_file" ]; then
+    printf '%s\n' "$heading" > "$index_file"
+    # Backfill entries for knowledge files that already exist, so a freshly
+    # created index never lists less than its directory holds (brownfield
+    # repos arrive with specs and ADRs the kit did not write). The file the
+    # new entry links is skipped; the caller appends it below.
+    for existing_file in "$(dirname "$index_file")"/*.md; do
+      [ -e "$existing_file" ] || continue
+      existing_base="$(basename "$existing_file")"
+      case "$existing_base" in
+        index.md|*.[0-9].md|*.[0-9][0-9].md) continue ;;
+      esac
+      case "$entry" in
+        *"($existing_base)"*) continue ;;
+      esac
+      printf -- '- [%s](%s)\n' "$(index_title_of "$existing_file")" "$existing_base" >> "$index_file"
+    done
+  fi
+  # A table-style index (ADR 0019): appending a bullet would corrupt or
+  # trail the table, and writing a table row means guessing the column
+  # layout. Any table row in the file marks the index as table-style —
+  # real ones keep prose after the table, so the last line is no signal.
+  # Decline; the caller reports the entry for a manual add.
+  if grep -q '^|' "$index_file"; then
+    return 1
+  fi
+  last_line="$(awk 'NF { line = $0 } END { print line }' "$index_file")"
+  case "$last_line" in
+    '#'*) printf '\n%s\n' "$entry" >> "$index_file" ;;
+    *) printf '%s\n' "$entry" >> "$index_file" ;;
+  esac
+}
+
+# Numbering-convention scan (ADRs 0018, 0019). Bare-numeric names (0001-*,
+# 001-*) take precedence; when none exist and every alpha-prefixed name
+# (adr-0001-*) shares one prefix word, that convention can be followed
+# instead. Index files and installer-written numbered review candidates are
+# excluded, matching the pending scan. Sets: bare_found, bare_next,
+# bare_width, pref_word (empty when none), pref_mixed, pref_next, pref_width.
+scan_numbering() {
+  scan_dir="$1"
+  bare_found=0
+  bare_next=1
+  bare_width=0
+  pref_word=""
+  pref_mixed=0
+  pref_next=1
+  pref_width=0
+  for scanned in "$scan_dir"/*.md; do
+    [ -e "$scanned" ] || continue
+    scanned_base="$(basename "$scanned")"
+    case "$scanned_base" in
+      index.md|*.[0-9].md|*.[0-9][0-9].md) continue ;;
+    esac
+    head_part="${scanned_base%%-*}"
+    case "$scanned_base" in
+      [0-9]*-*)
+        case "$head_part" in
+          *[!0-9]*) continue ;;
+        esac
+        num=$((10#$head_part))
+        [ "$num" -ge "$bare_next" ] && bare_next=$((num + 1))
+        [ "${#head_part}" -gt "$bare_width" ] && bare_width="${#head_part}"
+        bare_found=1
+        ;;
+      [A-Za-z]*-[0-9]*-*)
+        case "$head_part" in
+          *[!A-Za-z]*) continue ;;
+        esac
+        num_part="${scanned_base#*-}"
+        num_part="${num_part%%-*}"
+        case "$num_part" in
+          ''|*[!0-9]*) continue ;;
+        esac
+        if [ -z "$pref_word" ]; then
+          pref_word="$head_part"
+        elif [ "$pref_word" != "$head_part" ]; then
+          pref_mixed=1
+        fi
+        num=$((10#$num_part))
+        [ "$num" -ge "$pref_next" ] && pref_next=$((num + 1))
+        [ "${#num_part}" -gt "$pref_width" ] && pref_width="${#num_part}"
+        ;;
+    esac
+  done
+}
+
+new_adr() {
+  slug="$(safe_name "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')")"
+  [ -n "$slug" ] || {
+    printf 'Usage: scripts/okf new-adr <slug> [title...]\n' >&2
+    return 2
+  }
+  shift
+  title="${*:-$(title_from_slug "$slug")}"
+
+  adr_dir="$ROOT/$ADR_DIR"
+  [ -d "$adr_dir" ] || {
+    printf 'No %s/ directory found. Bootstrap the docs tree first.\n' "$ADR_DIR" >&2
+    return 1
+  }
+
+  # Follow whatever numbering already exists: next = highest number + 1, and
+  # the zero-pad width matches the widest existing prefix (so a repo with
+  # 001-*.md ADRs gets 017-, not 0001-). Bare-numeric names take precedence;
+  # a sole alpha-prefixed convention (adr-0001-*) is continued as
+  # adr-0011-<slug>.md (ADR 0019). Four digits when the directory holds no
+  # numbered ADRs yet.
+  scan_numbering "$adr_dir"
+  name_prefix=""
+  if [ "$bare_found" -eq 1 ]; then
+    next="$bare_next"
+    width="$bare_width"
+  elif [ -n "$pref_word" ] && [ "$pref_mixed" -eq 0 ]; then
+    name_prefix="$pref_word-"
+    next="$pref_next"
+    width="$pref_width"
+  else
+    next=1
+    width=4
+  fi
+  [ "$width" -gt 0 ] || width=4
+  number="$(printf "%0${width}d" "$next")"
+  adr_name="$name_prefix$number-$slug.md"
+
+  out="$adr_dir/$adr_name"
+  [ ! -e "$out" ] || {
+    printf 'Refusing to overwrite existing file: %s\n' "${out#"$ROOT"/}" >&2
+    return 1
+  }
+
+  timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  cat > "$out" <<ADR
+---
+type: ADR
+title: $title
+description: [one-line summary of the decision]
+tags: [adr]
+timestamp: $timestamp
+status: proposed
+---
+
+# Status
+
+Proposed (authored per the decision policy; awaiting owner review)
+
+# Context
+
+[What situation forces a decision? Name the constraint, the trigger, and the goal or spec it touches.]
+
+# Decision
+
+[The decision, stated as a commitment. Name the chosen option and its bounds.]
+
+# Alternatives considered
+
+[Each rejected option and the concrete reason it lost.]
+
+# Consequences
+
+[What this makes easier, what it makes harder, and what must stay in sync.]
+
+# Rollback / revisit trigger
+
+[The observable condition under which this decision gets reverted or reopened, and what reverting takes.]
+ADR
+
+  printf 'Wrote %s (status: proposed)\n' "${out#"$ROOT"/}"
+  if index_append "$adr_dir/index.md" "# ADRs" "- [$number $title]($adr_name): [one-line description]"; then
+    printf 'Indexed in %s\n' "$ADR_DIR/index.md"
+  else
+    printf '%s/index.md uses a table layout; add the entry there by hand (ADR 0019):\n' "$ADR_DIR"
+    printf '  [%s %s](%s)\n' "$number" "$title" "$adr_name"
+  fi
+  printf 'Fill every bracket, replace the index description, and flag the ADR in docs/log.md.\n'
+}
+
+new_spec() {
+  slug="$(safe_name "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]')")"
+  [ -n "$slug" ] || {
+    printf 'Usage: scripts/okf new-spec <slug> [title...]\n' >&2
+    return 2
+  }
+  shift
+  title="${*:-$(title_from_slug "$slug")}"
+
+  spec_dir="$ROOT/$SPECS_DIR"
+  [ -d "$spec_dir" ] || {
+    printf 'No %s/ directory found. Bootstrap the docs tree first.\n' "$SPECS_DIR" >&2
+    return 1
+  }
+
+  # Follow an alpha-prefixed ID sequence (spec-000-*) when it is the sole
+  # convention in the spec home (ADR 0019). Bare-numeric chapter names
+  # (01-overview.md) are deliberately not followed: chapter position is an
+  # editorial decision, so those repos keep plain <slug>.md.
+  scan_numbering "$spec_dir"
+  spec_name="$slug.md"
+  if [ "$bare_found" -eq 0 ] && [ -n "$pref_word" ] && [ "$pref_mixed" -eq 0 ]; then
+    spec_name="$pref_word-$(printf "%0${pref_width}d" "$pref_next")-$slug.md"
+  fi
+
+  out="$spec_dir/$spec_name"
+  [ ! -e "$out" ] || {
+    printf 'Refusing to overwrite existing file: %s\n' "${out#"$ROOT"/}" >&2
+    return 1
+  }
+
+  timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  cat > "$out" <<SPEC
+---
+type: Spec
+title: $title
+description: [one-line summary of the contract]
+tags: [spec]
+timestamp: $timestamp
+---
+
+# Purpose
+
+[What this spec governs and who depends on it.]
+
+# Contract
+
+[The behavior to preserve: interfaces, inputs and outputs, error cases, and the example interactions users actually give this surface — including at least one rejected or edge input.]
+
+# Verification
+
+[How conformance is checked: the automated tests that cover it, and any manual checks with their steps.]
+SPEC
+
+  printf 'Wrote %s\n' "${out#"$ROOT"/}"
+  if index_append "$spec_dir/index.md" "# Specs" "- [$title]($spec_name): [one-line description]"; then
+    printf 'Indexed in %s\n' "$SPECS_DIR/index.md"
+  else
+    printf '%s/index.md uses a table layout; add the entry there by hand (ADR 0019):\n' "$SPECS_DIR"
+    printf '  [%s](%s)\n' "$title" "$spec_name"
+  fi
+  printf 'Fill every bracket, replace the index description, and map the governed source in docs/okf-map.yml.\n'
+}
+
+# Tolerant ADR status detection (ADR 0018): frontmatter `status:` first, then
+# the body conventions brownfield repos actually use — a `- Status: X` bullet
+# or a `# Status` / `## Status` heading followed by the status word.
+# Normalized to the lowercased first word so `Accepted (2026-07-12)` reads as
+# `accepted`.
+adr_status_of() {
+  adr_file="$1"
+  raw_status="$(grep -m1 -E '^status:' "$adr_file" 2>/dev/null | sed -E 's/^status:[[:space:]]*//; s/[[:space:]]+$//')"
+  if [ -z "$raw_status" ]; then
+    raw_status="$(grep -m1 -E '^[-*][[:space:]]*[Ss]tatus:' "$adr_file" 2>/dev/null | sed -E 's/^[-*][[:space:]]*[Ss]tatus:[[:space:]]*//; s/[[:space:]]+$//')"
+  fi
+  if [ -z "$raw_status" ]; then
+    raw_status="$(awk 'found && NF { print; exit } /^#+[[:space:]]*[Ss]tatus[[:space:]]*$/ { found = 1 }' "$adr_file" 2>/dev/null)"
+  fi
+  printf '%s' "$raw_status" | awk '{ print tolower($1) }' | sed -E 's/[^a-z]+$//'
+}
+
+pending() {
+  adr_dir="$ROOT/$ADR_DIR"
+  [ -d "$adr_dir" ] || {
+    printf 'No %s/ directory found.\n' "$ADR_DIR"
+    return 0
+  }
+
+  proposed=""
+  missing=""
+  for adr in "$adr_dir"/*.md; do
+    [ -e "$adr" ] || continue
+    case "$(basename "$adr")" in
+      index.md) continue ;;
+      *.[0-9].md|*.[0-9][0-9].md) continue ;;
+    esac
+    rel="${adr#"$ROOT"/}"
+    status="$(adr_status_of "$adr")"
+    if [ -z "$status" ]; then
+      missing="${missing}- ${rel}"$'\n'
+    elif [ "$status" = "proposed" ]; then
+      title="$(grep -m1 -E '^title:' "$adr" | sed -E 's/^title:[[:space:]]*//')"
+      if [ -z "$title" ]; then
+        title="$(grep -m1 -E '^#[[:space:]]' "$adr" | sed -E 's/^#[[:space:]]+//; s/[[:space:]]+$//')"
+      fi
+      proposed="${proposed}- ${rel} — ${title:-(untitled)}"$'\n'
+    fi
+  done
+
+  if [ -n "$proposed" ]; then
+    printf 'Proposed ADRs awaiting review:\n'
+    printf '%s' "$proposed"
+    printf 'Accepting flips status to accepted and binds future work; rejecting reverts per the rollback trigger.\n'
+  else
+    printf 'No proposed ADRs awaiting review.\n'
+  fi
+
+  if [ -n "$missing" ]; then
+    printf '\nADRs with no status field in any recognized form (frontmatter status:,\n'
+    printf 'a "- Status:" bullet, or a "# Status" section) — add frontmatter status:\n'
+    printf '%s' "$missing"
+  fi
+}
+
+case "${1:-help}" in
+  check-stale)
+    check_stale
+    ;;
+  draft)
+    shift
+    draft_specs "$@"
+    ;;
+  adr-suggest)
+    adr_suggest
+    ;;
+  new-adr)
+    shift
+    new_adr "$@"
+    ;;
+  new-spec)
+    shift
+    new_spec "$@"
+    ;;
+  pending)
+    pending
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    usage >&2
+    exit 2
+    ;;
+esac

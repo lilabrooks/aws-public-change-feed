@@ -1,0 +1,79 @@
+# Destination in your repo: docs/okf-map.yml
+#
+# Map source areas to the specs and ADRs that govern them. The `scripts/okf
+# check-stale` command uses this file to catch cases where source changed but
+# the mapped knowledge file was not touched.
+#
+# Keep patterns repo-relative. Quote glob patterns so YAML readers do not treat
+# `*` as an alias marker.
+#
+# Prefer one mapping per module or contract as specs emerge. A single broad
+# glob pointed at a stack ADR (for example "app/**" -> the ADR that chose the
+# framework) makes every source change look governed and turns check-stale
+# into noise instead of a signal.
+#
+# Optional layout block: a repo that already keeps its knowledge elsewhere
+# points the kit at it here instead of moving files. Every kit tool
+# (scripts/okf, both hooks, the installers, verify-install) follows these
+# paths; omit the block for the standard tree (defaults shown):
+#
+# layout:
+#   specs_dir: docs/specs      # spec home; drafts live in <specs_dir>/_drafts
+#   adr_dir: docs/adr          # ADR home; index at <adr_dir>/index.md
+#   stamp_file: docs/index.md  # okf_version / kit_version stamp home
+#
+# Optional mirrors list (ADR 0021): a repo that keeps byte-identical copies of
+# the two kit hooks in a second agent's config declares those directories here.
+# The safe updater then refreshes declared mirrors exactly like the
+# .claude/hooks/ originals — in place only when provably unedited kit output,
+# preserved with a numbered candidate otherwise — and verify-install warns
+# when a declared mirror is missing a hook or has drifted. Hooks only; mirror
+# skills stay owner-managed. Undeclared directories are never treated as
+# mirrors:
+#
+# mirrors:
+#   - .codex/hooks
+
+mappings:
+  # The schemas are themselves governing contracts (ADR-011); they and their
+  # canonical fixtures move with the configuration chapter.
+  - source: "schemas/**"
+    docs:
+      - "docs/architecture/specification/03-configuration.md"
+      - "docs/adr/011-machine-readable-configuration-contracts.md"
+
+  - source: "examples/**"
+    docs:
+      - "docs/architecture/specification/03-configuration.md"
+      - "docs/adr/011-machine-readable-configuration-contracts.md"
+
+  - source: "scripts/validate_config.py"
+    docs:
+      - "docs/architecture/specification/03-configuration.md"
+      - "docs/adr/011-machine-readable-configuration-contracts.md"
+
+  # Regression coverage is the acceptance mechanism chapter 06 defines.
+  - source: "tests/**"
+    docs:
+      - "docs/architecture/specification/06-acceptance-and-generation.md"
+
+  # Planned implementation roots (see AGENTS.md repository layout): activate
+  # these when the directories gain real files.
+  #
+  # - source: "src/**"
+  #   docs:
+  #     - "docs/architecture/specification/04-alert-processing.md"
+  #     - "docs/adr/009-feed-acquisition-and-deterministic-matching.md"
+  #
+  # - source: "infra/**"
+  #   docs:
+  #     - "docs/architecture/specification/02-platform.md"
+  #     - "docs/adr/006-terraform-and-python-implementation-baseline.md"
+  #
+  # site/ and scripts/validate_site.py are deliberately unmapped: the site is
+  # a mirror of the architecture docs, and validate_site.py plus the quality
+  # workflow already guard that sync mechanically.
+
+# Detected by update-existing-repo: this repo keeps its knowledge here.
+layout:
+  specs_dir: docs/architecture/specification
