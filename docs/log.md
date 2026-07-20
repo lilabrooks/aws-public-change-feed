@@ -35,3 +35,11 @@
   kit `verify-install` passed with zero warnings, and the SessionStart hook
   is silent. Environment-only: a local `.venv` (git-ignored) now carries
   `requirements-dev.txt` for the gate.
+- Follow-up from the adoption PR's CI: the quality workflow's site-sync gate
+  (`validate_site.py --base --head`) correctly flagged that the new
+  `docs/architecture/specification/index.md` and `docs/adr/index.md` landed
+  without a `site/index.html` co-change — the local gate ran on a clean tree
+  and could not see the branch diff. Resolved with an accurate one-sentence
+  addition to the page's authoritative-source section describing the
+  source-to-knowledge map, staleness checks, and dated change log the
+  adoption introduced.
