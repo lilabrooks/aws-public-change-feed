@@ -1,0 +1,15 @@
+# ADRs
+
+- [ADR-001: Separate deployment and runtime configuration](001-separate-deployment-and-runtime-configuration.md)
+- [ADR-002: Route-scoped candidates and delivery identity](002-route-scoped-slack-delivery-and-dedupe.md)
+- [ADR-004: Explicit Slack delivery guarantees](004-explicit-slack-delivery-guarantees.md)
+- [ADR-006: Terraform and Python implementation baseline](006-terraform-and-python-implementation-baseline.md)
+- [ADR-007: Durable outbox and Slack worker](007-central-slack-delivery-queue-and-worker.md)
+- [ADR-009: Feed acquisition and deterministic matching](009-feed-acquisition-and-deterministic-matching.md)
+- [ADR-010: Operations and supported scale](010-operations-and-supported-scale.md)
+- [ADR-011: Machine-readable configuration contracts](011-machine-readable-configuration-contracts.md)
+- [ADR-013: Feed state and announcement identity](013-source-state-and-public-announcement-identity.md)
+- [ADR-014: Immutable release artifacts and retention](014-immutable-release-artifacts-and-retention.md)
+- [ADR-015: Slack rendering, rate control, and retry](015-slack-rendering-rate-control-and-retry.md)
+- [ADR-016: Production preflight and event contracts](016-production-preflight-and-event-contracts.md)
+- [ADR-017: Public-feed-only product scope](017-public-feed-only-product-scope.md)
