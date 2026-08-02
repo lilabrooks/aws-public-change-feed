@@ -1,5 +1,26 @@
 # Log
 
+## 2026-08-01
+
+- Stopped mirroring workflow action SHAs into test constants. The Dependabot
+  bump in PR #8 (`actions/checkout` v7.0.0 to v7.0.1, `actions/setup-python`
+  v6.3.0 to v7.0.0) failed `make check` because
+  `tests/test_validate_references.py` and `tests/test_validate_site.py` each
+  hardcoded the previous SHA and asserted equality — the tests restated what
+  the workflow files already say, so every Actions bump needed a matching test
+  edit. New `tests/workflow_pins.py` reads the pin out of the workflow and
+  asserts the property that actually matters: the step references the expected
+  action, pinned to a full 40-character commit SHA, with a `# vX.Y.Z` comment a
+  reviewer can read. New `tests/test_workflow_pins.py` sweeps every workflow for
+  that invariant and requires one action to resolve to one SHA across files, so
+  a partial bump is still caught. The `actions/cache` restore and save steps
+  keep their explicit same-SHA check. Verified: mutations introducing a floating
+  tag, a missing version comment, a substituted action owner, and a
+  half-applied checkout bump each fail; the PR #8 workflow diff applied locally
+  passes. No spec change — `docs/okf-map.yml` maps `tests/**` to chapter 06,
+  which governs product acceptance (feed, matching, delivery behavior) rather
+  than repository CI hygiene, the same reason `site/` is deliberately unmapped.
+
 ## 2026-07-19
 
 - Adopted the claude-okf-repo-kit (0.3.5) through its brownfield path:

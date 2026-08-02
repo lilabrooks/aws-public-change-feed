@@ -4,6 +4,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 
+import workflow_pins
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -13,10 +14,6 @@ import validate_references as validator  # noqa: E402
 
 AS_OF = date(2026, 7, 13)
 VALID_LYCHEE_CONFIG = (ROOT / "lychee.toml").read_text(encoding="utf-8")
-LYCHEE_ACTION = "lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8"
-CHECKOUT_ACTION = "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
-SETUP_PYTHON_ACTION = "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1"
-CACHE_ACTION = "actions/cache/{operation}@55cc8345863c7cc4c66a329aec7e433d2d1c52a9"
 
 
 class ReferenceValidatorTests(unittest.TestCase):
@@ -314,13 +311,14 @@ class ReferenceValidatorTests(unittest.TestCase):
         workflow = yaml.safe_load((ROOT / ".github/workflows/reference-links.yml").read_text(encoding="utf-8"))
         steps = workflow["jobs"]["online-reference-check"]["steps"]
         lychee_step = next(step for step in steps if step.get("name") == "Check external reference links")
-        self.assertEqual(lychee_step["uses"], LYCHEE_ACTION)
+        workflow_pins.assert_pinned(lychee_step["uses"], "lycheeverse/lychee-action")
         self.assertEqual(lychee_step["with"]["lycheeVersion"], "v0.24.2")
 
         restore_step = next(step for step in steps if step.get("name") == "Restore link-check cache")
         save_step = next(step for step in steps if step.get("name") == "Save link-check cache")
-        self.assertEqual(restore_step["uses"], CACHE_ACTION.format(operation="restore"))
-        self.assertEqual(save_step["uses"], CACHE_ACTION.format(operation="save"))
+        restore_sha = workflow_pins.assert_pinned(restore_step["uses"], "actions/cache/restore")
+        save_sha = workflow_pins.assert_pinned(save_step["uses"], "actions/cache/save")
+        self.assertEqual(restore_sha, save_sha, "cache restore and save must come from one release")
 
     def test_quality_workflow_runs_pinned_python_312_checks(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/quality.yml").read_text(encoding="utf-8"))
@@ -328,8 +326,8 @@ class ReferenceValidatorTests(unittest.TestCase):
         checkout = next(step for step in steps if step.get("name") == "Check out repository")
         setup = next(step for step in steps if step.get("name") == "Set up Python")
         checks = next(step for step in steps if step.get("name") == "Run repository checks")
-        self.assertEqual(checkout["uses"], CHECKOUT_ACTION)
-        self.assertEqual(setup["uses"], SETUP_PYTHON_ACTION)
+        workflow_pins.assert_pinned(checkout["uses"], "actions/checkout")
+        workflow_pins.assert_pinned(setup["uses"], "actions/setup-python")
         self.assertEqual(setup["with"]["python-version"], "3.12")
         self.assertEqual(checks["run"], "make check PYTHON=python")
 

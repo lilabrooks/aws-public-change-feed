@@ -4,17 +4,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import workflow_pins
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import validate_site as validator  # noqa: E402
-
-CHECKOUT_ACTION = "actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
-CONFIGURE_PAGES_ACTION = "actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d"
-UPLOAD_PAGES_ACTION = "actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9"
-DEPLOY_PAGES_ACTION = "actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128"
 
 
 class SiteValidatorTests(unittest.TestCase):
@@ -81,10 +77,10 @@ class SiteValidatorTests(unittest.TestCase):
     def test_pages_workflow_uses_immutable_actions_and_minimum_permissions(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8"))
         steps = workflow["jobs"]["deploy"]["steps"]
-        self.assertEqual(steps[0]["uses"], CHECKOUT_ACTION)
-        self.assertEqual(steps[2]["uses"], CONFIGURE_PAGES_ACTION)
-        self.assertEqual(steps[3]["uses"], UPLOAD_PAGES_ACTION)
-        self.assertEqual(steps[4]["uses"], DEPLOY_PAGES_ACTION)
+        workflow_pins.assert_pinned(steps[0]["uses"], "actions/checkout")
+        workflow_pins.assert_pinned(steps[2]["uses"], "actions/configure-pages")
+        workflow_pins.assert_pinned(steps[3]["uses"], "actions/upload-pages-artifact")
+        workflow_pins.assert_pinned(steps[4]["uses"], "actions/deploy-pages")
         self.assertEqual(workflow["permissions"], {"contents": "read", "pages": "write", "id-token": "write"})
         self.assertEqual(steps[3]["with"]["path"], "site")
 
