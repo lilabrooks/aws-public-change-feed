@@ -19,6 +19,13 @@ CLAUDE_MCP = ROOT / ".mcp.json"
 CODEX_CONFIG = ROOT / ".codex/config.toml"
 CLAUDE_MD = ROOT / "CLAUDE.md"
 AGENTS_MD = ROOT / "AGENTS.md"
+CLAUDE_SETTINGS = ROOT / ".claude/settings.json"
+
+# The AWS MCP server exposes account-capable tools alongside the documentation
+# tools this repository uses. They fail unauthenticated, which is a property of
+# nobody having signed in rather than of the server, so they are denied outright
+# on the host that can deny them.
+ACCOUNT_CAPABLE_TOOLS = ("call_aws", "run_script", "get_presigned_url", "get_tasks")
 
 
 def claude_servers() -> dict[str, str]:
@@ -66,6 +73,38 @@ class McpParityTests(unittest.TestCase):
         for name, url in claude_servers().items():
             with self.subTest(server=name):
                 self.assertTrue(url.startswith("https://"), f"{name} must use HTTPS")
+
+
+class AccountToolDenyTests(unittest.TestCase):
+    """The deny list only works while it names the server actually configured."""
+
+    def denied(self) -> list[str]:
+        with CLAUDE_SETTINGS.open(encoding="utf-8") as handle:
+            return json.load(handle)["permissions"]["deny"]
+
+    def test_every_account_capable_tool_is_denied(self):
+        denied = self.denied()
+        for tool in ACCOUNT_CAPABLE_TOOLS:
+            with self.subTest(tool=tool):
+                self.assertTrue(
+                    any(rule.endswith(f"__aws___{tool}") for rule in denied),
+                    f"{tool} acts on an AWS account and is not denied in .claude/settings.json",
+                )
+
+    def test_deny_rules_name_the_configured_server(self):
+        # A rename in .mcp.json leaves these rules pointing at a server that no
+        # longer exists, which denies nothing and looks exactly like protection.
+        servers = set(claude_servers())
+        for rule in self.denied():
+            if not rule.startswith("mcp__"):
+                continue
+            with self.subTest(rule=rule):
+                server = rule.split("__")[1]
+                self.assertIn(
+                    server,
+                    servers,
+                    f"{rule} denies a tool on '{server}', which is not configured in .mcp.json",
+                )
 
 
 class SharedInstructionTests(unittest.TestCase):
