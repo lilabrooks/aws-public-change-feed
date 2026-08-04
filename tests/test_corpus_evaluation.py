@@ -15,6 +15,12 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import evaluate_corpus as harness  # noqa: E402
 
+from aws_public_change_feed.announcements import (  # noqa: E402
+    MAX_SUMMARY_CHARACTERS,
+    MAX_TITLE_CHARACTERS,
+    TRUNCATION_MARKER,
+    sanitize,
+)
 from aws_public_change_feed.corpus import (  # noqa: E402
     CorpusItem,
     ExpectedMatch,
@@ -162,6 +168,34 @@ class CommittedCorpusTests(unittest.TestCase):
 
     def test_corpus_stays_within_its_size_ceiling(self):
         self.assertLessEqual(CORPUS_PATH.stat().st_size, harness.MAX_CORPUS_BYTES)
+
+    def test_historical_text_is_not_truncated_by_a_foreign_normalization(self):
+        # The guard that would have caught the real failure. Corpus text was
+        # once staged by an ad-hoc fetch truncating at 400 characters while
+        # production keeps 2000, so the harness scored text the runtime never
+        # sees. A summary truncated anywhere but the production limit means it
+        # came from somewhere other than the acquisition path.
+        for entry in load_corpus(CORPUS_PATH):
+            if entry.provenance != "historical":
+                continue
+            if entry.summary.rstrip().endswith(TRUNCATION_MARKER):
+                with self.subTest(item=entry.id):
+                    self.assertGreater(
+                        len(entry.summary),
+                        MAX_SUMMARY_CHARACTERS - 100,
+                        f"{entry.id} is truncated well below the production limit",
+                    )
+
+    def test_historical_text_is_stable_under_production_normalization(self):
+        # Complement, weaker on purpose: this catches un-sanitized HTML and
+        # whitespace drift, but not the truncation case above, because a short
+        # string is already a fixed point of a longer limit.
+        for entry in load_corpus(CORPUS_PATH):
+            if entry.provenance != "historical":
+                continue
+            with self.subTest(item=entry.id):
+                self.assertEqual(sanitize(entry.summary, MAX_SUMMARY_CHARACTERS), entry.summary)
+                self.assertEqual(sanitize(entry.title, MAX_TITLE_CHARACTERS), entry.title)
 
     def test_corpus_covers_the_categories_chapter_04_requires(self):
         categories = {entry.category for entry in load_corpus(CORPUS_PATH)}

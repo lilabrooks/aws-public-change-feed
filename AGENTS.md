@@ -32,6 +32,8 @@ Use “potentially relevant” for environment matches. Public announcements do 
 - Preserve deterministic identity algorithms and null-framed hashing unless a contract version changes.
 - Reject unknown fields in owned schemas.
 - Add a regression test for every rejected configuration or contract mutation.
+- A determinism test is not coverage. `same input, same output` passes while every output is wrong. Any value the canonical bundle commits and the runtime also derives needs a test that recomputes it from the fixture, so the runtime is bound to the contract rather than to itself. `tests/test_identity.py` is the pattern.
+- When a function depends on a particular normalization, apply it inside that function rather than trusting callers. A parameter documented as "already normalized" is where two callers disagree and the mismatch fails silently.
 - Keep examples valid and recalculate release, candidate, and request hashes after relevant fixture edits.
 - Keep runtime credentials out of configuration, inventory, candidates, logs, and fixtures.
 - Use immutable configuration releases and exact object versions.
