@@ -103,8 +103,8 @@ Automatic retry is forbidden because Slack may already contain the message.
 
 1. Identify the active manifest S3 version and the last known good immutable release.
 2. Verify object keys, object version IDs, hashes, schema versions, and application compatibility.
-3. Stop promotion if compare-and-swap failed; another publisher changed the active pointer.
-4. Promote the retained prior manifest through the normal conditional process.
+3. Read the failure code before acting, because they mean different things. `412` means another publisher promoted first: stop, and record both release IDs rather than retrying. `409` leaves the outcome unknown: re-read the pointer and treat the release it names as the current state. `404` means the pointer is missing or carries a delete marker: stop and escalate, and never re-create it by switching to a create precondition.
+4. Promote the retained prior pointer version through the normal conditional process, writing it forward as a new document with a fresh `promoted_at` rather than republishing the historical bytes.
 5. Run a read-only load and shadow match probe.
 6. Confirm watcher, dispatcher, and worker can still load historical releases referenced by in-flight delivery records.
 7. Record the failed and restored release IDs.

@@ -314,7 +314,7 @@
           <p class="compact-eyebrow">Why this architecture</p>
           <div>
             <h2 class="compact-section-title">The design follows the evidence and failure model.</h2>
-            <p class="compact-section-copy">Fourteen accepted ADRs govern the current architecture. ADR-017 narrowed an earlier design to public-feed intelligence and Slack delivery, removing account-scoped health, cost, and external-adapter paths from the product.</p>
+            <p class="compact-section-copy">Fifteen accepted ADRs govern the current architecture. ADR-017 narrowed an earlier design to public-feed intelligence and Slack delivery, removing account-scoped health, cost, and external-adapter paths from the product.</p>
           </div>
         </div>
 
@@ -340,7 +340,7 @@
           <article class="compact-card">
             <span class="compact-tag">Replay and uncertainty</span>
             <h3 class="compact-card-title">Immutable releases and explicit unknown outcomes</h3>
-            <p>Exact S3 object versions reproduce the policy behind a candidate. Slack timeouts become <code>delivery_unknown</code> because an HTTP call cannot commit atomically with DynamoDB.</p>
+            <p>Exact S3 object versions reproduce the policy behind a candidate, and promotion of the active release is guarded by an S3 ETag precondition. Slack timeouts become <code>delivery_unknown</code> because an HTTP call cannot commit atomically with DynamoDB.</p>
             <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004 · Slack guarantees</a>
           </article>
         </div>
@@ -366,7 +366,7 @@
           <article class="evidence-panel">
             <h3>Available evidence</h3>
             <ul class="site-list">
-              <li>6 numbered specifications and 14 accepted ADRs</li>
+              <li>6 numbered specifications and 15 accepted ADRs</li>
               <li>6 strict schemas with one valid cross-file example bundle</li>
               <li>Deterministic matching scored against a labeled corpus of real and authored announcements</li>
               <li>Feed acquisition with host allowlisting, address validation, and DOCTYPE-refusing parsing</li>

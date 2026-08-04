@@ -1,7 +1,7 @@
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import workflow_pins
@@ -72,7 +72,10 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.assertFalse(any("target does not exist" in error for error in errors))
 
     def test_future_reference_date_is_rejected(self):
-        markdown = "# Test\n\nhttps://example.com\n\nReferences verified: 2026-08-05.\n"
+        # Derived from AS_OF so moving the fixed clock cannot silently make this
+        # marker a past date and stop exercising the future-date rejection.
+        tomorrow = AS_OF + timedelta(days=1)
+        markdown = f"# Test\n\nhttps://example.com\n\nReferences verified: {tomorrow.isoformat()}.\n"
         directory, root = self.make_repository(markdown)
         with directory:
             errors, _, _, _ = self.validate(root)

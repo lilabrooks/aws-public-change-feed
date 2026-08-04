@@ -44,13 +44,13 @@ Customer-managed keys require exact grants for each service and role. Key polici
 
 - Read deployment sources from the delivery pipeline.
 - Create objects only under new release prefixes.
-- Read back exact versions.
-- Conditionally update the active manifest key.
+- Read back exact versions, which needs `s3:GetObjectVersion`.
+- Conditionally update the active manifest key, which needs `s3:GetObject` for the precondition read alongside `s3:PutObject`.
 - No Slack credential access.
 
 ### Feed watcher
 
-- Read the active manifest and exact release object versions.
+- Read the active manifest and exact release object versions, needing `s3:GetObject` for the pointer and `s3:GetObjectVersion` for the release objects.
 - Read and conditionally update source state.
 - Put candidate and delivery records and response-run markers.
 - Write bounded raw snapshots under the designated prefix.

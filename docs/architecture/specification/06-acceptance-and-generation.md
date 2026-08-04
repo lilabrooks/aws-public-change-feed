@@ -10,6 +10,20 @@
 - Given a rejected configuration or event mutation, a regression test proves the rejection.
 - Given an older contract version, runtime either has an explicit compatible reader or rejects it before state changes and secret reads.
 
+## Release publication acceptance
+
+Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-publication-and-promotion.md).
+
+- Given a release object write, the request carries `If-None-Match: *`, and an existing object at that key returns `412` and is adopted only when its SHA-256 matches the computed hash.
+- Given a promotion, the `If-Match` ETag comes from the same read that produced the state the publisher decided against.
+- Given a stale ETag, promotion returns `412`, publication stops, both release IDs are reported, and no retry re-issues the write.
+- Given a first promotion into a deployment with no pointer, the write uses `If-None-Match: *`, and a `412` there sends the publisher back to the `If-Match` path.
+- Given `409` on promotion, the publisher re-reads the pointer and records convergence on the desired release rather than attributing the write to itself.
+- Given `404` on an `If-Match` promotion, publication stops and raises an operational alarm, and no automatic fallback to `If-None-Match` re-creates a deleted pointer.
+- Given a read that supplies a `versionId`, the role holds `s3:GetObjectVersion`; a policy granting only `s3:GetObject` fails that read.
+- Given a rollback, the publisher reads the historical pointer version by ID and writes a new pointer carrying a fresh `promoted_at`, so the restored pointer never reproduces the ETag of the version it restores.
+- Given concurrent publishers promoting different releases, exactly one pointer version wins each compare-and-swap and the loser stops without overwriting.
+
 ## Feed acquisition acceptance
 
 - Given an unapproved scheme, host, port, credential-bearing URL, private or special IP, DNS rebind, redirect, invalid certificate, oversized body, unsupported content type, entity expansion, excessive items, excessive characters, or timeout, the fetch fails closed and does not advance validators.
@@ -116,6 +130,8 @@ Each step ends with executable evidence before the next layer treats it as a dep
 - One route, shared destination, separate destinations, disabled environment, changed profile, and route isolation.
 - Every delivery transition, queue duplicate, state-write failure after SQS acceptance, `429`, bounded retry, terminal error, timeout, worker crash, stale lease, DLQ, and manual replay.
 - Release hash mismatch, incompatible version, concurrent promotion, retained rollback, and expired terminal replacement.
+- Precondition responses for release publication: `412` on create with matching and mismatching hashes, `412` on a stale promotion ETag, `409` on promotion with the desired release both present and absent on re-read, `404` on `If-Match` against a missing pointer, and a first promotion through `If-None-Match: *`.
+- An IAM policy granting `s3:GetObject` but not `s3:GetObjectVersion`, to prove exact-version reads fail closed.
 
 ## Generation rules
 
