@@ -9,24 +9,20 @@ import sys
 import unicodedata
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import unquote_plus, urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import yaml
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+# Chapter 04 requires one framing helper for runtime and test vectors, so the
+# validator shares the runtime implementation rather than copying it.
+from aws_public_change_feed.identity import canonical_public_url, digest_parts  # noqa: E402
+
 MINIMUM_PYTHON = (3, 12)
 GENERIC_ALIASES = {"cluster", "engine version", "runtime", "version"}
-TRACKING_QUERY_KEYS = {
-    "sc_channel",
-    "trk",
-    "trkcampaign",
-    "utm_campaign",
-    "utm_content",
-    "utm_medium",
-    "utm_source",
-    "utm_term",
-}
 RUNTIME_FORBIDDEN_KEYS = {
     "account_id",
     "approved_webhook_hosts",
@@ -117,12 +113,6 @@ def normalized_text(value: str) -> str:
     return " ".join(normalized.casefold().split())
 
 
-def digest_parts(*values: str) -> str:
-    if any("\0" in value for value in values):
-        raise ValueError("null-framed identity fields cannot contain null characters")
-    return hashlib.sha256("\0".join(values).encode()).hexdigest()
-
-
 def queue_dispatch_id(request_id: str, generation: int) -> str:
     if not re.fullmatch(r"[a-f0-9]{64}", request_id):
         raise ValueError("queue dispatch request_id must be a lowercase SHA-256 digest")
@@ -133,21 +123,6 @@ def queue_dispatch_id(request_id: str, generation: int) -> str:
 
 def serialized_size(value) -> int:
     return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-
-
-def canonical_public_url(raw_url: str) -> str:
-    parsed = urlsplit(raw_url)
-    host = (parsed.hostname or "").casefold()
-    port = parsed.port
-    netloc = host if port in (None, 443) else f"{host}:{port}"
-    path = parsed.path or "/"
-    query_parts = []
-    for part in parsed.query.split("&") if parsed.query else []:
-        encoded_key = part.partition("=")[0]
-        if unquote_plus(encoded_key).casefold() not in TRACKING_QUERY_KEYS:
-            query_parts.append(part)
-    query = "&".join(query_parts)
-    return urlunsplit((parsed.scheme.casefold(), netloc, path, query, ""))
 
 
 def parsed_timestamp(value: str) -> datetime:
