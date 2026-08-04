@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="An AI-assisted reference architecture for turning public AWS announcements into explainable, route-scoped Slack review candidates.">
+  <meta name="description" content="A service architecture for turning public AWS announcements into explainable, route-scoped Slack review candidates.">
   <meta name="author" content="Lila Brooks">
   <meta name="theme-color" content="#111827">
   <meta property="og:type" content="website">
   <meta property="og:title" content="AWS Public Change Alerting">
-  <meta property="og:description" content="How AI helped shape a deterministic AWS architecture for public-change intelligence and durable Slack delivery.">
+  <meta property="og:description" content="A deterministic AWS architecture for public-change intelligence, explainable review candidates, and durable Slack delivery.">
   <meta property="og:url" content="https://lilabrooks.github.io/aws-public-change-feed/">
   <link rel="canonical" href="https://lilabrooks.github.io/aws-public-change-feed/">
   <link rel="license" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/LICENSE">
@@ -142,7 +142,7 @@
     </a>
     <div class="compact-header-actions">
       <nav class="compact-nav" aria-label="Primary navigation">
-        <a href="#ai">AI contribution</a>
+        <a href="#contracts">Contracts</a>
         <a href="#flow">AWS architecture</a>
         <a href="#decisions">Reasons</a>
         <a href="#evidence">Evidence</a>
@@ -154,10 +154,10 @@
   <main id="content">
     <div class="compact-hero compact-shell" id="overview">
       <div>
-        <p class="compact-eyebrow">AI-assisted reference architecture</p>
+        <p class="compact-eyebrow">Public AWS change intelligence</p>
         <h1 class="compact-title">Explainable AWS public-change alerting, <em>designed through explicit decisions.</em></h1>
         <div class="compact-actions">
-          <a class="compact-button compact-button-primary" href="#ai">How AI was used</a>
+          <a class="compact-button compact-button-primary" href="#contracts">See the contracts</a>
           <a class="compact-button" href="#flow">See the AWS flow</a>
         </div>
       </div>
@@ -196,40 +196,40 @@
       </div>
     </section>
 
-    <section class="compact-section" id="ai">
+    <section class="compact-section" id="contracts">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">AI contribution</p>
+          <p class="compact-eyebrow">Contracts</p>
           <div>
-            <h2 class="compact-section-title">OpenAI Codex helped turn architecture decisions into executable evidence.</h2>
-            <p class="compact-section-copy">OpenAI Codex, using GPT-5, worked as an architecture and engineering assistant under my architectural direction. The work was iterative: define the product question, challenge ambiguous boundaries, record decisions, encode contracts, run checks, and revise until the repository agreed with itself.</p>
+            <h2 class="compact-section-title">The contracts are executable, and the checks run against them.</h2>
+            <p class="compact-section-copy">Six strict JSON Schemas define the configuration, inventory, release, candidate, and delivery-request shapes. One canonical example bundle satisfies all of them at once, so the files prove both their individual shape and the behavior they share.</p>
           </div>
         </div>
 
         <div class="evidence-grid">
           <article class="evidence-panel">
-            <h3>What OpenAI Codex did</h3>
+            <h3>What the bundle proves</h3>
             <ul class="site-list">
-              <li>Drafted and revised the numbered specifications and ADRs from owner decisions.</li>
-              <li>Created strict schemas, canonical examples, semantic validators, and mutation tests.</li>
-              <li>Checked scope language, identity rules, cross-file references, hashes, and CI behavior.</li>
-              <li>Built repository automation, security settings, and this public architecture page.</li>
+              <li>Each example passes the schema that owns it, and unknown fields are rejected.</li>
+              <li>Cross-file projections, references, and route scoping resolve across the whole bundle.</li>
+              <li>Release, candidate, and request hashes recompute to the committed values.</li>
+              <li>Deterministic identities reproduce across replays from fixed test vectors.</li>
             </ul>
           </article>
           <article class="evidence-panel">
-            <h3>What the human architect owned</h3>
-            <p>I reviewed and studied each architecture proposal and ADR, challenged its assumptions, and made the final decision represented by every accepted record.</p>
+            <h3>How a contract change is held</h3>
+            <p>The bundle is the starting point for the negative tests: every mutation derived from it must fail validation.</p>
             <ul class="site-list">
-              <li>Evaluated alternatives, failure modes, trust boundaries, and operational consequences before accepting a design.</li>
-              <li>Decided the product scope, identity model, state ownership, delivery guarantees, version policy, and implementation limits.</li>
-              <li>Defined the acceptance bar and the evidence required before deployment or production claims.</li>
-              <li>Approved the final architecture, public wording, licensing, repository policy, and changes accepted into the project.</li>
+              <li>Every rejected configuration or contract mutation carries a regression test.</li>
+              <li>A contract edit updates the schema, example, semantic validator, and tests together.</li>
+              <li>Edits touching identity recalculate every dependent hash in the same change.</li>
+              <li>Specification, ADRs, and this page move with the contracts or the build fails.</li>
             </ul>
           </article>
         </div>
 
-        <aside class="site-note" aria-label="AI evidence boundary">
-          <p><strong>AI-assisted engineering is part of the project record.</strong> Automated checks validate repository contracts and consistency. Production claims still require implemented runtime code, deployment tests, measured feed quality, and live delivery evidence.</p>
+        <aside class="site-note" aria-label="Contract evidence boundary">
+          <p><strong>Validated contracts are not production evidence.</strong> These checks prove the repository agrees with itself. Production claims still require implemented runtime code, deployment tests, measured feed quality, and live delivery evidence.</p>
         </aside>
       </div>
     </section>
@@ -391,7 +391,7 @@
           <p class="compact-eyebrow">Authoritative source</p>
           <div>
             <h2 class="compact-section-title">The repository owns the detailed requirements.</h2>
-            <p class="compact-section-copy">This page is the concise explanation. The goal, numbered specification, accepted ADRs, schemas, examples, validators, and tests govern the architecture. The repository indexes that knowledge and guards it with a source-to-knowledge map, staleness checks, and a dated change log, so the documents and the implementation move together.</p>
+            <p class="compact-section-copy">This page is the concise explanation. The goal, numbered specification, accepted ADRs, schemas, examples, validators, and tests govern the architecture. The repository indexes that knowledge from the architecture index and guards it with executable contract fixtures, semantic validators, and regression tests, so the documents and the implementation move together.</p>
             <div class="compact-actions">
               <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed">Open the repository</a>
               <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/GOAL.md">Read the goal</a>

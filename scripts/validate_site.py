@@ -34,7 +34,7 @@ PUBLIC_NARRATIVE_PREFIXES = (
     "examples/",
 )
 PUBLIC_NARRATIVE_FILES = {"docs/GOAL.md"}
-REQUIRED_PAGE_IDS = {"content", "value", "ai", "flow", "decisions", "evidence", "source"}
+REQUIRED_PAGE_IDS = {"content", "value", "contracts", "flow", "decisions", "evidence", "source"}
 
 
 class PublicPageParser(HTMLParser):
