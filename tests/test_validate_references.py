@@ -72,8 +72,11 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.assertFalse(any("target does not exist" in error for error in errors))
 
     def test_future_reference_date_is_rejected(self):
-        # Derived from AS_OF so moving the fixed clock cannot silently make this
-        # marker a past date and stop exercising the future-date rejection.
+        # Derived from AS_OF so advancing the fixed clock does not also require
+        # editing this fixture. A hardcoded marker here is not a silent hazard:
+        # once AS_OF passes it, the date is no longer in the future, the
+        # validator reports nothing, and this assertion fails. It fails loudly,
+        # just at a moment unrelated to the change that caused it.
         tomorrow = AS_OF + timedelta(days=1)
         markdown = f"# Test\n\nhttps://example.com\n\nReferences verified: {tomorrow.isoformat()}.\n"
         directory, root = self.make_repository(markdown)
