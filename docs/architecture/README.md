@@ -31,7 +31,7 @@ The [goal](../GOAL.md) defines the outcome and milestones. The [operations runbo
 - [ADR-016: Production preflight and event contracts](../adr/016-production-preflight-and-event-contracts.md)
 - [ADR-017: Public-feed-only product scope](../adr/017-public-feed-only-product-scope.md)
 - [ADR-018: Corpus evaluation and matching thresholds](../adr/018-corpus-evaluation-and-matching-thresholds.md)
-- [ADR-019: S3 preconditions for release publication and promotion](../adr/019-s3-preconditions-for-release-publication-and-promotion.md) (Proposed)
+- [ADR-019: S3 preconditions for release publication and promotion](../adr/019-s3-preconditions-for-release-publication-and-promotion.md)
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 

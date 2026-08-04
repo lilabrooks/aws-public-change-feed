@@ -1,7 +1,8 @@
 # ADR-019: S3 preconditions for release publication and promotion
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-04
+- Amends: [ADR-014](014-immutable-release-artifacts-and-retention.md)
 
 ## Context
 

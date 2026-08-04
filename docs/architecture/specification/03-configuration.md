@@ -89,7 +89,7 @@ S3 has no version-ID write precondition. The ETag is the concurrency token for p
 
 Rollback reads an earlier retained pointer version by ID and writes its release references forward through the same `If-Match` path, with a fresh `promoted_at`. It never overwrites a release, and never republishes historical bytes unchanged.
 
-This sequence follows [ADR-019](../../adr/019-s3-preconditions-for-release-publication-and-promotion.md), which is Proposed. It replaces a prior sequence that specified a version-ID write precondition S3 does not offer. If ADR-019 is not accepted, this section changes with it.
+This sequence follows [ADR-019](../../adr/019-s3-preconditions-for-release-publication-and-promotion.md).
 
 ## Change review
 

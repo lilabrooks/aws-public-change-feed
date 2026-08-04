@@ -12,7 +12,7 @@
 
 ## Release publication acceptance
 
-Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-publication-and-promotion.md), which is Proposed. These criteria change if it is not accepted.
+Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-publication-and-promotion.md).
 
 - Given a release object write, the request carries `If-None-Match: *`, and an existing object at that key returns `412` and is adopted only when its SHA-256 matches the computed hash.
 - Given a promotion, the `If-Match` ETag comes from the same read that produced the state the publisher decided against.

@@ -1,8 +1,8 @@
 # ADR-014: Immutable release artifacts and retention
 
-- Status: Accepted
+- Status: Accepted, amended
 - Date: 2026-07-12
-- Amendment pending: [ADR-019](019-s3-preconditions-for-release-publication-and-promotion.md) (Proposed) corrects two clauses below. S3 has no version-ID write precondition, so promotion compares ETags. The separate "immutable manifest" write is dropped: `active-versions.json` is the manifest, and its versions are the retained history. Everything else here stands.
+- Amended by: [ADR-019](019-s3-preconditions-for-release-publication-and-promotion.md) on 2026-08-04. Two clauses in the decision below no longer govern. Everything else here stands.
 
 ## Context
 
@@ -11,6 +11,8 @@ Candidates and delivery requests must remain reproducible across retries and man
 ## Decision
 
 Publish `config.yaml` and `inventory.json` under a new write-once release prefix. Compute their SHA-256 hashes and a release ID from the ordered manifest fields. Write an immutable manifest, then promote the active pointer with a compare-and-swap condition against the previously observed S3 version.
+
+> **Amended by ADR-019.** The last sentence above is preserved as the original record and no longer governs. There is no separate immutable manifest object: `active-versions.json` is the manifest, and its versions are the retained history. Promotion compares the pointer's **ETag** with `If-Match`, because S3 has no version-ID write precondition. Version IDs remain correct everywhere else in this decision, including the paragraph below.
 
 Every candidate embeds the release ID, object keys, version IDs, hashes, schema versions, and application version. The worker loads those exact object versions and verifies hashes before rendering.
 
