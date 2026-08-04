@@ -75,7 +75,8 @@ Three differences between the hosts are deliberate:
 ## Repository layout
 
 - `README.md`: human entry point and current status.
-- `.mcp.json` and `.codex/config.toml`: the AWS Knowledge MCP server, configured for Claude Code and Codex respectively. Credential-free and read-only. Use it for AWS documentation and API semantics, and for discovering how AWS words announcements. Never use it to source corpus text or announcement content: it returns web-page bodies, while corpus items must carry the feed item's description as normalized by the runtime acquisition path, and matching is literal on exact characters.
+- `.mcp.json` and `.codex/config.toml`: the AWS Knowledge MCP server, configured for Claude Code and Codex respectively. Credential-free and read-only. Use it for AWS documentation and API semantics, and for discovering how AWS words announcements. Never use it to source corpus text or announcement content: it returns web-page bodies, while corpus items must carry the feed item's description as normalized by the runtime acquisition path, and matching is literal on exact characters. `docs/agent-tooling.md` carries the reasoning, the vocabulary-discovery workflow, and the judgement calls open to challenge.
+- `docs/agent-tooling.md`: handoff notes on when the MCP server helps, where it must not be used, and what evidence would change those conclusions.
 - `docs/GOAL.md`: product outcome, scope, and implementation milestones.
 - `docs/architecture/README.md`: architecture index and document map.
 - `docs/architecture/specification/`: normative requirements in reading order.
