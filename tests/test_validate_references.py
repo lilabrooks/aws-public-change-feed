@@ -15,7 +15,7 @@ import validate_references as validator  # noqa: E402
 # A fixed clock keeps the committed-reference assertions deterministic. Move it
 # forward when a document is verified on a later date; the 180-day warning and
 # 365-day maximum leave ample room before older markers need re-verification.
-AS_OF = date(2026, 8, 3)
+AS_OF = date(2026, 8, 4)
 VALID_LYCHEE_CONFIG = (ROOT / "lychee.toml").read_text(encoding="utf-8")
 
 
@@ -72,7 +72,7 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.assertFalse(any("target does not exist" in error for error in errors))
 
     def test_future_reference_date_is_rejected(self):
-        markdown = "# Test\n\nhttps://example.com\n\nReferences verified: 2026-08-04.\n"
+        markdown = "# Test\n\nhttps://example.com\n\nReferences verified: 2026-08-05.\n"
         directory, root = self.make_repository(markdown)
         with directory:
             errors, _, _, _ = self.validate(root)

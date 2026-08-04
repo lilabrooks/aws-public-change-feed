@@ -1,1 +1,5 @@
 # Each future pattern needs a reason and ISO expiry on the two comment lines directly above it.
+
+# Reason: JSON-RPC endpoint for the AWS MCP server, not a browsable page. It answers POST and returns 405 to the GET a link checker issues. Its reachability is covered by the unauthenticated probe recorded in docs/agent-tooling.md.
+# Expires: 2027-08-04
+https://aws-mcp\.us-east-1\.api\.aws/mcp
