@@ -1,0 +1,10 @@
+# Codex project configuration.
+#
+# Loaded for trusted projects only. If the server does not appear, trust this
+# project in Codex, then check with /mcp.
+#
+# Keep this in sync with .mcp.json, which carries the same server for Claude
+# Code. The two hosts read different files; there is no shared format.
+
+[mcp_servers.aws-knowledge]
+url = "https://knowledge-mcp.global.api.aws"
