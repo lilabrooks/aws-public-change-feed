@@ -18,6 +18,16 @@ import validate_references as validator  # noqa: E402
 AS_OF = date(2026, 8, 4)
 VALID_LYCHEE_CONFIG = (ROOT / "lychee.toml").read_text(encoding="utf-8")
 
+# Fixture dates are derived from AS_OF so each one states the condition it
+# exercises rather than a literal that only satisfies it under today's clock.
+# Moving AS_OF forward moves them with it.
+WARNING_AGE_MARKER = (AS_OF - timedelta(days=203)).isoformat()
+MAXIMUM_AGE_MARKER = (AS_OF - timedelta(days=389)).isoformat()
+# The validator treats an exclusion as expired only once its expiry falls
+# strictly before as_of, so AS_OF itself is still current.
+UNEXPIRED_EXCLUSION = (AS_OF + timedelta(days=28)).isoformat()
+EXPIRED_EXCLUSION = (AS_OF - timedelta(days=1)).isoformat()
+
 
 class ReferenceValidatorTests(unittest.TestCase):
     def make_repository(self, markdown: str, exclusions: str = "", lychee_config: str = VALID_LYCHEE_CONFIG):
@@ -85,7 +95,7 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.assertTrue(any("in the future" in error for error in errors))
 
     def test_reference_age_warns_after_180_days(self):
-        markdown = "# Test\n\nhttps://example.com\n\nReferences verified: 2026-01-13.\n"
+        markdown = f"# Test\n\nhttps://example.com\n\nReferences verified: {WARNING_AGE_MARKER}.\n"
         directory, root = self.make_repository(markdown)
         with directory:
             errors, warnings, _, _ = self.validate(root)
@@ -93,7 +103,7 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.assertTrue(any("review warning after 180" in warning for warning in warnings))
 
     def test_reference_age_fails_after_365_days(self):
-        markdown = "# Test\n\nhttps://example.com\n\nReferences verified: 2025-07-12.\n"
+        markdown = f"# Test\n\nhttps://example.com\n\nReferences verified: {MAXIMUM_AGE_MARKER}.\n"
         directory, root = self.make_repository(markdown)
         with directory:
             errors, _, _, _ = self.validate(root)
@@ -245,7 +255,7 @@ class ReferenceValidatorTests(unittest.TestCase):
     def test_lychee_exclusion_requires_reason_and_expiry(self):
         cases = {
             "missing both": "^https://example\\.com$\n",
-            "missing reason": "# Expires: 2026-09-01\n^https://example\\.com$\n",
+            "missing reason": f"# Expires: {UNEXPIRED_EXCLUSION}\n^https://example\\.com$\n",
             "missing expiry": "# Reason: automated requests are blocked\n^https://example\\.com$\n",
         }
         for label, exclusions in cases.items():
@@ -259,7 +269,7 @@ class ReferenceValidatorTests(unittest.TestCase):
         cases = {
             "malformed": "# Reason: blocked\n# Expires: next-week\n^https://example\\.com$\n",
             "noncanonical": "# Reason: blocked\n# Expires: 20260713\n^https://example\\.com$\n",
-            "expired": "# Reason: blocked\n# Expires: 2026-07-12\n^https://example\\.com$\n",
+            "expired": f"# Reason: blocked\n# Expires: {EXPIRED_EXCLUSION}\n^https://example\\.com$\n",
         }
         for label, exclusions in cases.items():
             with self.subTest(label=label):
@@ -276,7 +286,8 @@ class ReferenceValidatorTests(unittest.TestCase):
 
     def test_current_documented_lychee_exclusion_is_accepted(self):
         exclusions = (
-            "# Reason: host rejects identified automated clients\n# Expires: 2026-09-01\n^https://example\\.com$\n"
+            "# Reason: host rejects identified automated clients\n"
+            f"# Expires: {UNEXPIRED_EXCLUSION}\n^https://example\\.com$\n"
         )
         directory, root = self.make_repository("# Test\n", exclusions)
         with directory:
@@ -285,11 +296,13 @@ class ReferenceValidatorTests(unittest.TestCase):
 
     def test_lychee_exclusion_metadata_must_be_adjacent_and_ordered(self):
         cases = {
-            "blank before pattern": ("# Reason: blocked\n# Expires: 2026-09-01\n\n^https://example\\.com$\n"),
-            "comment before pattern": (
-                "# Reason: blocked\n# Expires: 2026-09-01\n# Temporary note\n^https://example\\.com$\n"
+            "blank before pattern": (
+                f"# Reason: blocked\n# Expires: {UNEXPIRED_EXCLUSION}\n\n^https://example\\.com$\n"
             ),
-            "reversed metadata": ("# Expires: 2026-09-01\n# Reason: blocked\n^https://example\\.com$\n"),
+            "comment before pattern": (
+                f"# Reason: blocked\n# Expires: {UNEXPIRED_EXCLUSION}\n# Temporary note\n^https://example\\.com$\n"
+            ),
+            "reversed metadata": (f"# Expires: {UNEXPIRED_EXCLUSION}\n# Reason: blocked\n^https://example\\.com$\n"),
         }
         for label, exclusions in cases.items():
             with self.subTest(label=label):
