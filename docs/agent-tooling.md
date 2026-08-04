@@ -79,7 +79,7 @@ The server is the default path for AWS documentation. It is not the only path, a
 
 The last row is the one to keep. Checking the server's output with the server is not a check. The verbatim finding above only surfaced because a `current_awareness` summary was compared against the live page through a different tool.
 
-Both routes earn their place. The server answered S3 conditional writes in one call, with the exact `If-Match` and `If-None-Match` semantics milestone 2 needs. Searching it for the `managed runtimes` announcement returned a general service-availability page rather than the App Runner release note that ordinary web search finds — the same gap in ranking that made the term a corpus miss in the first place.
+Both routes earn their place. The server answered S3 conditional writes in one call, with the exact `If-Match` and `If-None-Match` semantics milestone 2 needs. Searching it for the `managed runtimes` announcement returned a general service-availability page, while ordinary web search returned the [App Runner runtime end-of-support release note](https://docs.aws.amazon.com/apprunner/latest/relnotes/release-2025-08-28-runtime-eos-update.html) as its first result — the same gap in ranking that made the term a corpus miss in the first place.
 
 ## The workflow for vocabulary discovery
 
