@@ -5,7 +5,7 @@ MYPY_PATHS := $(PYTHON_PATHS)
 YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml $(wildcard .github/workflows)
 
 .PHONY: help install format format-check lint lint-python lint-yaml typecheck validate validate-config \
-	validate-references validate-site evaluate-corpus references-online test whitespace check clean
+	validate-references validate-site evaluate-corpus references-online screen-feeds test whitespace check clean
 
 help:
 	@echo "Available targets:"
@@ -17,6 +17,7 @@ help:
 	@echo "  validate      Validate contracts, references, local links, review dates, and the public page"
 	@echo "  evaluate-corpus    Score matching against the labeled corpus and approved thresholds"
 	@echo "  references-online  Check external links with Lychee (requires network)"
+	@echo "  screen-feeds       Screen live feeds against the rules (requires network)"
 	@echo "  test          Run the unittest suite"
 	@echo "  whitespace    Check changed files for Git whitespace errors"
 	@echo "  check         Run every non-mutating repository check"
@@ -59,6 +60,9 @@ evaluate-corpus:
 
 references-online: validate-references
 	$(LYCHEE) .
+
+screen-feeds:
+	$(PYTHON) scripts/screen_feeds.py
 
 test:
 	$(PYTHON) -m unittest discover -s tests

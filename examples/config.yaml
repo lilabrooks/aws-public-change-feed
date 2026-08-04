@@ -125,7 +125,6 @@ risk_rules:
         - new version
         - new versions
         - version update
-        - version updates
         - runtime update
         - runtime updates
         - managed runtime

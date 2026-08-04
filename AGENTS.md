@@ -40,6 +40,8 @@ Use “potentially relevant” for environment matches. Public announcements do 
 - Add or update an ADR when a change alters product scope, trust boundaries, identity, delivery guarantees, state ownership, or version policy. Continue the three-digit numbering, mark new decisions `- Status: Proposed` for the owner's review, and list the ADR in `docs/architecture/README.md`.
 - When source changes, update the documents that govern it: `schemas/`, `examples/`, and `scripts/validate_config.py` are governed by `docs/architecture/specification/03-configuration.md` and ADR-011; `src/` and `corpus/` are governed by chapter 04 and ADR-009, with corpus rules and thresholds in ADR-018; `tests/` is governed by chapter 06. If the governing document does not need to change, say why in the commit message or pull request.
 - A matcher or configuration change reruns `make evaluate-corpus` and records the reported figures. Chapter 04 requires the promotion record; the harness prints it.
+- Corpus text comes from the runtime acquisition path, never from an ad-hoc fetch. Text normalized differently from production makes both the labels and any term screen measure something the matcher never sees. A shorter-truncated corpus previously hid a false positive that only appeared in the full text.
+- Adding or removing a risk term reruns `make screen-feeds` when network is available, and every reported unlabeled match is either labeled into the corpus or traced to the rule that fired. A term with no true positive and any false positive is removed rather than excluded case by case.
 - Keep `docs/architecture/README.md` current when specification chapters or ADRs are added or renamed. It is the single index and the human reading order.
 
 ## Verification
