@@ -53,25 +53,31 @@ def _is_word_character(value: str, index: int) -> bool:
     return _WORD.match(value[index]) is not None
 
 
-def found_spans(haystack: str, needle: str) -> tuple[Span, ...]:
-    """Return every phrase-boundary occurrence of ``needle`` within ``haystack``.
+def found_spans(folded_haystack: str, folded_needle: str) -> tuple[Span, ...]:
+    """Return every phrase-boundary occurrence of the needle in the haystack.
 
-    Both arguments must already be folded. An empty needle never matches, so a
-    blank configured alias cannot make every announcement match.
+    Both arguments must already have passed through `fold`. The parameter names
+    say so because getting it wrong fails silently: unfolded text simply does
+    not match, which reads as a recall miss rather than an error. Callers that
+    hold raw text should fold at the boundary, as `matching` does, or use a
+    helper that folds internally.
+
+    An empty needle never matches, so a blank configured alias cannot make
+    every announcement match.
     """
 
-    if not needle or not haystack:
+    if not folded_needle or not folded_haystack:
         return ()
 
     spans: list[Span] = []
-    start = haystack.find(needle)
+    start = folded_haystack.find(folded_needle)
     while start != -1:
-        end = start + len(needle)
-        leading_is_word = _is_word_character(needle, 0)
-        trailing_is_word = _is_word_character(needle, len(needle) - 1)
-        boundary_before = not leading_is_word or not _is_word_character(haystack, start - 1)
-        boundary_after = not trailing_is_word or not _is_word_character(haystack, end)
+        end = start + len(folded_needle)
+        leading_is_word = _is_word_character(folded_needle, 0)
+        trailing_is_word = _is_word_character(folded_needle, len(folded_needle) - 1)
+        boundary_before = not leading_is_word or not _is_word_character(folded_haystack, start - 1)
+        boundary_after = not trailing_is_word or not _is_word_character(folded_haystack, end)
         if boundary_before and boundary_after:
             spans.append(Span(start, end))
-        start = haystack.find(needle, start + 1)
+        start = folded_haystack.find(folded_needle, start + 1)
     return tuple(spans)

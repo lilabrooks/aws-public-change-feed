@@ -58,6 +58,15 @@ class NormalizeTests(unittest.TestCase):
     def test_empty_needle_never_matches(self):
         self.assertEqual(found_spans("anything", ""), ())
 
+    def test_unfolded_input_fails_silently_which_is_why_callers_must_fold(self):
+        # Documents the trap rather than defending against it. Unfolded input
+        # returns no spans instead of raising, so a caller that forgets to fold
+        # sees a recall miss with no error. Worse, it is intermittent: it only
+        # bites when case or Unicode differ, so it works by accident whenever
+        # the feed's capitalization happens to match the configured alias.
+        self.assertEqual(found_spans("AMAZON EKS ends support", "Amazon EKS"), ())
+        self.assertEqual(found_spans(fold("AMAZON EKS ends support"), fold("Amazon EKS")), (Span(0, 10),))
+
 
 class MatchingTests(unittest.TestCase):
     def test_service_and_risk_evidence_produces_a_match(self):
