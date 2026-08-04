@@ -2,6 +2,345 @@
   "corpus_version": 1,
   "items": [
     {
+      "id": "aws-aurora-dsql-multi-region",
+      "provenance": "historical",
+      "category": "overlapping-services",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/amazon-aurora-dsql-adds-multi-region-clusters-four-more-regions/",
+      "title": "Amazon Aurora DSQL adds multi-Region cluster support in four more Regions",
+      "summary": "Starting today, Amazon Aurora DSQL supports multi-Region clusters in four additional AWS Regions: Europe (Stockholm), Europe (Spain), Asia Pacific (Mumbai), and Asia Pacific (Singapore). Aurora DSQL is the fastest serverless, distributed SQL database, with active-active high availability and multi-Region strong consistency. Each multi-Region cluster provides a writable endpoint in both peered …",
+      "expected_matches": [],
+      "notes": "Aurora DSQL is a separate service from the Aurora engines the rds alias covers, and this is Region availability."
+    },
+    {
+      "id": "aws-bulletin-aurora-postgresql-cves",
+      "provenance": "historical",
+      "category": "security-guidance",
+      "canonical_url": "https://aws.amazon.com/security/security-bulletins/rss/2026-039-aws/",
+      "title": "CVE-2026-11400 and CVE-2026-11401",
+      "summary": "Bulletin ID: 2026-039-AWS Scope: AWS Content Type: Important (requires attention) Publication Date: 06/025/2026 12:15 PM PDT Description: Amazon Aurora PostgreSQL a fully managed relational database engine that's compatible with PostgreSQL. We identified CVE-2026-11400(JDBC) and CVE-2026-11401(Go), an issue in AWS Wrappers for Amazon Aurora PostgreSQL will allow for privilege escalation to …",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "security"
+        }
+      ],
+      "notes": "Security bulletin naming Aurora PostgreSQL."
+    },
+    {
+      "id": "aws-bulletin-aurora-privilege-escalation",
+      "provenance": "historical",
+      "category": "security-guidance",
+      "canonical_url": "https://aws.amazon.com/security/security-bulletins/rss/aws-2025-028/",
+      "title": "Privilege Escalation in Aurora PostgreSQL using AWS JDBC Wrapper, AWS Go Wrapper, AWS NodeJS Wrapper, AWS Python Wrapper, AWS PGSQL ODBC driver",
+      "summary": "Bulletin ID: AWS-2025-028 Scope: AWS Content Type: Important (requires attention) Publication Date: 2025/11/10 10:15 AM PDT Description: Amazon Aurora PostgreSQL a fully managed relational database engine that's compatible with PostgreSQL. We identified CVE-2025-12967, an issue in AWS Wrappers for Amazon Aurora PostgreSQL may allow for privilege escalation to rds_superuser role. A low privilege …",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "security"
+        }
+      ],
+      "notes": "Privilege escalation affecting Aurora PostgreSQL through several client wrappers."
+    },
+    {
+      "id": "aws-bulletin-containerd-cri-plugin",
+      "provenance": "historical",
+      "category": "security-guidance",
+      "canonical_url": "https://aws.amazon.com/security/security-bulletins/rss/2026-046-aws/",
+      "title": "Issue with containerd CRI Plugin - CVE-2026-50195, CVE-2026-53488, CVE-2026-53492, CVE-2026-53489, CVE-2026-47262",
+      "summary": "Bulletin ID: 2026-046-AWS Scope: AWS Content Type: Important (requires attention) Publication Date: 06/18/2026 17:30 PM PDT Description: containerd is an open-source container runtime used by Kubernetes via the Container Runtime Interface (CRI) plugin. It underpins AWS managed container services including Amazon Elastic Kubernetes Service (Amazon EKS), Amazon Elastic Container Service (Amazon …",
+      "expected_matches": [
+        {
+          "service_id": "eks",
+          "risk_type": "security"
+        }
+      ],
+      "notes": "Security bulletin covering containerd, with EKS among the affected services."
+    },
+    {
+      "id": "aws-bulletin-jdbc-wrapper-deserialization",
+      "provenance": "historical",
+      "category": "security-guidance",
+      "canonical_url": "https://aws.amazon.com/security/security-bulletins/rss/2026-051-aws/",
+      "title": "CVE-2026-14265- Deserialization of Untrusted Data in AWS Advanced JDBC Wrapper RemoteQueryCachePlugin",
+      "summary": "Bulletin ID: 2026-051-AWS Scope: AWS Content Type: Important (requires attention) Publication Date: 07/01/2026 12:45 PM PDT Description: The AWS Advanced JDBC Wrapper is an open-source JDBC driver wrapper that extends a JDBC driver to enable Amazon Aurora and AWS Cloud features such as failover handling and caching. We identified CVE-2026-14265, an issue in the RemoteQueryCachePlugin of the AWS …",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "security"
+        }
+      ],
+      "notes": "Security bulletin for a database client wrapper used against Aurora and RDS."
+    },
+    {
+      "id": "aws-bulletin-mariadb-audit-plugin",
+      "provenance": "historical",
+      "category": "security-guidance",
+      "canonical_url": "https://aws.amazon.com/security/security-bulletins/rss/2026-006-aws/",
+      "title": "MariaDB Server Audit Plugin Comment Handling Bypass",
+      "summary": "Bulletin ID: 2026-006-AWS Scope: AWS Content Type: Informational Publication Date: 2026/03/03 10:15 AM PST Description: Amazon RDS/Aurora is a managed relational database service. We identified CVE-2026-3494. In MariaDB server version through 11.8.5, when server audit plugin is enabled with server_audit_events variable configured with QUERY_DCL, QUERY_DDL, or QUERY_DML filtering, if an …",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "security"
+        }
+      ],
+      "notes": "Audit plugin bypass in the managed relational database service."
+    },
+    {
+      "id": "aws-cloudwatch-prometheus-collectors",
+      "provenance": "historical",
+      "category": "overlapping-services",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/cloudwatch-managed-collectors/",
+      "title": "Amazon CloudWatch announces managed Prometheus collectors",
+      "summary": "Amazon CloudWatch now supports collecting Prometheus metrics from your AWS infrastructure using fully managed collectors — enabling you to monitor Amazon EKS, Amazon EC2, Amazon ECS, Amazon MSK, and Amazon OpenSearch Service workloads without deploying or managing any agents. Previously, getting Prometheus metrics into CloudWatch required deploying, scaling, and maintaining a self-managed …",
+      "expected_matches": [],
+      "notes": "A CloudWatch feature that names EKS as a monitoring target. The EKS alias appears with no EKS change."
+    },
+    {
+      "id": "aws-codedeploy-additional-regions",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/aws-codedeploy-five-additional-regions",
+      "title": "AWS CodeDeploy now available in five additional AWS regions",
+      "summary": "AWS CodeDeploy is now available in five additional AWS Regions: Asia Pacific (New Zealand), Asia Pacific (Thailand), Asia Pacific (Taipei), Asia Pacific (Malaysia), and Mexico (Central). AWS CodeDeploy is a fully managed deployment service that automates application deployments to Amazon EC2 instances, on-premises servers, AWS Lambda functions, and Amazon ECS services. Customers in these newly …",
+      "expected_matches": [],
+      "notes": "Region availability for a different service."
+    },
+    {
+      "id": "aws-eks-efa-placement-groups",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/amazon-eks-efa-placement-groups/",
+      "title": "Amazon EKS now supports EFA and placement groups on Amazon EKS Auto Mode and Karpenter",
+      "summary": "Amazon Elastic Kubernetes Service (EKS) now supports Amazon EC2 placement groups and Elastic Fabric Adapter (EFA) network device configuration for node pools on EKS Auto Mode and the open-source Karpenter project, enabling you to optimize EKS workloads for performance and availability. These capabilities allow you to control EFA network interface configuration and how EC2 instances are physically …",
+      "expected_matches": [],
+      "notes": "An optional node configuration capability."
+    },
+    {
+      "id": "aws-eks-kubernetes-version-rollback",
+      "provenance": "historical",
+      "category": "positive",
+      "canonical_url": "https://aws.amazon.com/blogs/aws/upgrade-amazon-eks-clusters-with-confidence-using-kubernetes-version-rollbacks/",
+      "title": "Upgrade Amazon EKS clusters with confidence using Kubernetes version rollbacks",
+      "summary": "Learn how Kubernetes version rollbacks for Amazon EKS let you reverse cluster upgrades within seven days. This new feature provides a safety net for upgrade failures—no cluster rebuilds required—turning Kubernetes version upgrades into a reversible, low-risk operation.",
+      "expected_matches": [
+        {
+          "service_id": "eks",
+          "risk_type": "service-version-update"
+        }
+      ],
+      "notes": "Directly about Kubernetes version upgrades and their reversal."
+    },
+    {
+      "id": "aws-eks-oidc-privatelink",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/amazon-eks-oidc-endpoint-privatelink",
+      "title": "Amazon EKS now supports AWS PrivateLink for the cluster OIDC endpoint",
+      "summary": "Amazon Elastic Kubernetes Service (Amazon EKS) now supports AWS PrivateLink for the cluster OIDC discovery and JWKS endpoint . You can now reach the endpoint used by IAM roles for service accounts (IRSA) privately from your VPC without requiring internet egress. Each EKS cluster publishes public signing keys at its OIDC endpoint for IRSA. With AWS PrivateLink for the cluster OIDC endpoint, tools …",
+      "expected_matches": [],
+      "notes": "An optional networking capability."
+    },
+    {
+      "id": "aws-eks-provisioned-control-plane-autoscaling",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/amazon-eks-provisioned-control/",
+      "title": "Amazon EKS Provisioned Control Plane now delivers faster pod autoscaling",
+      "summary": "Amazon EKS now delivers faster pod autoscaling across all Provisioned Control Plane clusters by increasing Horizontal Pod Autoscaler (HPA) sync concurrency to up to 40 times the default Kubernetes value. This reduces the time it takes for HPA-driven workloads to scale in response to increased load, enabling faster responsiveness to demand. The Kubernetes Horizontal Pod Autoscaler (HPA) …",
+      "expected_matches": [],
+      "notes": "A performance improvement requiring no action."
+    },
+    {
+      "id": "aws-generic-amazon-gamelift-streams-now-supports-sharing-streams-with-st",
+      "provenance": "historical",
+      "category": "generic-prose",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/08/amazon-gamelift-streams/",
+      "title": "Amazon GameLift Streams now supports sharing streams with stream URLs",
+      "summary": "Amazon GameLift Streams now offers stream URLs, which give end users temporary, unauthenticated access to a playable stream session in a supported web browser. Recipients need no AWS account, no credentials, and no software install. To share a playable stream, create a stream URL for a stream group and one of its applications, set how long the stream URL stays valid and how many sessions it can …",
+      "expected_matches": [],
+      "notes": "Names no configured service."
+    },
+    {
+      "id": "aws-generic-aws-organizations-now-provides-maximum-account-quota-visibil",
+      "provenance": "historical",
+      "category": "generic-prose",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/08/aws-organizations/",
+      "title": "AWS Organizations now provides maximum account quota visibility in Service Quotas",
+      "summary": "AWS Organizations customers can now view their maximum number of accounts quota and its utilization directly through AWS Service Quotas instead of relying on AWS Support or AWS account teams to determine their current account limit. Customers can now proactively plan account growth with ease by monitoring their current account quota utilization and requesting increases before reaching their …",
+      "expected_matches": [],
+      "notes": "Names no configured service."
+    },
+    {
+      "id": "aws-generic-aws-resilience-hub-now-provides-recommended-resilience-tests",
+      "provenance": "historical",
+      "category": "generic-prose",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/08/aws-resilience-hub/",
+      "title": "AWS Resilience Hub now provides recommended resilience tests",
+      "summary": "AWS Resilience Hub now offers recommended resilience tests that help platform engineering and site reliability teams validate how their services respond to and recover from known failure scenarios. Resilience Hub provides pre-configured tests based on your service's architecture, configuration, and resilience policy. It uses AWS Fault Injection Service (FIS) to inject controlled faults and then …",
+      "expected_matches": [],
+      "notes": "Names no configured service."
+    },
+    {
+      "id": "aws-generic-aws-transform-continuous-modernization-is-now-generally-avai",
+      "provenance": "historical",
+      "category": "generic-prose",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/7/aws-transform-continuous-general-available",
+      "title": "AWS Transform continuous modernization is now generally available",
+      "summary": "AWS Transform continuous modernization is now generally available in all AWS Regions where AWS Transform is supported . This capability helps engineering teams analyze and remediate technical debt across source code repositories at scale. Teams can connect GitHub organizations, GitLab groups, and Bitbucket workspaces, run analyses on demand or on a recurring schedule, and prioritize findings …",
+      "expected_matches": [],
+      "notes": "Names no configured service."
+    },
+    {
+      "id": "aws-generic-openai-gpt-5-6-sol-terra-and-luna-now-support-1-million-toke",
+      "provenance": "historical",
+      "category": "generic-prose",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/08/gpt-sol-terra-luna-long-context-bedrock",
+      "title": "OpenAI GPT-5.6 Sol, Terra, and Luna now support 1 million token context windows on Amazon Bedrock",
+      "summary": "GPT-5.6 Sol, Terra, and Luna now support 1 million token context windows on Amazon Bedrock, enabling you to process full codebases, lengthy documents, and multi-turn agent histories in a single request. Models reason over broader context and return more accurate, coherent responses without chunking or information loss. With a context window size of 1 million tokens, you can analyze entire …",
+      "expected_matches": [],
+      "notes": "Names no configured service."
+    },
+    {
+      "id": "aws-lambda-durable-execution-dotnet",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/lambdadf-dotnet/",
+      "title": "AWS Lambda durable execution SDK for .NET is now generally available",
+      "summary": "Today, AWS announces the general availability of the AWS Lambda Durable Execution SDK for .NET, empowering C# developers to build resilient, long-running workflows using Lambda durable functions. With this SDK, developers can create multi-step applications like payment processing pipelines, AI agent orchestration, and human-in-the-loop approvals directly in their applications without implementing …",
+      "expected_matches": [],
+      "notes": "A new SDK."
+    },
+    {
+      "id": "aws-lambda-durable-functions-cmk",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/durablefunctions-cmk/",
+      "title": "AWS Lambda durable functions now supports customer managed key encryption",
+      "summary": "AWS Lambda durable functions now supports encryption of durable execution data with an AWS Key Management Service (AWS KMS) customer managed key. Lambda durable functions lets you build long-running, reliable workflows directly in your Lambda function code with automatic state management. Lambda encrypts execution state at rest by default with an AWS owned key. Now with support for AWS KMS, you …",
+      "expected_matches": [],
+      "notes": "An optional encryption capability."
+    },
+    {
+      "id": "aws-lambda-java-runtimes-al2023",
+      "provenance": "historical",
+      "category": "positive",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/aws-lambda-java-amazon-linux/",
+      "title": "AWS Lambda now supports Java 8, 11, and 17 on Amazon Linux 2023",
+      "summary": "AWS Lambda now supports Java 8, Java 11, and Java 17 runtimes on Amazon Linux 2023 (AL2023), available as both managed runtimes and container base images. These new runtimes enable customers running Lambda functions on Java 8, 11, or 17 to migrate from Amazon Linux 2 (AL2) to AL2023 without requiring a simultaneous Java version upgrade. The existing Lambda runtimes for Java 8, 11 and 17 run on …",
+      "expected_matches": [
+        {
+          "service_id": "lambda",
+          "risk_type": "service-version-update"
+        }
+      ],
+      "notes": "New managed runtimes are directly relevant to the recommended action of reviewing runtime support dates."
+    },
+    {
+      "id": "aws-lambda-managed-instances-logs",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/aws-lambda-managed-instances-logs/",
+      "title": "AWS Lambda now publishes logs for Lambda Managed Instances capacity providers",
+      "summary": "AWS Lambda now publishes logs for Lambda Managed Instances (LMI) capacity providers to Amazon CloudWatch Logs, giving you visibility into scaling activity and instance lifecycle operations. LMI enables you to run Lambda functions on Amazon EC2 instances while maintaining serverless operational simplicity. Capacity providers are resources that let you define compute resources that Lambda …",
+      "expected_matches": [],
+      "notes": "New observability output, no action required."
+    },
+    {
+      "id": "aws-lambda-microvms",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/blogs/aws/run-isolated-sandboxes-with-full-lifecycle-control-aws-lambda-introduces-microvms/",
+      "title": "Run isolated sandboxes with full lifecycle control: AWS Lambda introduces MicroVMs",
+      "summary": "AWS launches a new serverless compute primitive, AWS Lambda MicroVMs. VM-level, isolated sandboxes with no shared kernel or resources between sessions. Rapid launch and resume, full lifecycle control, state preservation up to 8 hours, no infrastructure to manage.",
+      "expected_matches": [],
+      "notes": "A new compute primitive."
+    },
+    {
+      "id": "aws-lambda-sqs-poller-limit",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/08/aws-Lambda-provisioned-sqs-esm-max-pollers/",
+      "title": "AWS Lambda Provisioned Mode for Amazon SQS event source mappings now supports up to 10,000 event pollers",
+      "summary": "AWS Lambda now supports a maximum of 10,000 event pollers for Provisioned Mode for Amazon SQS event source mappings (ESMs), a 5x increase from the previous limit of 2,000. This enables you to reach up to 100,000 concurrent invocations, so you can build highly responsive and scalable event-driven applications with stringent performance requirements. Customers use Amazon SQS as an event source for …",
+      "expected_matches": [],
+      "notes": "A quota increase requiring no action."
+    },
+    {
+      "id": "aws-rds-mysql-97-preview",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/amazon-rds-mysql-long-term-9-7-rds-database-preview/",
+      "title": "Amazon RDS for MySQL supports MySQL 9.7 in Amazon RDS Database Preview Environment",
+      "summary": "Amazon RDS for MySQL now supports version community MySQL 9.7 in the Amazon RDS Database Preview Environment , allowing you to evaluate the latest Release on Amazon RDS for MySQL. This preview environment provides a sandbox where you can test applications and explore new MySQL 9.7 capabilities before they become generally available. MySQL 9.7 is the latest Long-Term Support release for community …",
+      "expected_matches": [],
+      "notes": "A preview-environment engine version. Preview is explicitly non-production, so it does not warrant a review candidate."
+    },
+    {
+      "id": "aws-rds-oracle-reserved-instances",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/amazon-rds-oracle-r8i-m8i/",
+      "title": "Amazon RDS for Oracle now offers Reserved Instances for R8i and M8i instances",
+      "summary": "Amazon RDS for Oracle now offers 1-year and 3-year Reserved Instances for R8i and M8i instances with up to 53% cost savings compared to On-Demand prices. These instances are powered by custom Intel Xeon 6 processors, available only on AWS, delivering the highest performance and fastest memory bandwidth among comparable Intel processors in the cloud. R8i and M8i instances offer up to 15% better …",
+      "expected_matches": [],
+      "notes": "A pricing option, not a change requiring review."
+    },
+    {
+      "id": "aws-rds-sql-server-cu-gdr-updates",
+      "provenance": "historical",
+      "category": "positive",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/amazon-rds-supports-latest-cu-gdr-microsoft-sql-server",
+      "title": "Amazon RDS now supports the latest CU and GDR updates for Microsoft SQL Server",
+      "summary": "Amazon Relational Database Service (Amazon RDS) for SQL Server now supports the latest Cumulative Updates (CU) and General Distribution Release (GDR) updates for Microsoft SQL Server. This release includes support for Microsoft SQL Server 2016 SP3+GDR KB5089271 (RDS version 13.00.6490.1.v1), SQL Server 2017 CU31+GDR KB5090354 (RDS version 14.00.3530.2.v1), SQL Server 2019 CU32+GDR KB5090407 (RDS …",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "service-version-update"
+        }
+      ],
+      "notes": "Cumulative and General Distribution Release updates are engine maintenance the recommended action covers."
+    },
+    {
+      "id": "aws-rds-sql-server-tde-multi-az",
+      "provenance": "historical",
+      "category": "hard-negative",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/07/rds-sql-server-supports-tde-for-maz/",
+      "title": "Amazon RDS for SQL Server now supports restoring TDE databases on Mult-AZ instances",
+      "summary": "Amazon Relational Database Service (Amazon RDS) for SQL Server now supports restoring Transparent Data Encryption (TDE)-enabled SQL Server databases on Multi-AZ instances and instances configured with a read replica in the same region, using native backup and restore. Previously, TDE-enabled database restore was available only for Single-AZ instances, requiring you to disable TDE or migrate to a …",
+      "expected_matches": [],
+      "notes": "A restore capability addition."
+    },
+    {
+      "id": "aws-transform-schema-to-aurora",
+      "provenance": "historical",
+      "category": "overlapping-services",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/7/aws-transform-windows-sql-schema-aurora",
+      "title": "AWS Transform for full-stack Windows modernization now supports offline schema transformation to Aurora PostgreSQL",
+      "summary": "Today, AWS Transform for full-stack Windows modernization announced general availability of offline source transformation, enabling customers to modernize Microsoft SQL Server databases to Amazon Aurora PostgreSQL without requiring a live database connection. AWS Transform now converts SQL Server storage objects, powered by AWS DMS, and code objects (stored procedures) using an agentic, …",
+      "expected_matches": [],
+      "notes": "An AWS Transform announcement that names Aurora as a migration target, not an RDS change."
+    },
+    {
+      "id": "syn-edit-revision",
+      "provenance": "synthetic",
+      "category": "edit",
+      "canonical_url": "https://corpus.invalid/synthetic/edit-revision",
+      "title": "Amazon RDS updates the end of support date for an older engine version",
+      "summary": "This announcement was edited after publication to correct the end of support date. The corrected text still describes the same engine version.",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "end-of-support"
+        },
+        {
+          "service_id": "rds",
+          "risk_type": "service-version-update"
+        }
+      ],
+      "notes": "An edited item must still match; revision handling is announcement identity, not matching."
+    },
+    {
       "id": "syn-eks-end-of-support-plain",
       "provenance": "synthetic",
       "category": "positive",
@@ -35,6 +374,31 @@
       ]
     },
     {
+      "id": "syn-generic-prose",
+      "provenance": "synthetic",
+      "category": "generic-prose",
+      "canonical_url": "https://corpus.invalid/synthetic/generic-prose",
+      "title": "AWS publishes a customer story about platform modernization",
+      "summary": "A customer describes migrating workloads to AWS and the operational practices adopted afterward.",
+      "expected_matches": [],
+      "notes": "Generic AWS prose naming no configured service and no risk term."
+    },
+    {
+      "id": "syn-html-residue",
+      "provenance": "synthetic",
+      "category": "html",
+      "canonical_url": "https://corpus.invalid/synthetic/html-residue",
+      "title": "AWS Lambda announces a breaking change for the Node.js runtime",
+      "summary": "Sanitized feed text can retain collapsed whitespace and stray punctuation: upgrade required for affected functions .",
+      "expected_matches": [
+        {
+          "service_id": "lambda",
+          "risk_type": "breaking-change"
+        }
+      ],
+      "notes": "Represents post-sanitization text, since raw HTML is not stored in the corpus."
+    },
+    {
       "id": "syn-lambda-breaking-change",
       "provenance": "synthetic",
       "category": "positive",
@@ -47,6 +411,65 @@
           "risk_type": "breaking-change"
         }
       ]
+    },
+    {
+      "id": "syn-negative-excluded-term",
+      "provenance": "synthetic",
+      "category": "hard-negative",
+      "canonical_url": "https://corpus.invalid/synthetic/negative-excluded-term",
+      "title": "Amazon RDS engine version now available in additional Regions",
+      "summary": "A new engine version is now available in more AWS Regions. Existing instances are unaffected.",
+      "expected_matches": [],
+      "notes": "The version rule excludes 'now available in', which is regional-availability news rather than a required action."
+    },
+    {
+      "id": "syn-negative-risk-only",
+      "provenance": "synthetic",
+      "category": "hard-negative",
+      "canonical_url": "https://corpus.invalid/synthetic/negative-risk-only",
+      "title": "Amazon Redshift announces end of support for an older cluster version",
+      "summary": "This end of support notice covers a service that no declared profile contains.",
+      "expected_matches": [],
+      "notes": "Risk evidence for an unconfigured service must not match a configured one."
+    },
+    {
+      "id": "syn-negative-service-only",
+      "provenance": "synthetic",
+      "category": "hard-negative",
+      "canonical_url": "https://corpus.invalid/synthetic/negative-service-only",
+      "title": "Amazon EKS reduces cluster creation time",
+      "summary": "Amazon Elastic Kubernetes Service improves the time required to create a cluster. No action is needed.",
+      "expected_matches": [],
+      "notes": "Service evidence with no risk evidence must not match."
+    },
+    {
+      "id": "syn-negative-substring-boundary",
+      "provenance": "synthetic",
+      "category": "hard-negative",
+      "canonical_url": "https://corpus.invalid/synthetic/negative-substring-boundary",
+      "title": "Lambdas in functional programming: a breaking change in our tutorial series",
+      "summary": "This article discusses lambdas as a language construct and includes a breaking change to the sample repository layout.",
+      "expected_matches": [],
+      "notes": "'Lambdas' must not satisfy the 'AWS Lambda' or 'Lambda function' aliases through a substring."
+    },
+    {
+      "id": "syn-overlapping-services",
+      "provenance": "synthetic",
+      "category": "overlapping-services",
+      "canonical_url": "https://corpus.invalid/synthetic/overlapping-services",
+      "title": "Amazon EKS and Amazon RDS announce end of support for older versions",
+      "summary": "Both Amazon EKS and Amazon RDS published end of support dates affecting existing clusters and database instances.",
+      "expected_matches": [
+        {
+          "service_id": "eks",
+          "risk_type": "end-of-support"
+        },
+        {
+          "service_id": "rds",
+          "risk_type": "end-of-support"
+        }
+      ],
+      "notes": "Chapter 04 requires each service in one item to be evaluated independently."
     },
     {
       "id": "syn-rds-end-of-support",
@@ -87,6 +510,20 @@
       "notes": "Hyphenated risk term and the Aurora alias, which maps to the rds service. The service-version-update expectation is a known recall gap: the configured term is 'engine version' and this text uses the plural 'engine versions', which phrase-boundary matching does not cover."
     },
     {
+      "id": "syn-security-guidance",
+      "provenance": "synthetic",
+      "category": "security-guidance",
+      "canonical_url": "https://corpus.invalid/synthetic/security-guidance",
+      "title": "AWS Lambda security bulletin describes a resolved vulnerability",
+      "summary": "A security bulletin covering AWS Lambda describes a resolved issue and the CVE assigned to it.",
+      "expected_matches": [
+        {
+          "service_id": "lambda",
+          "risk_type": "security"
+        }
+      ]
+    },
+    {
       "id": "syn-unicode-nonbreaking",
       "provenance": "synthetic",
       "category": "unicode",
@@ -104,123 +541,6 @@
         }
       ],
       "notes": "Unicode normalization must fold NBSP to a space before phrase matching."
-    },
-    {
-      "id": "syn-html-residue",
-      "provenance": "synthetic",
-      "category": "html",
-      "canonical_url": "https://corpus.invalid/synthetic/html-residue",
-      "title": "AWS Lambda announces a breaking change for the Node.js runtime",
-      "summary": "Sanitized feed text can retain collapsed whitespace and stray punctuation: upgrade required for affected functions .",
-      "expected_matches": [
-        {
-          "service_id": "lambda",
-          "risk_type": "breaking-change"
-        }
-      ],
-      "notes": "Represents post-sanitization text, since raw HTML is not stored in the corpus."
-    },
-    {
-      "id": "syn-overlapping-services",
-      "provenance": "synthetic",
-      "category": "overlapping-services",
-      "canonical_url": "https://corpus.invalid/synthetic/overlapping-services",
-      "title": "Amazon EKS and Amazon RDS announce end of support for older versions",
-      "summary": "Both Amazon EKS and Amazon RDS published end of support dates affecting existing clusters and database instances.",
-      "expected_matches": [
-        {
-          "service_id": "eks",
-          "risk_type": "end-of-support"
-        },
-        {
-          "service_id": "rds",
-          "risk_type": "end-of-support"
-        }
-      ],
-      "notes": "Chapter 04 requires each service in one item to be evaluated independently."
-    },
-    {
-      "id": "syn-security-guidance",
-      "provenance": "synthetic",
-      "category": "security-guidance",
-      "canonical_url": "https://corpus.invalid/synthetic/security-guidance",
-      "title": "AWS Lambda security bulletin describes a resolved vulnerability",
-      "summary": "A security bulletin covering AWS Lambda describes a resolved issue and the CVE assigned to it.",
-      "expected_matches": [
-        {
-          "service_id": "lambda",
-          "risk_type": "security"
-        }
-      ]
-    },
-    {
-      "id": "syn-edit-revision",
-      "provenance": "synthetic",
-      "category": "edit",
-      "canonical_url": "https://corpus.invalid/synthetic/edit-revision",
-      "title": "Amazon RDS updates the end of support date for an older engine version",
-      "summary": "This announcement was edited after publication to correct the end of support date. The corrected text still describes the same engine version.",
-      "expected_matches": [
-        {
-          "service_id": "rds",
-          "risk_type": "end-of-support"
-        },
-        {
-          "service_id": "rds",
-          "risk_type": "service-version-update"
-        }
-      ],
-      "notes": "An edited item must still match; revision handling is announcement identity, not matching."
-    },
-    {
-      "id": "syn-negative-service-only",
-      "provenance": "synthetic",
-      "category": "hard-negative",
-      "canonical_url": "https://corpus.invalid/synthetic/negative-service-only",
-      "title": "Amazon EKS reduces cluster creation time",
-      "summary": "Amazon Elastic Kubernetes Service improves the time required to create a cluster. No action is needed.",
-      "expected_matches": [],
-      "notes": "Service evidence with no risk evidence must not match."
-    },
-    {
-      "id": "syn-negative-risk-only",
-      "provenance": "synthetic",
-      "category": "hard-negative",
-      "canonical_url": "https://corpus.invalid/synthetic/negative-risk-only",
-      "title": "Amazon Redshift announces end of support for an older cluster version",
-      "summary": "This end of support notice covers a service that no declared profile contains.",
-      "expected_matches": [],
-      "notes": "Risk evidence for an unconfigured service must not match a configured one."
-    },
-    {
-      "id": "syn-negative-excluded-term",
-      "provenance": "synthetic",
-      "category": "hard-negative",
-      "canonical_url": "https://corpus.invalid/synthetic/negative-excluded-term",
-      "title": "Amazon RDS engine version now available in additional Regions",
-      "summary": "A new engine version is now available in more AWS Regions. Existing instances are unaffected.",
-      "expected_matches": [],
-      "notes": "The version rule excludes 'now available in', which is regional-availability news rather than a required action."
-    },
-    {
-      "id": "syn-generic-prose",
-      "provenance": "synthetic",
-      "category": "generic-prose",
-      "canonical_url": "https://corpus.invalid/synthetic/generic-prose",
-      "title": "AWS publishes a customer story about platform modernization",
-      "summary": "A customer describes migrating workloads to AWS and the operational practices adopted afterward.",
-      "expected_matches": [],
-      "notes": "Generic AWS prose naming no configured service and no risk term."
-    },
-    {
-      "id": "syn-negative-substring-boundary",
-      "provenance": "synthetic",
-      "category": "hard-negative",
-      "canonical_url": "https://corpus.invalid/synthetic/negative-substring-boundary",
-      "title": "Lambdas in functional programming: a breaking change in our tutorial series",
-      "summary": "This article discusses lambdas as a language construct and includes a breaking change to the sample repository layout.",
-      "expected_matches": [],
-      "notes": "'Lambdas' must not satisfy the 'AWS Lambda' or 'Lambda function' aliases through a substring."
     }
   ]
 }
