@@ -6,7 +6,6 @@ import ipaddress
 import json
 import re
 import sys
-import unicodedata
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -19,7 +18,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 # Chapter 04 requires one framing helper for runtime and test vectors, so the
 # validator shares the runtime implementation rather than copying it.
-from aws_public_change_feed.identity import canonical_public_url, digest_parts  # noqa: E402
+from aws_public_change_feed.identity import (  # noqa: E402
+    announcement_id,
+    audience_fingerprint,
+    candidate_id,
+    canonical_public_url,
+    content_fingerprint,
+    delivery_request_id,
+    identity_text,
+    release_id,
+    revision_id,
+)
 
 MINIMUM_PYTHON = (3, 12)
 GENERIC_ALIASES = {"cluster", "engine version", "runtime", "version"}
@@ -108,19 +117,6 @@ def validate_schema(schema_path: Path, document_path: Path, document):
         raise ValueError("\n".join(details))
 
 
-def normalized_text(value: str) -> str:
-    normalized = unicodedata.normalize("NFKC", value)
-    return " ".join(normalized.casefold().split())
-
-
-def queue_dispatch_id(request_id: str, generation: int) -> str:
-    if not re.fullmatch(r"[a-f0-9]{64}", request_id):
-        raise ValueError("queue dispatch request_id must be a lowercase SHA-256 digest")
-    if isinstance(generation, bool) or not isinstance(generation, int) or generation < 1:
-        raise ValueError("queue dispatch generation must be a positive integer")
-    return digest_parts("queue-dispatch:v1", request_id, str(generation))
-
-
 def serialized_size(value) -> int:
     return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
 
@@ -178,8 +174,8 @@ def validate_feed_url(raw_url: str, allowed_hosts: set[str]):
 
 
 def phrase_spans(text: str, phrase: str) -> list[tuple[int, int]]:
-    normalized_content = normalized_text(text)
-    normalized_phrase = normalized_text(phrase)
+    normalized_content = identity_text(text)
+    normalized_phrase = identity_text(phrase)
     pattern = re.compile(rf"(?<!\w){re.escape(normalized_phrase)}(?!\w)")
     return [(match.start(), match.end()) for match in pattern.finditer(normalized_content)]
 
@@ -313,7 +309,7 @@ def validate_semantics(deployment, config, inventory):
     alias_owners: dict[str, str] = {}
     for service_id, service in services.items():
         for alias in service["aliases"]:
-            normalized = normalized_text(alias)
+            normalized = identity_text(alias)
             if normalized in GENERIC_ALIASES:
                 raise ValueError(f"generic alias for service {service_id}: {alias}")
             owner = alias_owners.get(normalized)
@@ -329,7 +325,7 @@ def validate_semantics(deployment, config, inventory):
         raise ValueError("risk types must be unique")
     for rule in config["risk_rules"]:
         match = rule["match"]
-        normalized_sets = {name: {normalized_text(term) for term in match[name]} for name in ("any", "all", "none")}
+        normalized_sets = {name: {identity_text(term) for term in match[name]} for name in ("any", "all", "none")}
         for name, terms in match.items():
             if len(normalized_sets[name]) != len(terms):
                 raise ValueError(f"risk rule repeats normalized terms in {name}: {rule['id']}")
@@ -382,8 +378,7 @@ def validate_manifest(root: Path, deployment, manifest):
         "config": f"{release_root}/{deployment['config_filename']}",
         "inventory": f"{release_root}/{deployment['inventory_filename']}",
     }
-    release_parts = ("release:v1", manifest["config"]["sha256"], manifest["inventory"]["sha256"])
-    expected_release_id = digest_parts(*release_parts)
+    expected_release_id = release_id(manifest["config"]["sha256"], manifest["inventory"]["sha256"])
     if manifest["release_id"] != expected_release_id:
         raise ValueError("active-versions release_id differs from artifact hashes")
     for name, path in local_paths.items():
@@ -417,28 +412,19 @@ def validate_candidate_semantics(config, inventory, manifest, candidate):
     announcement = candidate["announcement"]
     feed_hosts = {(urlsplit(feed["url"]).hostname or "").casefold() for feed in config["feeds"]}
     validate_public_url(announcement["url"], feed_hosts, "announcement URL")
-    expected_announcement_id = hashlib.sha256(canonical_public_url(announcement["url"]).encode()).hexdigest()
+    expected_announcement_id = announcement_id(canonical_public_url(announcement["url"]))
     if announcement["announcement_id"] != expected_announcement_id:
         raise ValueError("announcement_id differs from the canonical announcement URL")
-    expected_fingerprint = digest_parts(
-        "announcement-content:v1",
-        normalized_text(announcement["title"]),
-        normalized_text(announcement["summary"]),
-    )
+    expected_fingerprint = content_fingerprint(announcement["title"], announcement["summary"])
     if announcement["content_fingerprint"] != expected_fingerprint:
         raise ValueError("content_fingerprint differs from normalized announcement content")
-    expected_revision_id = digest_parts(
-        "announcement-revision:v1",
-        announcement["announcement_id"],
-        announcement["content_fingerprint"],
-    )
+    expected_revision_id = revision_id(announcement["announcement_id"], announcement["content_fingerprint"])
     if announcement["revision_id"] != expected_revision_id:
         raise ValueError("revision_id differs from announcement identity and content")
-    expected_audience_fingerprint = digest_parts("candidate-audience:v1", *sorted(candidate["environment_ids"]))
+    expected_audience_fingerprint = audience_fingerprint(candidate["environment_ids"])
     if candidate["audience_fingerprint"] != expected_audience_fingerprint:
         raise ValueError("audience_fingerprint differs from sorted candidate environment IDs")
-    expected_candidate_id = digest_parts(
-        "candidate:v3",
+    expected_candidate_id = candidate_id(
         announcement["revision_id"],
         candidate["service"]["id"],
         candidate["risk"]["risk_type"],
@@ -476,7 +462,7 @@ def validate_candidate_semantics(config, inventory, manifest, candidate):
     fields = {field: announcement[field] for field in rule["fields"]}
     matched_alias_values = sorted(
         (alias for alias in service["aliases"] if any(phrase_spans(text, alias) for text in fields.values())),
-        key=normalized_text,
+        key=identity_text,
     )
     if candidate["explainability"]["matched_aliases"] != matched_alias_values:
         raise ValueError("candidate matched aliases differ from announcement service evidence")
@@ -492,7 +478,7 @@ def validate_candidate_semantics(config, inventory, manifest, candidate):
     present_none = [term for term, locations in term_matches["none"].items() if any(locations.values())]
     if (rule["match"]["any"] and not present_any) or len(present_all) != len(rule["match"]["all"]) or present_none:
         raise ValueError("candidate announcement does not satisfy its risk rule")
-    matched_term_values = sorted(present_any + present_all, key=normalized_text)
+    matched_term_values = sorted(present_any + present_all, key=identity_text)
     if candidate["explainability"]["matched_terms"] != matched_term_values:
         raise ValueError("candidate matched terms differ from announcement risk evidence")
 
@@ -573,7 +559,7 @@ def validate_event_contract_semantics(config, inventory, manifest, candidate, de
     validate_candidate_semantics(config, inventory, manifest, candidate)
     if delivery_request["candidate"] != candidate:
         raise ValueError("delivery request embedded candidate differs from alert candidate")
-    expected_request_id = digest_parts("delivery-request:v2", candidate["candidate_id"])
+    expected_request_id = delivery_request_id(candidate["candidate_id"])
     if delivery_request["request_id"] != expected_request_id:
         raise ValueError("delivery request_id differs from its candidate")
     if parsed_timestamp(delivery_request["created_at"]) < parsed_timestamp(candidate["created_at"]):

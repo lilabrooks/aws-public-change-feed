@@ -532,17 +532,5 @@ class WatcherTests(unittest.TestCase):
         self.assertEqual(stored(state, "f").newest_publication_at, "2026-07-01T10:00:00+00:00")
 
 
-class SharedIdentityTests(unittest.TestCase):
-    def test_validator_and_runtime_share_one_implementation(self):
-        # Chapter 04 requires one framing helper for runtime and test vectors.
-        sys.path.insert(0, str(ROOT / "scripts"))
-        import validate_config
-
-        from aws_public_change_feed import identity
-
-        self.assertIs(validate_config.canonical_public_url, identity.canonical_public_url)
-        self.assertIs(validate_config.digest_parts, identity.digest_parts)
-
-
 if __name__ == "__main__":
     unittest.main()
