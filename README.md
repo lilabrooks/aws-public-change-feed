@@ -58,11 +58,17 @@ make install
 make check
 ```
 
-Run the network-backed reference check separately:
+Run the network-backed checks separately:
 
 ```bash
 make references-online
 ```
+
+```bash
+make screen-feeds
+```
+
+`screen-feeds` fetches the live feeds through the runtime acquisition path and reports every match, flagging any the corpus does not represent.
 
 References verified: 2026-07-13.
 
