@@ -340,7 +340,7 @@
           <article class="compact-card">
             <span class="compact-tag">Replay and uncertainty</span>
             <h3 class="compact-card-title">Immutable releases and explicit unknown outcomes</h3>
-            <p>Exact S3 object versions reproduce the policy behind a candidate. Slack timeouts become <code>delivery_unknown</code> because an HTTP call cannot commit atomically with DynamoDB.</p>
+            <p>Exact S3 object versions reproduce the policy behind a candidate, and promotion of the active release is guarded by an S3 ETag precondition. Slack timeouts become <code>delivery_unknown</code> because an HTTP call cannot commit atomically with DynamoDB.</p>
             <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004 · Slack guarantees</a>
           </article>
         </div>

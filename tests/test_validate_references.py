@@ -1,7 +1,7 @@
 import sys
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import workflow_pins
@@ -15,7 +15,7 @@ import validate_references as validator  # noqa: E402
 # A fixed clock keeps the committed-reference assertions deterministic. Move it
 # forward when a document is verified on a later date; the 180-day warning and
 # 365-day maximum leave ample room before older markers need re-verification.
-AS_OF = date(2026, 8, 3)
+AS_OF = date(2026, 8, 4)
 VALID_LYCHEE_CONFIG = (ROOT / "lychee.toml").read_text(encoding="utf-8")
 
 
@@ -72,7 +72,10 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.assertFalse(any("target does not exist" in error for error in errors))
 
     def test_future_reference_date_is_rejected(self):
-        markdown = "# Test\n\nhttps://example.com\n\nReferences verified: 2026-08-04.\n"
+        # Derived from AS_OF so moving the fixed clock cannot silently make this
+        # marker a past date and stop exercising the future-date rejection.
+        tomorrow = AS_OF + timedelta(days=1)
+        markdown = f"# Test\n\nhttps://example.com\n\nReferences verified: {tomorrow.isoformat()}.\n"
         directory, root = self.make_repository(markdown)
         with directory:
             errors, _, _, _ = self.validate(root)

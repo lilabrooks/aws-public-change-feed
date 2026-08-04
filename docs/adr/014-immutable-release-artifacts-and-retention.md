@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-12
+- Amendment pending: [ADR-019](019-s3-preconditions-for-release-publication-and-promotion.md) (Proposed) corrects the promotion condition below. S3 has no version-ID write precondition; promotion compares ETags. Everything else here stands.
 
 ## Context
 
