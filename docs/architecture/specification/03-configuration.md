@@ -80,15 +80,16 @@ The initial risk types are configuration data, not an open plugin system. Adding
 2. Run every semantic and cross-document check.
 3. Canonicalize inputs for hashing without mutating their stored representation.
 4. Write configuration and inventory to a new release prefix with `If-None-Match: *`, so a create cannot overwrite an existing object.
-5. Read back exact object versions and verify hashes.
-6. Write the immutable release manifest with the same create precondition.
-7. Read the active pointer and capture both its ETag and its version ID from that read.
-8. Promote the active pointer with `If-Match` against that observed ETag. A first promotion into a new deployment uses `If-None-Match: *` instead.
-9. Run a runtime compatibility probe before announcing success.
+5. Read back exact object versions and verify hashes. A read that supplies a `versionId` requires `s3:GetObjectVersion`, not `s3:GetObject`.
+6. Read the active pointer and capture both its ETag and its version ID from that read.
+7. Promote the active pointer with `If-Match` against that observed ETag. A first promotion into a new deployment uses `If-None-Match: *` instead. `active-versions.json` is the release manifest; promoting it is what records the release, and its prior versions are the retained history.
+8. Run a runtime compatibility probe before announcing success.
 
 S3 has no version-ID write precondition. The ETag is the concurrency token for promotion; version IDs identify exact stored versions for reads, audit, and rollback. A failed promotion is not one condition: 412 means a competing publisher promoted first and publication stops for a fresh decision, 409 leaves the outcome indeterminate and requires re-reading the pointer, and 404 means the pointer is missing or deleted and raises an operational alarm.
 
-Rollback promotes an earlier retained manifest through the same `If-Match` path. It never overwrites a release.
+Rollback reads an earlier retained pointer version by ID and writes its release references forward through the same `If-Match` path, with a fresh `promoted_at`. It never overwrites a release, and never republishes historical bytes unchanged.
+
+This sequence follows [ADR-019](../../adr/019-s3-preconditions-for-release-publication-and-promotion.md), which is Proposed. It replaces a prior sequence that specified a version-ID write precondition S3 does not offer. If ADR-019 is not accepted, this section changes with it.
 
 ## Change review
 

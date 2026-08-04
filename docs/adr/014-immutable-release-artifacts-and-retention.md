@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-12
-- Amendment pending: [ADR-019](019-s3-preconditions-for-release-publication-and-promotion.md) (Proposed) corrects the promotion condition below. S3 has no version-ID write precondition; promotion compares ETags. Everything else here stands.
+- Amendment pending: [ADR-019](019-s3-preconditions-for-release-publication-and-promotion.md) (Proposed) corrects two clauses below. S3 has no version-ID write precondition, so promotion compares ETags. The separate "immutable manifest" write is dropped: `active-versions.json` is the manifest, and its versions are the retained history. Everything else here stands.
 
 ## Context
 
