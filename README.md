@@ -35,6 +35,7 @@ The `contracts + matching validated` badge means the committed artifacts and the
 - Regression tests confirm that rejected configuration and event-contract mutations fail validation.
 - Python quality, YAML, local links, reference dates, the public page, and Git whitespace pass the same gate.
 - Deterministic matching scores at or above the approved thresholds against the labeled corpus.
+- Feed acquisition refuses unapproved hosts, non-public resolved addresses, redirects, unsupported content types, oversized responses, and any XML carrying a DOCTYPE.
 
 Matching is the first implemented runtime package. Its corpus mixes real announcements taken from the four configured feeds with authored items covering shapes the recent feed window did not contain. No end-of-support announcement appeared in that window, so recall for that risk type rests on authored items alone. The Terraform roots and the remaining runtime packages are implementation milestones. Deployment, live feed acquisition, Slack delivery, recovery, load, and production preflight still require executable evidence.
 
