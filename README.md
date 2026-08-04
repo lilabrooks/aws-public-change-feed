@@ -8,15 +8,14 @@
 
 [![JSON Schema](https://img.shields.io/badge/contracts-JSON%20Schema-4B32C3?logo=json&logoColor=white)](schemas/)
 [![Specs + ADRs](https://img.shields.io/badge/specs%20%2B%20ADRs-included-00AA77)](docs/architecture/README.md)
-[![OpenAI Codex](https://img.shields.io/badge/built%20with-OpenAI%20Codex-412991?logo=openai&logoColor=white)](AGENTS.md)
 
-AWS Public Change Alerting is a reference architecture for turning approved public AWS announcements into explainable, route-scoped Slack review candidates. It maps deterministic service and risk matches to potentially relevant environments without requiring customer-account access.
+AWS Public Change Alerting turns approved public AWS announcements into explainable, route-scoped Slack review candidates. It maps deterministic service and risk matches to potentially relevant environments without requiring customer-account access.
 
 **[Read the public architecture page](https://lilabrooks.github.io/aws-public-change-feed/)** for the value proposition, design rationale, processing flow, system boundaries, and current evidence.
 
 ## Repository purpose
 
-The repository is the authoritative architecture package. It contains:
+The repository holds the service and its authoritative architecture package. The contracts are settled and validated; the runtime and infrastructure are the current build. It contains:
 
 - The product [goal and implementation milestones](docs/GOAL.md).
 - A numbered [architecture specification](docs/architecture/README.md).
