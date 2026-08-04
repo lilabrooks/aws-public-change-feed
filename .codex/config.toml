@@ -5,6 +5,11 @@
 #
 # Keep this in sync with .mcp.json, which carries the same server for Claude
 # Code. The two hosts read different files; there is no shared format.
+#
+# Used unauthenticated. The documentation tools work without credentials; the
+# account-capable tools this server also exposes fail without them. Codex has
+# no project-level tool deny list, so that failure is the only thing stopping
+# them here. See docs/agent-tooling.md.
 
-[mcp_servers.aws-knowledge]
-url = "https://knowledge-mcp.global.api.aws"
+[mcp_servers.aws-mcp]
+url = "https://aws-mcp.us-east-1.api.aws/mcp"

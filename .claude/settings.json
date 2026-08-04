@@ -2,7 +2,11 @@
   "permissions": {
     "deny": [
       "Read(./.env)",
-      "Read(./**/.env)"
+      "Read(./**/.env)",
+      "mcp__aws-mcp__aws___call_aws",
+      "mcp__aws-mcp__aws___run_script",
+      "mcp__aws-mcp__aws___get_presigned_url",
+      "mcp__aws-mcp__aws___get_tasks"
     ]
   }
 }

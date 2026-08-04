@@ -1,17 +1,29 @@
-# Agent tooling: the AWS Knowledge MCP server
+# Agent tooling: the AWS MCP server
 
 Handoff notes for anyone working this repository with Codex or Claude Code. This is the reasoning behind the tool, not only the rule. If the reasoning is wrong, say so — the last section lists what would change it.
 
 ## What is configured
 
-The AWS Knowledge MCP server, declared once per host because the two read different files and share no format:
+The AWS MCP server, declared once per host because the two read different files and share no format:
 
 - Claude Code: [`.mcp.json`](../.mcp.json)
 - Codex: [`.codex/config.toml`](../.codex/config.toml)
 
 A change to one needs the same change to the other. [`tests/test_agent_config.py`](../tests/test_agent_config.py) fails when they drift.
 
-Endpoint `https://knowledge-mcp.global.api.aws` over HTTP. No AWS account, no credentials, no CLI install, rate-limited. Five tools: `search_documentation`, `read_documentation`, `list_regions`, `get_regional_availability`, `retrieve_skill`.
+Endpoint `https://aws-mcp.us-east-1.api.aws/mcp` over HTTP, **used unauthenticated**. This replaced the AWS Knowledge server on 2026-08-04; see the migration note below for why and what it cost.
+
+The server exposes nine tools, and they do not all behave the same way without credentials:
+
+| Tool | Unauthenticated |
+| --- | --- |
+| `search_documentation`, `read_documentation` | Work. These are what the repository uses |
+| `list_regions`, `get_regional_availability`, `retrieve_skill` | Work |
+| `call_aws`, `run_script`, `get_presigned_url`, `get_tasks` | Fail with an authentication error |
+
+That last row is the part to understand before touching this configuration. The old Knowledge server was credential-free *by construction* — it had no account-facing tools to offer. This server is read-only only because nobody has authenticated it. `aws___call_aws` returns "Authentication failed: Unable to verify your user identity" today, and would run AWS CLI commands the moment someone completed an OAuth flow.
+
+[`.claude/settings.json`](../.claude/settings.json) denies those four tools outright. That is a Claude Code control; Codex has no project-level equivalent, so on Codex the only thing standing between the agent and those tools is the absence of credentials. Do not authenticate this server to do repository work. Nothing here needs an AWS account, and ADR-017 keeps account access out of the product.
 
 `search_documentation` does not return one kind of result, and the difference matters for how much weight its output carries:
 
@@ -22,6 +34,8 @@ Endpoint `https://knowledge-mcp.global.api.aws` over HTTP. No AWS account, no cr
 | Agent skill | any topic | `skill_name` and `skill_description` only. No page text, no URL |
 
 Measured on 2026-08-04: an S3 conditional-writes chunk matched the live page exactly, while a `current_awareness` result rendered ["We're announcing availability changes"](https://aws.amazon.com/about-aws/whats-new/2026/03/aws-service-availability/) as "AWS has announced changes to various services and features." Same facts, different voice and different characters.
+
+Re-measured against the new endpoint after the migration, because a table like this is worth nothing if it describes a server the repository no longer talks to. The same query returned a byte-identical paraphrase, so both servers front the same index and this table carries over unchanged.
 
 `read_documentation` converts a full page to markdown, which is faithful to the page but is still a page rather than a feed item.
 
@@ -77,9 +91,9 @@ The server is the default path for AWS documentation. It is not the only path, a
 
 | Question | Source |
 | --- | --- |
-| AWS API parameters, service semantics | Knowledge MCP `search_documentation`, then `read_documentation` |
-| A documentation page whose URL is already known | Knowledge MCP `read_documentation` |
-| Which announcements exist on a topic | Knowledge MCP `current_awareness`, then web search when ranking misses |
+| AWS API parameters, service semantics | AWS MCP `search_documentation`, then `read_documentation` |
+| A documentation page whose URL is already known | AWS MCP `read_documentation` |
+| Which announcements exist on a topic | AWS MCP `current_awareness`, then web search when ranking misses |
 | Historical corpus `title` and `summary` | Runtime acquisition or a retained raw snapshot. Never either tool |
 | Synthetic corpus `title` and `summary` | Authored by hand for the category under ADR-018. Never either tool |
 | Moto, GitHub, HashiCorp, RFCs, other vendors | `WebFetch` or web search. Outside the server's allow-list |
@@ -105,13 +119,19 @@ The two measurements answer different questions and neither replaces the other. 
 
 Recorded so a second agent can disagree with the reasoning rather than rediscover it.
 
-**Credentialed AWS access stays out of the default setup.** The Agent Toolkit was declined on the strength of its installer, which takes over the AWS CLI, the shell profile, a browser login, and the rules files in `CLAUDE.md` and `AGENTS.md`. That reasoning was too narrow to carry the general conclusion. Lighter credentialed options exist: the AWS API MCP server installs through `uvx` without touching the shell profile or writing rules files, and it is now superseded in turn by the official AWS MCP server.
+**Credentialed AWS access stays out of the setup, and that decision got weaker.** It used to be enforced by product choice: the Knowledge server had no account-facing tools, so declining credentials meant declining to install something. It is now a standing instruction not to authenticate a server already configured, whose account tools are one OAuth flow from working. An instruction is a weaker control than an absence.
 
-So the installer is a reason to decline one product, not a reason to decline credentials. The load-bearing reason is the last judgement call in this section: an authenticated server produces knowledge in a transcript, and this repository accepts checked-in tests and recorded output as evidence. A credentialed server could help provision or diagnose a test environment without ever being the thing that demonstrates correctness. Adding one is a real option; it is just not on the path to any current milestone.
+The reasoning that survives is the last judgement call in this section. An authenticated server produces knowledge in a transcript, and this repository accepts checked-in tests and recorded output as evidence. Credentials could help provision or diagnose a milestone-2 test environment without ever being the thing that demonstrates correctness — so if that day comes, authenticate deliberately, record why, and expect the deny list to be revisited rather than quietly dropped.
 
-**The configured server has a recommended successor.** Two things are true at once, and reading only the first is how this was got wrong in review. The Knowledge server remains generally available and carries no deprecation notice on its [project page](https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server). AWS's [unified-server setup guide](https://docs.aws.amazon.com/agent-toolkit/latest/userguide/getting-started-aws-mcp-server.html) nevertheless recommends that users of either older server switch to the AWS MCP Server, and names `aws-knowledge-mcp-server` among the entries to remove.
+The earlier version of this note declined the Agent Toolkit on the strength of its installer, which takes over the AWS CLI, the shell profile, a browser login, and the rules files in `CLAUDE.md` and `AGENTS.md`. That was always too narrow to carry a general conclusion about credentials, and it is now moot: this repository runs the successor to that toolkit's server, unauthenticated.
 
-This repository has not tested that migration in fresh Codex and Claude tasks, so the configuration stands. What makes the switch a real decision rather than a rename: the unified server authenticates, through OAuth or SigV4, where the Knowledge endpoint needs no credentials at all. Moving to it would reopen the credentialed-access question above rather than sidestep it.
+**The migration off the Knowledge server, and what it cost.** AWS's [setup guide](https://docs.aws.amazon.com/agent-toolkit/latest/userguide/getting-started-aws-mcp-server.html) tells users of the Knowledge server to switch to the AWS MCP Server and names `aws-knowledge-mcp-server` among the entries to remove. The Knowledge server was not deprecated — it remained generally available with no notice on its [project page](https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server) — so this was following a vendor recommendation, not evacuating a dying endpoint.
+
+The blocking question was whether the new server could be used without credentials, because "credential-free" was the property the old configuration rested on. Its setup guide documents only OAuth and SigV4, which reads like a hard requirement. The [GA announcement](https://aws.amazon.com/blogs/aws/the-aws-mcp-server-is-now-generally-available/) says documentation retrieval no longer requires authentication, which reads like the opposite.
+
+Settled by probing the endpoint rather than by choosing which page to believe. Unauthenticated `initialize` returns 200 with no auth challenge, `tools/list` returns all nine tools, `search_documentation` returns documentation, and `call_aws` fails with an authentication error. So the migration is viable credential-free.
+
+What it cost is honest to state: the tool surface went from five read-only tools to nine, four of which act on an AWS account. Denied on Claude Code, merely unusable on Codex. The old server could not have been made dangerous by a credential; this one can. That is a real reduction in the guarantee, accepted because the alternative was running a server against its vendor's own instruction.
 
 **The real milestone-2 decision is not about tooling.** It is `boto3` with `moto` versus `boto3` against a real account for the integration tests covering compare-and-swap promotion, exact object versions, and concurrent publishers. Mock fidelity is what would be trusted. That decision is open.
 
@@ -123,12 +143,16 @@ This repository has not tested that migration in fresh Codex and Claude tasks, s
 - If the server's regional-availability tools turn out to answer a question the specification leaves open, its role widens beyond documentation lookup.
 - If `current_awareness` starts returning verbatim announcement text, the result table above is wrong and the vocabulary workflow gets a shorter path. Re-measure before trusting it; the check is one search against one live page.
 - If a milestone needs AWS API calls to make progress rather than to verify it, the credentialed decision reopens on that evidence.
+- If AWS stops serving the documentation tools unauthenticated, the credential-free property is gone and the configuration needs rethinking rather than a quiet OAuth flow. The check is the probe recorded in the migration note: unauthenticated `initialize`, then `search_documentation`.
+- If Codex gains a project-level tool deny list, the asymmetry noted above closes and both hosts can enforce the same boundary.
 
 The corpus-boundary question in the first draft is settled. Codex reviewed it, the rule held, and its wording was too broad twice over: it read as forbidding announcement research rather than reserving two fields, and it claimed a single acquisition path for a corpus that ADR-018 lets carry authored fixtures. Narrowed above. The property to preserve in any future revision is unchanged — historical corpus text equals what the matcher sees in production.
 
 References verified: 2026-08-04.
 
+- [AWS MCP server setup, including the switch recommendation](https://docs.aws.amazon.com/agent-toolkit/latest/userguide/getting-started-aws-mcp-server.html)
+- [AWS MCP server general availability](https://aws.amazon.com/blogs/aws/the-aws-mcp-server-is-now-generally-available/)
+- [OAuth authentication for the AWS MCP server](https://docs.aws.amazon.com/agent-toolkit/latest/userguide/oauth-authentication.html)
 - [AWS Knowledge MCP server](https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server)
-- [AWS API MCP server](https://awslabs.github.io/mcp/servers/aws-api-mcp-server)
 - [S3 conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)
 - [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp)
