@@ -1,6 +1,6 @@
 # AWS Public Change Alerting
 
-[![Status](https://img.shields.io/badge/status-contracts%20validated-00AA77)](#validation-status)
+[![Status](https://img.shields.io/badge/status-contracts%20%2B%20matching%20validated-00AA77)](#validation-status)
 [![Repository quality](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml)
 [![Reference links](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/reference-links.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/reference-links.yml)
 [![Architecture page](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/pages.yml/badge.svg?branch=main)](https://lilabrooks.github.io/aws-public-change-feed/)
@@ -21,13 +21,14 @@ The repository holds the service and its authoritative architecture package. The
 - A numbered [architecture specification](docs/architecture/README.md).
 - Accepted [architecture decisions](docs/architecture/README.md#architecture-decision-records).
 - Strict machine-readable [schemas](schemas/) and one canonical [example bundle](examples/).
+- The [matching runtime](src/aws_public_change_feed/) and the [labeled corpus](corpus/) its quality is measured against.
 - Semantic validators and regression tests for cross-document rules and deterministic identities.
 
 Public announcements provide review evidence. They do not prove that an AWS account, environment, or resource is affected. Operators confirm applicability with their existing account-specific tools.
 
 ## Validation status
 
-The `contracts validated` badge means the committed architecture artifacts pass the repository's automated checks:
+The `contracts + matching validated` badge means the committed artifacts and the implemented matcher pass the repository's automated checks:
 
 - Each canonical example passes its paired JSON Schema.
 - The complete example bundle passes projections, references, route, release-hash, identity, retention, and size checks.
