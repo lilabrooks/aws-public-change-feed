@@ -9,8 +9,11 @@ from jsonschema.exceptions import SchemaError
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "src"))
 
 import validate_config as validator  # noqa: E402
+
+from aws_public_change_feed import identity  # noqa: E402
 
 SCHEMA_FILES = {
     "deployment": "deployment.schema.json",
@@ -58,20 +61,20 @@ def sync_candidate_identity(candidate):
     announcement["announcement_id"] = hashlib.sha256(
         validator.canonical_public_url(announcement["url"]).encode()
     ).hexdigest()
-    announcement["content_fingerprint"] = validator.digest_parts(
+    announcement["content_fingerprint"] = identity.digest_parts(
         "announcement-content:v1",
-        validator.normalized_text(announcement["title"]),
-        validator.normalized_text(announcement["summary"]),
+        identity.identity_text(announcement["title"]),
+        identity.identity_text(announcement["summary"]),
     )
-    announcement["revision_id"] = validator.digest_parts(
+    announcement["revision_id"] = identity.digest_parts(
         "announcement-revision:v1",
         announcement["announcement_id"],
         announcement["content_fingerprint"],
     )
-    candidate["audience_fingerprint"] = validator.digest_parts(
+    candidate["audience_fingerprint"] = identity.digest_parts(
         "candidate-audience:v1", *sorted(candidate["environment_ids"])
     )
-    candidate["candidate_id"] = validator.digest_parts(
+    candidate["candidate_id"] = identity.digest_parts(
         "candidate:v3",
         announcement["revision_id"],
         candidate["service"]["id"],
@@ -194,22 +197,22 @@ class ConfigurationValidatorTests(unittest.TestCase):
 
     def test_null_framed_identity_fields_reject_null_characters(self):
         with self.assertRaisesRegex(ValueError, "cannot contain null characters"):
-            validator.digest_parts("candidate:v3", "unsafe\0field")
+            identity.digest_parts("candidate:v3", "unsafe\0field")
 
     def test_queue_dispatch_identity_is_stable_per_generation(self):
         request_id = self.documents["delivery_request"]["request_id"]
         self.assertEqual(
-            validator.queue_dispatch_id(request_id, 1),
+            identity.queue_dispatch_id(request_id, 1),
             "d3dcad09334f4be3ca0943dae4ec17d8b0b233db4d066a42c92cd8bd66001f91",
         )
         self.assertEqual(
-            validator.queue_dispatch_id(request_id, 2),
+            identity.queue_dispatch_id(request_id, 2),
             "386a19c8060fd622087a3094f22b3937ee8e1f6b53ae0ae617dfed99ddb1bda0",
         )
         with self.assertRaisesRegex(ValueError, "positive integer"):
-            validator.queue_dispatch_id(request_id, 0)
+            identity.queue_dispatch_id(request_id, 0)
         with self.assertRaisesRegex(ValueError, "lowercase SHA-256"):
-            validator.queue_dispatch_id(request_id.upper(), 1)
+            identity.queue_dispatch_id(request_id.upper(), 1)
 
     def test_rfc3339_timestamp_parser_accepts_schema_valid_utc_suffixes(self):
         self.assertEqual(
@@ -576,7 +579,7 @@ class ConfigurationValidatorTests(unittest.TestCase):
                     manifest["inventory"]["key"] = f"aws-public-change-alerting/releases/{'f' * 64}/inventory.json"
                 elif label == "hash":
                     manifest["config"]["sha256"] = "0" * 64
-                    manifest["release_id"] = validator.digest_parts(
+                    manifest["release_id"] = identity.digest_parts(
                         "release:v1", manifest["config"]["sha256"], manifest["inventory"]["sha256"]
                     )
                     release_root = f"aws-public-change-alerting/releases/{manifest['release_id']}"
@@ -638,8 +641,8 @@ class ConfigurationValidatorTests(unittest.TestCase):
         sync_candidate_identity(changed)
         self.assertNotEqual(changed["audience_fingerprint"], original["audience_fingerprint"])
         self.assertNotEqual(changed["candidate_id"], original["candidate_id"])
-        original_request_id = validator.digest_parts("delivery-request:v2", original["candidate_id"])
-        changed_request_id = validator.digest_parts("delivery-request:v2", changed["candidate_id"])
+        original_request_id = identity.digest_parts("delivery-request:v2", original["candidate_id"])
+        changed_request_id = identity.digest_parts("delivery-request:v2", changed["candidate_id"])
         self.assertNotEqual(changed_request_id, original_request_id)
 
     def test_candidate_and_delivery_timestamp_order_is_enforced(self):

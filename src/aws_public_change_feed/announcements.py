@@ -62,6 +62,9 @@ class NormalizedAnnouncement:
 
     @property
     def content_fingerprint(self) -> str:
+        # The stored title and summary keep their original case for display;
+        # `content_fingerprint` folds case internally, which is what the
+        # contract fixtures and the validator require.
         return content_fingerprint(self.title, self.summary)
 
     @property

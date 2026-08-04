@@ -9,16 +9,27 @@ the runtime and the contract fixtures apart.
 from __future__ import annotations
 
 import hashlib
+import re
+import unicodedata
+from collections.abc import Iterable
 from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 __all__ = [
     "TRACKING_QUERY_KEYS",
     "announcement_id",
+    "audience_fingerprint",
+    "candidate_id",
     "canonical_public_url",
     "content_fingerprint",
+    "delivery_request_id",
     "digest_parts",
+    "identity_text",
+    "queue_dispatch_id",
+    "release_id",
     "revision_id",
 ]
+
+_DIGEST = re.compile(r"[a-f0-9]{64}")
 
 # Reviewed list. Canonicalization removes only these; it must not strip
 # arbitrary parameters, because distinct resources can differ by query alone.
@@ -66,15 +77,67 @@ def canonical_public_url(raw_url: str) -> str:
     return urlunsplit((parsed.scheme.casefold(), netloc, path, query, ""))
 
 
+def identity_text(value: str) -> str:
+    """Normalize a value for identity framing.
+
+    Distinct from display normalization on purpose. Identity folds case so an
+    editorial capitalization change does not mint a new revision; the stored
+    title keeps its original case because Slack shows it to a human. Callers
+    pass display text and this applies the fold, so the two cannot drift.
+    """
+
+    return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
 def announcement_id(canonical_url: str) -> str:
     """SHA-256 of the canonical URL bytes."""
 
     return hashlib.sha256(canonical_url.encode()).hexdigest()
 
 
-def content_fingerprint(normalized_title: str, normalized_summary: str) -> str:
-    return digest_parts("announcement-content:v1", normalized_title, normalized_summary)
+def content_fingerprint(title: str, summary: str) -> str:
+    """Fingerprint announcement content. Takes display text, folds internally."""
+
+    return digest_parts("announcement-content:v1", identity_text(title), identity_text(summary))
 
 
 def revision_id(announcement: str, fingerprint: str) -> str:
     return digest_parts("announcement-revision:v1", announcement, fingerprint)
+
+
+def release_id(config_sha256: str, inventory_sha256: str) -> str:
+    return digest_parts("release:v1", config_sha256, inventory_sha256)
+
+
+def audience_fingerprint(environment_ids: Iterable[str]) -> str:
+    """Fingerprint the sorted environment IDs a candidate addresses."""
+
+    return digest_parts("candidate-audience:v1", *sorted(environment_ids))
+
+
+def candidate_id(
+    revision: str,
+    service_id: str,
+    risk_type: str,
+    route_id: str,
+    audience: str,
+) -> str:
+    """Route-scoped candidate identity, per ADR-002 and chapter 04.
+
+    The rule ID is deliberately absent: renaming a rule that keeps its risk
+    type and evidence must not mint a new candidate.
+    """
+
+    return digest_parts("candidate:v3", revision, service_id, risk_type, route_id, audience)
+
+
+def delivery_request_id(candidate: str) -> str:
+    return digest_parts("delivery-request:v2", candidate)
+
+
+def queue_dispatch_id(request_id: str, generation: int) -> str:
+    if not _DIGEST.fullmatch(request_id):
+        raise ValueError("queue dispatch request_id must be a lowercase SHA-256 digest")
+    if isinstance(generation, bool) or not isinstance(generation, int) or generation < 1:
+        raise ValueError("queue dispatch generation must be a positive integer")
+    return digest_parts("queue-dispatch:v1", request_id, str(generation))
