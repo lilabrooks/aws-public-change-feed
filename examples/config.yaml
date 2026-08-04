@@ -102,11 +102,15 @@ risk_rules:
     match:
       any:
         - breaking change
+        - breaking changes
         - required action
+        - required actions
         - migration required
         - upgrade required
         - default change
+        - default changes
         - API change
+        - API changes
       all: []
       none: []
 
@@ -119,10 +123,21 @@ risk_rules:
     match:
       any:
         - new version
+        - new versions
         - version update
+        - version updates
         - runtime update
+        - runtime updates
+        - managed runtime
+        - managed runtimes
         - engine version
+        - engine versions
+        - cumulative update
+        - cumulative updates
+        - general distribution release
+        - general distribution releases
         - Kubernetes version
+        - Kubernetes versions
       all: []
       none:
         - now available in
@@ -137,8 +152,12 @@ risk_rules:
     match:
       any:
         - vulnerability
+        - vulnerabilities
         - CVE
+        - CVEs
         - security bulletin
+        - security bulletins
         - security update
+        - security updates
       all: []
       none: []

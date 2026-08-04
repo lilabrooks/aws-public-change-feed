@@ -137,6 +137,30 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual(results[0].matched_terms, ("end of life", "end of support"))
         self.assertEqual(results[0].matched_fields, ("title", "summary"))
 
+    def test_trailing_inflection_requires_its_own_configured_term(self):
+        # Chapter 04 commits to exact phrases so a reviewer sees the literal
+        # term that fired. The consequence is that a pluralized final word is
+        # a distinct term, which is why config.yaml carries both forms.
+        singular = rule(any_terms=("engine version",))
+        self.assertEqual(
+            match_announcement(Announcement("Amazon EKS lists engine versions"), [EKS], [singular]),
+            (),
+        )
+        both = rule(any_terms=("engine version", "engine versions"))
+        self.assertEqual(
+            [
+                result.pair
+                for result in match_announcement(Announcement("Amazon EKS lists engine versions"), [EKS], [both])
+            ],
+            [("eks", "end-of-support")],
+        )
+
+    def test_a_following_word_does_not_defeat_a_configured_phrase(self):
+        # The mirror case: the boundary falls after the configured phrase, so
+        # no extra term is needed for "end of support dates".
+        results = match_announcement(Announcement("Amazon EKS publishes end of support dates"), [EKS], [rule()])
+        self.assertEqual([result.pair for result in results], [("eks", "end-of-support")])
+
     def test_rule_without_fields_is_skipped(self):
         self.assertEqual(match_announcement(Announcement("Amazon EKS end of support"), [EKS], [rule(fields=())]), ())
 
