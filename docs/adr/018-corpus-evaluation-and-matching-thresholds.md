@@ -1,6 +1,6 @@
 # ADR-018: Corpus evaluation and matching thresholds
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-03
 
 ## Context
