@@ -52,7 +52,14 @@ Permitted, and useful:
 
 Forbidden: pasting server output into `corpus/announcements.json` as an item's title or summary.
 
-The reason is not that the text is processed, though `current_awareness` output is. It is that a page body is a *different artifact* from the feed item the runtime normalizes, and matching is literal on exact characters. Corpus text has one legitimate production path:
+The reason is not that the text is processed, though `current_awareness` output is. It is that a page body is a *different artifact* from the feed item the runtime normalizes, and matching is literal on exact characters.
+
+The rule against pasting server output into those two fields is universal. The provenance requirement behind it is not, because ADR-018 deliberately permits `synthetic` items whose title and summary are authored fixtures — they exercise punctuation variants, Unicode, and hard negatives where no real announcement has the needed shape. So the constraint splits:
+
+- `historical` items claim to be real published announcements. Their text must come through acquisition.
+- `synthetic` items are authored, and honest about it. They may not borrow AWS text through a side channel and present it as observed.
+
+Historical corpus text has one legitimate production path:
 
 1. `_rss_items` in [`feedparse.py`](../src/aws_public_change_feed/feedparse.py) takes RSS `<description>`; `_atom_entries` takes Atom `<summary>` or `<content>`.
 2. `normalize_item` in [`announcements.py`](../src/aws_public_change_feed/announcements.py) sanitizes and truncates at the production limits.
@@ -73,7 +80,8 @@ The server is the default path for AWS documentation. It is not the only path, a
 | AWS API parameters, service semantics | Knowledge MCP `search_documentation`, then `read_documentation` |
 | A documentation page whose URL is already known | Knowledge MCP `read_documentation` |
 | Which announcements exist on a topic | Knowledge MCP `current_awareness`, then web search when ranking misses |
-| Corpus `title` and `summary` | Runtime acquisition or a retained raw snapshot. Never either tool |
+| Historical corpus `title` and `summary` | Runtime acquisition or a retained raw snapshot. Never either tool |
+| Synthetic corpus `title` and `summary` | Authored by hand for the category under ADR-018. Never either tool |
 | Moto, GitHub, HashiCorp, RFCs, other vendors | `WebFetch` or web search. Outside the server's allow-list |
 | Verifying a link, or confirming a claim independently | `WebFetch`, deliberately not the server |
 
@@ -89,7 +97,9 @@ Proposing a risk term from what the server tells you is the one path that touche
 2. Screen each candidate term against the live feeds with `make screen-feeds`, which fetches through the runtime acquisition path so the text screened is the text the matcher sees. Screening against anything else is what previously hid a false positive.
 3. Judge the term on true positives against false positives in that sample. A term with no true positive and any false positive is removed rather than patched with a `none` exclusion, because an exclusion only chases one phrase.
 4. Only then edit `examples/config.yaml`, recalculate the config hash, the derived `release_id`, and the release references in the three dependent fixtures.
-5. Rerun `make evaluate-corpus` and record the figures. Corpus recall after a term change is close to circular, since the terms were chosen to close those items; the live screen is the number that carries weight.
+5. Rerun `make evaluate-corpus` and record the figures. Corpus recall after a term change is close to circular, since the terms were chosen to close those items.
+
+The two measurements answer different questions and neither replaces the other. The production-normalized live screen is the independent check on immediate false-positive risk in the observed feed sample; it reports current matches and an unlabeled count, not a quality rate. The corpus report remains the controlled precision and recall measure. A quiet screen is evidence about the base rate in that window, not proof a term is safe.
 
 ## Judgement calls worth challenging
 
@@ -99,7 +109,9 @@ Recorded so a second agent can disagree with the reasoning rather than rediscove
 
 So the installer is a reason to decline one product, not a reason to decline credentials. The load-bearing reason is the last judgement call in this section: an authenticated server produces knowledge in a transcript, and this repository accepts checked-in tests and recorded output as evidence. A credentialed server could help provision or diagnose a test environment without ever being the thing that demonstrates correctness. Adding one is a real option; it is just not on the path to any current milestone.
 
-One correction to that thread, since it cost a round of review. The Knowledge server itself carries no deprecation or migration notice — its README states general availability and no authentication as of 2026-08-04. The supersession chain runs through the API server, not this one. Nothing about the current configuration is stale.
+**The configured server has a recommended successor.** Two things are true at once, and reading only the first is how this was got wrong in review. The Knowledge server remains generally available and carries no deprecation notice on its [project page](https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server). AWS's [unified-server setup guide](https://docs.aws.amazon.com/agent-toolkit/latest/userguide/getting-started-aws-mcp-server.html) nevertheless recommends that users of either older server switch to the AWS MCP Server, and names `aws-knowledge-mcp-server` among the entries to remove.
+
+This repository has not tested that migration in fresh Codex and Claude tasks, so the configuration stands. What makes the switch a real decision rather than a rename: the unified server authenticates, through OAuth or SigV4, where the Knowledge endpoint needs no credentials at all. Moving to it would reopen the credentialed-access question above rather than sidestep it.
 
 **The real milestone-2 decision is not about tooling.** It is `boto3` with `moto` versus `boto3` against a real account for the integration tests covering compare-and-swap promotion, exact object versions, and concurrent publishers. Mock fidelity is what would be trusted. That decision is open.
 
@@ -112,7 +124,7 @@ One correction to that thread, since it cost a round of review. The Knowledge se
 - If `current_awareness` starts returning verbatim announcement text, the result table above is wrong and the vocabulary workflow gets a shorter path. Re-measure before trusting it; the check is one search against one live page.
 - If a milestone needs AWS API calls to make progress rather than to verify it, the credentialed decision reopens on that evidence.
 
-The corpus-boundary question in the first draft is settled. Codex reviewed it, the rule held, and its wording was too broad: it read as forbidding announcement research rather than reserving two fields. Narrowed above. The property to preserve in any future revision is unchanged — corpus text equals what the matcher sees in production.
+The corpus-boundary question in the first draft is settled. Codex reviewed it, the rule held, and its wording was too broad twice over: it read as forbidding announcement research rather than reserving two fields, and it claimed a single acquisition path for a corpus that ADR-018 lets carry authored fixtures. Narrowed above. The property to preserve in any future revision is unchanged — historical corpus text equals what the matcher sees in production.
 
 References verified: 2026-08-04.
 
