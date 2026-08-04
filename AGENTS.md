@@ -62,10 +62,20 @@ make references-online
 
 Review `git diff --check`, inspect the complete diff, and remove generated caches. Report checks that could not run and why.
 
+## Working across Codex and Claude Code
+
+This file is the shared instruction source. Codex reads it directly; `CLAUDE.md` imports it so Claude Code loads the same rules. Put repository-wide guidance here, never in a host adapter, and never duplicate it between the two.
+
+Three differences between the hosts are deliberate:
+
+- `CLAUDE.md` also imports `docs/GOAL.md` and `docs/architecture/README.md` so Claude Code loads them automatically. Codex has no import mechanism, so it follows the read order above. Both hosts end up with the same material; only the loading differs.
+- The AWS Knowledge MCP server is declared twice, in `.mcp.json` for Claude Code and `.codex/config.toml` for Codex, because the hosts read different files and share no format. A change to one needs the same change to the other. Codex loads project configuration for trusted projects only, so trust the project if the server does not appear.
+- `.claude/settings.json` denies reading `.env` files. Codex has no equivalent project setting, so that control protects Claude Code sessions only. Treat it as a convenience rather than an enforced boundary on either host, and keep secrets out of the repository regardless.
+
 ## Repository layout
 
 - `README.md`: human entry point and current status.
-- `.mcp.json`: the AWS Knowledge MCP server, for looking up AWS documentation and API semantics. Credential-free and read-only. Use it for research and for discovering how AWS words announcements. Never use it to source corpus text or announcement content: it returns web-page bodies, while corpus items must carry the feed item's description as normalized by the runtime acquisition path, and matching is literal on exact characters.
+- `.mcp.json` and `.codex/config.toml`: the AWS Knowledge MCP server, configured for Claude Code and Codex respectively. Credential-free and read-only. Use it for AWS documentation and API semantics, and for discovering how AWS words announcements. Never use it to source corpus text or announcement content: it returns web-page bodies, while corpus items must carry the feed item's description as normalized by the runtime acquisition path, and matching is literal on exact characters.
 - `docs/GOAL.md`: product outcome, scope, and implementation milestones.
 - `docs/architecture/README.md`: architecture index and document map.
 - `docs/architecture/specification/`: normative requirements in reading order.
