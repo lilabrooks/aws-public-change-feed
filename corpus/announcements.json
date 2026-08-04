@@ -1,0 +1,226 @@
+{
+  "corpus_version": 1,
+  "items": [
+    {
+      "id": "syn-eks-end-of-support-plain",
+      "provenance": "synthetic",
+      "category": "positive",
+      "canonical_url": "https://corpus.invalid/synthetic/eks-end-of-support-plain",
+      "title": "Amazon EKS announces end of support for Kubernetes version 1.28",
+      "summary": "Standard support for Kubernetes version 1.28 on Amazon EKS ends on a published date. Clusters remaining on this version move to extended support and incur additional charges.",
+      "expected_matches": [
+        {
+          "service_id": "eks",
+          "risk_type": "end-of-support"
+        },
+        {
+          "service_id": "eks",
+          "risk_type": "service-version-update"
+        }
+      ],
+      "notes": "Carries both risk types: the summary states end of support and names a Kubernetes version."
+    },
+    {
+      "id": "syn-eks-version-update",
+      "provenance": "synthetic",
+      "category": "positive",
+      "canonical_url": "https://corpus.invalid/synthetic/eks-version-update",
+      "title": "Amazon EKS supports Kubernetes version 1.32",
+      "summary": "Amazon Elastic Kubernetes Service now supports a new Kubernetes version for cluster creation and upgrades.",
+      "expected_matches": [
+        {
+          "service_id": "eks",
+          "risk_type": "service-version-update"
+        }
+      ]
+    },
+    {
+      "id": "syn-lambda-breaking-change",
+      "provenance": "synthetic",
+      "category": "positive",
+      "canonical_url": "https://corpus.invalid/synthetic/lambda-breaking-change",
+      "title": "AWS Lambda introduces a breaking change to response streaming defaults",
+      "summary": "A default change affects how AWS Lambda handles streamed responses. Migration required for functions that depend on the previous buffering behavior.",
+      "expected_matches": [
+        {
+          "service_id": "lambda",
+          "risk_type": "breaking-change"
+        }
+      ]
+    },
+    {
+      "id": "syn-rds-end-of-support",
+      "provenance": "synthetic",
+      "category": "positive",
+      "canonical_url": "https://corpus.invalid/synthetic/rds-end-of-support",
+      "title": "Amazon RDS for PostgreSQL 13 reaches end of support",
+      "summary": "Amazon RDS will end standard support for this major engine version. Instances not upgraded before the date are automatically upgraded during a maintenance window.",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "end-of-support"
+        },
+        {
+          "service_id": "rds",
+          "risk_type": "service-version-update"
+        }
+      ],
+      "notes": "Both risk types are correct: the summary states end of support and names an engine version."
+    },
+    {
+      "id": "syn-rds-punctuation-variant",
+      "provenance": "synthetic",
+      "category": "punctuation-variant",
+      "canonical_url": "https://corpus.invalid/synthetic/rds-punctuation-variant",
+      "title": "Amazon Aurora publishes end-of-life dates for older engine versions",
+      "summary": "The end-of-life schedule for several Amazon Aurora engine versions is now published.",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "end-of-support"
+        },
+        {
+          "service_id": "rds",
+          "risk_type": "service-version-update"
+        }
+      ],
+      "notes": "Hyphenated risk term and the Aurora alias, which maps to the rds service. The service-version-update expectation is a known recall gap: the configured term is 'engine version' and this text uses the plural 'engine versions', which phrase-boundary matching does not cover."
+    },
+    {
+      "id": "syn-unicode-nonbreaking",
+      "provenance": "synthetic",
+      "category": "unicode",
+      "canonical_url": "https://corpus.invalid/synthetic/unicode-nonbreaking",
+      "title": "Amazon EKS announces end of support for an older Kubernetes version",
+      "summary": "Non-breaking spaces and a typographic apostrophe in the cluster’s description must not defeat matching.",
+      "expected_matches": [
+        {
+          "service_id": "eks",
+          "risk_type": "end-of-support"
+        },
+        {
+          "service_id": "eks",
+          "risk_type": "service-version-update"
+        }
+      ],
+      "notes": "Unicode normalization must fold NBSP to a space before phrase matching."
+    },
+    {
+      "id": "syn-html-residue",
+      "provenance": "synthetic",
+      "category": "html",
+      "canonical_url": "https://corpus.invalid/synthetic/html-residue",
+      "title": "AWS Lambda announces a breaking change for the Node.js runtime",
+      "summary": "Sanitized feed text can retain collapsed whitespace and stray punctuation: upgrade required for affected functions .",
+      "expected_matches": [
+        {
+          "service_id": "lambda",
+          "risk_type": "breaking-change"
+        }
+      ],
+      "notes": "Represents post-sanitization text, since raw HTML is not stored in the corpus."
+    },
+    {
+      "id": "syn-overlapping-services",
+      "provenance": "synthetic",
+      "category": "overlapping-services",
+      "canonical_url": "https://corpus.invalid/synthetic/overlapping-services",
+      "title": "Amazon EKS and Amazon RDS announce end of support for older versions",
+      "summary": "Both Amazon EKS and Amazon RDS published end of support dates affecting existing clusters and database instances.",
+      "expected_matches": [
+        {
+          "service_id": "eks",
+          "risk_type": "end-of-support"
+        },
+        {
+          "service_id": "rds",
+          "risk_type": "end-of-support"
+        }
+      ],
+      "notes": "Chapter 04 requires each service in one item to be evaluated independently."
+    },
+    {
+      "id": "syn-security-guidance",
+      "provenance": "synthetic",
+      "category": "security-guidance",
+      "canonical_url": "https://corpus.invalid/synthetic/security-guidance",
+      "title": "AWS Lambda security bulletin describes a resolved vulnerability",
+      "summary": "A security bulletin covering AWS Lambda describes a resolved issue and the CVE assigned to it.",
+      "expected_matches": [
+        {
+          "service_id": "lambda",
+          "risk_type": "security"
+        }
+      ]
+    },
+    {
+      "id": "syn-edit-revision",
+      "provenance": "synthetic",
+      "category": "edit",
+      "canonical_url": "https://corpus.invalid/synthetic/edit-revision",
+      "title": "Amazon RDS updates the end of support date for an older engine version",
+      "summary": "This announcement was edited after publication to correct the end of support date. The corrected text still describes the same engine version.",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "end-of-support"
+        },
+        {
+          "service_id": "rds",
+          "risk_type": "service-version-update"
+        }
+      ],
+      "notes": "An edited item must still match; revision handling is announcement identity, not matching."
+    },
+    {
+      "id": "syn-negative-service-only",
+      "provenance": "synthetic",
+      "category": "hard-negative",
+      "canonical_url": "https://corpus.invalid/synthetic/negative-service-only",
+      "title": "Amazon EKS reduces cluster creation time",
+      "summary": "Amazon Elastic Kubernetes Service improves the time required to create a cluster. No action is needed.",
+      "expected_matches": [],
+      "notes": "Service evidence with no risk evidence must not match."
+    },
+    {
+      "id": "syn-negative-risk-only",
+      "provenance": "synthetic",
+      "category": "hard-negative",
+      "canonical_url": "https://corpus.invalid/synthetic/negative-risk-only",
+      "title": "Amazon Redshift announces end of support for an older cluster version",
+      "summary": "This end of support notice covers a service that no declared profile contains.",
+      "expected_matches": [],
+      "notes": "Risk evidence for an unconfigured service must not match a configured one."
+    },
+    {
+      "id": "syn-negative-excluded-term",
+      "provenance": "synthetic",
+      "category": "hard-negative",
+      "canonical_url": "https://corpus.invalid/synthetic/negative-excluded-term",
+      "title": "Amazon RDS engine version now available in additional Regions",
+      "summary": "A new engine version is now available in more AWS Regions. Existing instances are unaffected.",
+      "expected_matches": [],
+      "notes": "The version rule excludes 'now available in', which is regional-availability news rather than a required action."
+    },
+    {
+      "id": "syn-generic-prose",
+      "provenance": "synthetic",
+      "category": "generic-prose",
+      "canonical_url": "https://corpus.invalid/synthetic/generic-prose",
+      "title": "AWS publishes a customer story about platform modernization",
+      "summary": "A customer describes migrating workloads to AWS and the operational practices adopted afterward.",
+      "expected_matches": [],
+      "notes": "Generic AWS prose naming no configured service and no risk term."
+    },
+    {
+      "id": "syn-negative-substring-boundary",
+      "provenance": "synthetic",
+      "category": "hard-negative",
+      "canonical_url": "https://corpus.invalid/synthetic/negative-substring-boundary",
+      "title": "Lambdas in functional programming: a breaking change in our tutorial series",
+      "summary": "This article discusses lambdas as a language construct and includes a breaking change to the sample repository layout.",
+      "expected_matches": [],
+      "notes": "'Lambdas' must not satisfy the 'AWS Lambda' or 'Lambda function' aliases through a substring."
+    }
+  ]
+}

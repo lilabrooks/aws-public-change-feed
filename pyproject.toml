@@ -1,3 +1,18 @@
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aws-public-change-feed"
+version = "0.1.0"
+description = "Route-scoped review candidates from public AWS announcement feeds"
+requires-python = ">=3.12"
+license = "Apache-2.0"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.ruff]
 target-version = "py312"
 line-length = 120
@@ -13,3 +28,24 @@ show_error_codes = true
 warn_redundant_casts = true
 warn_unused_configs = true
 warn_unused_ignores = true
+mypy_path = "src"
+
+# The runtime package is strict from its first file. Retrofitting strict mode
+# across a grown codebase is materially harder than starting there. The
+# validator scripts and tests predate this baseline and keep the settings
+# above.
+#
+# The sub-flags are listed individually on purpose: `strict = true` in a
+# per-module override is read as the global flag and turns strict mode on for
+# the whole repository, which would fail the existing scripts and tests.
+[[tool.mypy.overrides]]
+module = "aws_public_change_feed.*"
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+disallow_untyped_calls = true
+disallow_untyped_decorators = true
+disallow_any_generics = true
+warn_return_any = true
+no_implicit_reexport = true
+strict_equality = true
+extra_checks = true

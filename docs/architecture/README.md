@@ -30,6 +30,7 @@ The [goal](../GOAL.md) defines the outcome and milestones. The [operations runbo
 - [ADR-015: Slack rendering, rate control, and retry](../adr/015-slack-rendering-rate-control-and-retry.md)
 - [ADR-016: Production preflight and event contracts](../adr/016-production-preflight-and-event-contracts.md)
 - [ADR-017: Public-feed-only product scope](../adr/017-public-feed-only-product-scope.md)
+- [ADR-018: Corpus evaluation and matching thresholds](../adr/018-corpus-evaluation-and-matching-thresholds.md) (proposed)
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 
@@ -43,6 +44,8 @@ ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the pro
 | Active immutable release | [`active-versions.schema.json`](../../schemas/active-versions.schema.json) | [`active-versions.json`](../../examples/active-versions.json) |
 | Feed output | [`alert-candidate.schema.json`](../../schemas/alert-candidate.schema.json) | [`alert-candidate.json`](../../examples/alert-candidate.json) |
 | Slack work item | [`delivery-request.schema.json`](../../schemas/delivery-request.schema.json) | [`delivery-request.json`](../../examples/delivery-request.json) |
+| Labeled matching corpus | [`corpus.schema.json`](../../schemas/corpus.schema.json) | [`announcements.json`](../../corpus/announcements.json) |
+| Approved matching thresholds | [`corpus-thresholds.schema.json`](../../schemas/corpus-thresholds.schema.json) | [`thresholds.json`](../../corpus/thresholds.json) |
 
 [`validate_config.py`](../../scripts/validate_config.py) enforces schema and cross-document rules. [`test_validate_config.py`](../../tests/test_validate_config.py) keeps a regression case for each rejected mutation.
 
@@ -65,6 +68,8 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 │   └── runbooks/                Operational procedures
 ├── schemas/                     JSON Schema contracts
 ├── examples/                    Canonical executable contract fixtures
+├── corpus/                      Labeled announcements and approved thresholds
+├── src/                         Python runtime packages
 ├── site/                        GitHub Pages source and Mermaid processing flow
 ├── scripts/                     Repository validators
 ├── tests/                       Regression tests
@@ -72,7 +77,7 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 └── requirements-dev.txt         Pinned validation dependencies
 ```
 
-The planned implementation adds `infra/bootstrap/`, `infra/central/`, and `src/` when those directories contain working files. Keep a concept in one owning document and link to it elsewhere. Do not copy full requirements between the goal, specification, ADRs, and runbook.
+The planned implementation adds `infra/bootstrap/` and `infra/central/` when those directories contain working files. `src/` currently holds normalization, matching, corpus, and evaluation; the feed, state, and delivery packages join it as those milestones land. Keep a concept in one owning document and link to it elsewhere. Do not copy full requirements between the goal, specification, ADRs, and runbook.
 
 ## Public page maintenance
 

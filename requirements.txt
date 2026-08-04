@@ -1,0 +1,7 @@
+# Pinned runtime dependencies for the deployed packages.
+#
+# ADR-006 requires pinned production dependencies and reproducible build
+# artifacts. The matching and corpus-evaluation code is deliberately
+# dependency-free: it reads normalized JSON and the release configuration,
+# both of which the standard library handles. Feed acquisition, DynamoDB
+# state, and Slack delivery will add entries here as those milestones land.

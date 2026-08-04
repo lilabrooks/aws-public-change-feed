@@ -12,7 +12,10 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import validate_references as validator  # noqa: E402
 
-AS_OF = date(2026, 7, 13)
+# A fixed clock keeps the committed-reference assertions deterministic. Move it
+# forward when a document is verified on a later date; the 180-day warning and
+# 365-day maximum leave ample room before older markers need re-verification.
+AS_OF = date(2026, 8, 3)
 VALID_LYCHEE_CONFIG = (ROOT / "lychee.toml").read_text(encoding="utf-8")
 
 
@@ -69,7 +72,7 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.assertFalse(any("target does not exist" in error for error in errors))
 
     def test_future_reference_date_is_rejected(self):
-        markdown = "# Test\n\nhttps://example.com\n\nReferences verified: 2026-07-14.\n"
+        markdown = "# Test\n\nhttps://example.com\n\nReferences verified: 2026-08-04.\n"
         directory, root = self.make_repository(markdown)
         with directory:
             errors, _, _, _ = self.validate(root)
@@ -236,7 +239,7 @@ class ReferenceValidatorTests(unittest.TestCase):
     def test_lychee_exclusion_requires_reason_and_expiry(self):
         cases = {
             "missing both": "^https://example\\.com$\n",
-            "missing reason": "# Expires: 2026-08-01\n^https://example\\.com$\n",
+            "missing reason": "# Expires: 2026-09-01\n^https://example\\.com$\n",
             "missing expiry": "# Reason: automated requests are blocked\n^https://example\\.com$\n",
         }
         for label, exclusions in cases.items():
@@ -267,7 +270,7 @@ class ReferenceValidatorTests(unittest.TestCase):
 
     def test_current_documented_lychee_exclusion_is_accepted(self):
         exclusions = (
-            "# Reason: host rejects identified automated clients\n# Expires: 2026-08-01\n^https://example\\.com$\n"
+            "# Reason: host rejects identified automated clients\n# Expires: 2026-09-01\n^https://example\\.com$\n"
         )
         directory, root = self.make_repository("# Test\n", exclusions)
         with directory:
@@ -276,11 +279,11 @@ class ReferenceValidatorTests(unittest.TestCase):
 
     def test_lychee_exclusion_metadata_must_be_adjacent_and_ordered(self):
         cases = {
-            "blank before pattern": ("# Reason: blocked\n# Expires: 2026-08-01\n\n^https://example\\.com$\n"),
+            "blank before pattern": ("# Reason: blocked\n# Expires: 2026-09-01\n\n^https://example\\.com$\n"),
             "comment before pattern": (
-                "# Reason: blocked\n# Expires: 2026-08-01\n# Temporary note\n^https://example\\.com$\n"
+                "# Reason: blocked\n# Expires: 2026-09-01\n# Temporary note\n^https://example\\.com$\n"
             ),
-            "reversed metadata": ("# Expires: 2026-08-01\n# Reason: blocked\n^https://example\\.com$\n"),
+            "reversed metadata": ("# Expires: 2026-09-01\n# Reason: blocked\n^https://example\\.com$\n"),
         }
         for label, exclusions in cases.items():
             with self.subTest(label=label):

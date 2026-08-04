@@ -28,7 +28,7 @@
 - Given two routes, each candidate contains only that route's sorted environment IDs.
 - Given a title or summary edit, a new revision and candidate ID can result.
 - Given only added provenance or corrected publication time, no new candidate is delivered.
-- Given the historical corpus, recorded per-service and per-risk precision and recall meet the approved thresholds.
+- Given the historical corpus, recorded per-service and per-risk precision and recall meet the approved thresholds in [ADR-018](../../adr/018-corpus-evaluation-and-matching-thresholds.md).
 
 ## Candidate and outbox acceptance
 

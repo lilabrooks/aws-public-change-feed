@@ -1,10 +1,11 @@
 PYTHON ?= python3
 LYCHEE ?= lychee
 PYTHON_PATHS := scripts tests $(wildcard src)
+MYPY_PATHS := $(PYTHON_PATHS)
 YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml $(wildcard .github/workflows)
 
 .PHONY: help install format format-check lint lint-python lint-yaml typecheck validate validate-config \
-	validate-references validate-site references-online test whitespace check clean
+	validate-references validate-site evaluate-corpus references-online test whitespace check clean
 
 help:
 	@echo "Available targets:"
@@ -14,6 +15,7 @@ help:
 	@echo "  lint          Run Python and YAML linters"
 	@echo "  typecheck     Run mypy"
 	@echo "  validate      Validate contracts, references, local links, review dates, and the public page"
+	@echo "  evaluate-corpus    Score matching against the labeled corpus and approved thresholds"
 	@echo "  references-online  Check external links with Lychee (requires network)"
 	@echo "  test          Run the unittest suite"
 	@echo "  whitespace    Check changed files for Git whitespace errors"
@@ -41,7 +43,7 @@ lint-yaml:
 typecheck:
 	$(PYTHON) -m mypy $(PYTHON_PATHS)
 
-validate: validate-config validate-references validate-site
+validate: validate-config validate-references validate-site evaluate-corpus
 
 validate-config:
 	$(PYTHON) scripts/validate_config.py
@@ -51,6 +53,9 @@ validate-references:
 
 validate-site:
 	$(PYTHON) scripts/validate_site.py
+
+evaluate-corpus:
+	$(PYTHON) scripts/evaluate_corpus.py
 
 references-online: validate-references
 	$(LYCHEE) .
