@@ -38,7 +38,8 @@ Use “potentially relevant” for environment matches. Public announcements do 
 - Treat DynamoDB as the delivery system of record and SQS as transport.
 - Preserve the explicit `delivery_unknown` state. Never claim exactly-once Slack delivery.
 - Add or update an ADR when a change alters product scope, trust boundaries, identity, delivery guarantees, state ownership, or version policy. Continue the three-digit numbering, mark new decisions `- Status: Proposed` for the owner's review, and list the ADR in `docs/architecture/README.md`.
-- When source changes, update the documents that govern it: `schemas/`, `examples/`, and `scripts/validate_config.py` are governed by `docs/architecture/specification/03-configuration.md` and ADR-011; `tests/` is governed by chapter 06. If the governing document does not need to change, say why in the commit message or pull request.
+- When source changes, update the documents that govern it: `schemas/`, `examples/`, and `scripts/validate_config.py` are governed by `docs/architecture/specification/03-configuration.md` and ADR-011; `src/` and `corpus/` are governed by chapter 04 and ADR-009, with corpus rules and thresholds in ADR-018; `tests/` is governed by chapter 06. If the governing document does not need to change, say why in the commit message or pull request.
+- A matcher or configuration change reruns `make evaluate-corpus` and records the reported figures. Chapter 04 requires the promotion record; the harness prints it.
 - Keep `docs/architecture/README.md` current when specification chapters or ADRs are added or renamed. It is the single index and the human reading order.
 
 ## Verification
@@ -71,6 +72,7 @@ Review `git diff --check`, inspect the complete diff, and remove generated cache
 - `tests/`: regression coverage.
 - `infra/bootstrap/`: planned Terraform remote-state bootstrap root.
 - `infra/central/`: planned Terraform service root.
-- `src/`: planned Python runtime packages.
+- `corpus/`: labeled announcements and the approved matching thresholds.
+- `src/`: Python runtime packages.
 
 Create planned directories only when implementation files are ready. Empty placeholders add clutter.

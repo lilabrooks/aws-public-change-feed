@@ -33,8 +33,9 @@ The `contracts validated` badge means the committed architecture artifacts pass 
 - The complete example bundle passes projections, references, route, release-hash, identity, retention, and size checks.
 - Regression tests confirm that rejected configuration and event-contract mutations fail validation.
 - Python quality, YAML, local links, reference dates, the public page, and Git whitespace pass the same gate.
+- Deterministic matching scores at or above the approved thresholds against the labeled corpus.
 
-The Terraform roots and Python runtime remain implementation milestones. Deployment, live feed acquisition, Slack delivery, corpus quality, recovery, load, and production preflight still require executable evidence.
+Matching is the first implemented runtime package. Its corpus is currently authored rather than drawn from real announcements, so the measured figures describe the matcher against expected shapes, not against AWS's own writing. The Terraform roots and the remaining runtime packages are implementation milestones. Deployment, live feed acquisition, Slack delivery, recovery, load, and production preflight still require executable evidence.
 
 ## Start here
 
@@ -42,6 +43,7 @@ The Terraform roots and Python runtime remain implementation milestones. Deploym
 2. Read the [goal](docs/GOAL.md) for scope, milestones, and completion criteria.
 3. Follow the [numbered specification](docs/architecture/README.md) in order.
 4. Inspect the executable contracts in [`schemas/`](schemas/) and [`examples/`](examples/).
+5. Run `make evaluate-corpus` to score matching against [`corpus/`](corpus/).
 
 ## Local validation
 

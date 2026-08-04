@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lilabrooks.github.io/aws-public-change-feed/schemas/corpus-thresholds.schema.json",
+  "title": "Approved matching thresholds",
+  "description": "The promotion gate for matcher changes. Governed by ADR-018.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["thresholds_version", "global"],
+  "properties": {
+    "thresholds_version": {
+      "const": 1
+    },
+    "global": {
+      "$ref": "#/$defs/threshold"
+    },
+    "overrides": {
+      "description": "Per service and risk-type thresholds. Absent until measurements justify one; ADR-018 gates promotion on the global figures.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/override"
+      }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+    },
+    "rate": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "threshold": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_precision", "min_recall"],
+      "properties": {
+        "min_precision": {
+          "$ref": "#/$defs/rate"
+        },
+        "min_recall": {
+          "$ref": "#/$defs/rate"
+        }
+      }
+    },
+    "override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service_id", "risk_type", "min_precision", "min_recall", "reason"],
+      "properties": {
+        "service_id": {
+          "$ref": "#/$defs/id"
+        },
+        "risk_type": {
+          "$ref": "#/$defs/id"
+        },
+        "min_precision": {
+          "$ref": "#/$defs/rate"
+        },
+        "min_recall": {
+          "$ref": "#/$defs/rate"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        }
+      }
+    }
+  }
+}

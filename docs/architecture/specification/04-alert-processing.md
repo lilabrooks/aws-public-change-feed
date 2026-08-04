@@ -60,7 +60,7 @@ Matching evaluates title and summary fields selected by each risk rule.
 
 When two aliases refer to different services in the same item, evaluate each service independently. When several rules share a risk type, configuration validation rejects the ambiguity. Rule precedence is therefore unnecessary.
 
-Every matcher change is evaluated against a versioned historical corpus containing positives, hard negatives, overlapping services, generic AWS prose, punctuation variants, Unicode, HTML, edits, and security guidance. Promotion records precision and recall per service and risk type plus the approved thresholds.
+Every matcher change is evaluated against a versioned historical corpus containing positives, hard negatives, overlapping services, generic AWS prose, punctuation variants, Unicode, HTML, edits, and security guidance. Promotion records precision and recall per service and risk type plus the approved thresholds. [ADR-018](../../adr/018-corpus-evaluation-and-matching-thresholds.md) sets those thresholds and the corpus rules. The corpus lives in `corpus/announcements.json`, the thresholds in `corpus/thresholds.json`, and `scripts/evaluate_corpus.py` produces the promotion record.
 
 ## Environment and route mapping
 
