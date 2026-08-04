@@ -65,6 +65,7 @@ Review `git diff --check`, inspect the complete diff, and remove generated cache
 ## Repository layout
 
 - `README.md`: human entry point and current status.
+- `.mcp.json`: the AWS Knowledge MCP server, for looking up AWS documentation and API semantics. Credential-free and read-only. Use it for research and for discovering how AWS words announcements. Never use it to source corpus text or announcement content: it returns web-page bodies, while corpus items must carry the feed item's description as normalized by the runtime acquisition path, and matching is literal on exact characters.
 - `docs/GOAL.md`: product outcome, scope, and implementation milestones.
 - `docs/architecture/README.md`: architecture index and document map.
 - `docs/architecture/specification/`: normative requirements in reading order.
