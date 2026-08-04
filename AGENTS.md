@@ -33,6 +33,8 @@ Use “potentially relevant” for environment matches. Public announcements do 
 - Reject unknown fields in owned schemas.
 - Add a regression test for every rejected configuration or contract mutation.
 - A determinism test is not coverage. `same input, same output` passes while every output is wrong. Any value the canonical bundle commits and the runtime also derives needs a test that recomputes it from the fixture, so the runtime is bound to the contract rather than to itself. `tests/test_identity.py` is the pattern.
+- A claim about how a test behaves is not evidence until the test is made to behave that way. Before recording that a test guards a condition, or that it would silently stop guarding one, invert the condition and run it. Reading the assertion is not enough: a rationale asserting that a stale date fixture would silently stop exercising its check reached a commit message, a pull request, and a checked-in comment before one short script showed the assertion fails loudly instead.
+- Prefer a fixture that states its condition over one that happens to satisfy it today. A date literal valid only while the fixed clock sits in some window coordinates two constants through a comment; derive it instead, so the fixture reads as `AS_OF + timedelta(days=1)` rather than a date needing a second edit when the clock moves.
 - When a function depends on a particular normalization, apply it inside that function rather than trusting callers. A parameter documented as "already normalized" is where two callers disagree and the mismatch fails silently.
 - Keep examples valid and recalculate release, candidate, and request hashes after relevant fixture edits.
 - Keep runtime credentials out of configuration, inventory, candidates, logs, and fixtures.
