@@ -131,12 +131,26 @@ def normalize_item(
 ) -> NormalizedAnnouncement | None:
     """Normalize one parsed item, or return None when it cannot be accepted.
 
-    Canonicalize first, then validate the canonical result: canonicalization is
-    what strips fragments, casefolds the host, and removes tracking parameters,
-    so the host allowlist and default-port checks run on the value chapter 04
-    defines, never on raw feed text. A malformed URL (for example a non-numeric
-    port) cannot abort the acquisition run, so it is dropped here.
+    Two URLs matter here and both are checked. The canonical URL carries
+    identity, so the host allowlist and default-port checks run on it rather
+    than on raw feed text. The raw URL is kept as the sighting record in
+    provenance and reaches the candidate contract as `source_item_id` and
+    `source_item_url`, so anything canonicalization silently repairs has to be
+    rejected here instead: credentials in the netloc are dropped by
+    canonicalization but would remain in the stored sighting, where the
+    contract forbids them. A fragment is the one raw/canonical difference the
+    contract accepts, because the provenance rule is that the sighting
+    canonicalizes to the announcement URL rather than equalling it.
+
+    A malformed URL (for example a non-numeric port) cannot abort the
+    acquisition run, so it is dropped here.
     """
+
+    # Checked on the raw netloc, not on `parsed.username`: an empty user-info
+    # component (`https://@host/x`) leaves a falsy username behind and would
+    # otherwise be stored verbatim.
+    if "@" in urlsplit(item.url).netloc:
+        return None
 
     try:
         canonical = canonical_public_url(item.url)
@@ -156,11 +170,13 @@ def normalize_item(
         if parsed.port not in (None, 443):
             return None
     except ValueError:
-        # Defensive only: canonicalization already raises on any non-numeric
-        # port and on IPv6-shaped hosts (urlsplit reads the last colon segment
-        # as a port), so nothing reachable today throws here. Kept because a
-        # future canonicalization change could reintroduce an unbracketed
-        # IPv6 netloc whose re-parsed port is meaningless.
+        # Defensive only, and not for the reason it looks like. Canonicalization
+        # raises on a non-numeric port, so that form never arrives. A bracketed
+        # IPv6 URL does reach here re-parsed and unbracketed
+        # (`https://[::1]/x` canonicalizes to `https://::1/x`, whose port text
+        # is `:1`), but the allowlist check above has already dropped it: the
+        # mangled hostname cannot be an approved host. Kept so a reordering of
+        # these two checks cannot turn a dropped item into a raised exception.
         return None
 
     title = sanitize(item.title, MAX_TITLE_CHARACTERS)

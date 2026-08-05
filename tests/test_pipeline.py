@@ -300,6 +300,58 @@ class PipelineTests(unittest.TestCase):
             candidate,
         )
 
+    def test_a_fragment_item_link_produces_a_candidate_the_contract_accepts(self):
+        """A feed link with a fragment must survive the whole chain.
+
+        The runtime keeps the raw sighting in provenance while identity uses the
+        canonical URL, so `source_item_url` legitimately differs from
+        `announcement.url`. This is the join that broke: each half was correct
+        and the candidate was still outside its own contract, because the
+        validator rejected the fragment outright rather than requiring the
+        sighting to canonicalize to the announcement URL.
+        """
+
+        self.serve(RSS.replace(b"example-eks-update/</link>", b"example-eks-update/#overview</link>"))
+        candidates = self.candidates_for(self.run_feed())
+
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        provenance = candidate["announcement"]["provenance"][0]
+        self.assertEqual(
+            provenance["source_item_url"],
+            "https://aws.amazon.com/about-aws/whats-new/2026/example-eks-update/#overview",
+        )
+        self.assertEqual(
+            candidate["announcement"]["url"],
+            "https://aws.amazon.com/about-aws/whats-new/2026/example-eks-update/",
+        )
+        validator.validate_schema(
+            ROOT / "schemas" / "alert-candidate.schema.json",
+            ROOT / "examples" / "alert-candidate.json",
+            candidate,
+        )
+        validator.validate_candidate_semantics(
+            self.config,
+            self.inventory,
+            load_json("active-versions.json"),
+            candidate,
+        )
+
+    def test_a_user_info_item_link_never_reaches_a_candidate(self):
+        """The other half of the same rule: what the contract still forbids.
+
+        Canonicalization would strip the credentials from the announcement URL
+        and leave them in the sighting, so the item is dropped during
+        normalization and the run produces no candidate at all.
+        """
+
+        self.serve(RSS.replace(b"https://aws.amazon.com/about-aws", b"https://user:pw@aws.amazon.com/about-aws"))
+        result = self.run_feed()
+
+        self.assertEqual(result.outcomes[0].status, "fetched")
+        self.assertEqual(result.announcements, ())
+        self.assertEqual(self.candidates_for(result), [])
+
     def test_the_delivery_request_targets_the_route_destination(self):
         candidates = self.candidates_for(self.run_feed())
         emit(self.store, candidates, inventory=self.inventory, created_at=CREATED)

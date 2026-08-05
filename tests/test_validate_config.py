@@ -795,6 +795,30 @@ class ConfigurationValidatorTests(unittest.TestCase):
             self.validate_candidate(candidate)
 
         candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["provenance"][0]["source_item_url"] += "#overview"
+        # Accepted, unlike every other URL this validator owns: the sighting
+        # records what the feed published, and the rule above requires only that
+        # it canonicalize to the announcement URL. The runtime emits this form,
+        # which `test_pipeline` drives through the whole chain.
+        self.validate_candidate(candidate)
+
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["provenance"][0]["source_item_url"] = (
+            "https://user:pw@aws.amazon.com/about-aws/whats-new/2026/example-eks-update/"
+        )
+        with self.assertRaisesRegex(ValueError, "must use unauthenticated HTTPS"):
+            self.validate_candidate(candidate)
+
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["provenance"][0]["source_item_url"] = (
+            "https://@aws.amazon.com/about-aws/whats-new/2026/example-eks-update/"
+        )
+        # Blank credentials are still a user-info component; `parsed.username`
+        # is the empty string here and a username check alone would pass it.
+        with self.assertRaisesRegex(ValueError, "must use unauthenticated HTTPS"):
+            self.validate_candidate(candidate)
+
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
         candidate["announcement"]["url"] = "https://example.com/announcement/"
         sync_candidate_identity(candidate)
         with self.assertRaisesRegex(ValueError, "announcement URL host is not allowed"):

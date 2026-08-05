@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .announcements import NormalizedAnnouncement
-from .identity import candidate_id, identity_text
+from .identity import candidate_id, evidence_order
 from .matching import MatchResult
 from .profiles import RouteAudience
 
@@ -79,6 +79,12 @@ def _provenance(
     the acquisition path currently retains: `Provenance` carries `feed_name` and
     `item_url` and no separate feed GUID. If feeds later supply a distinct ID,
     `Provenance` gains a field and this derivation changes with it.
+
+    Both fields keep the URL as the feed published it, so a sighting can differ
+    from the announcement URL by a fragment or a tracking parameter. That is the
+    record's purpose; the contract requires the sighting to canonicalize to the
+    announcement URL, not to equal it. Forms canonicalization would silently
+    repair rather than preserve are rejected in `normalize_item`.
     """
 
     entries = []
@@ -163,8 +169,8 @@ def build_candidate(
             "matched_profile_ids": list(audience.profile_ids),
             # Chapter 04 fixes normalized lexical order for aliases and terms and
             # configured order for fields, so only the first two are sorted.
-            "matched_aliases": sorted(match.matched_aliases, key=identity_text),
-            "matched_terms": sorted(match.matched_terms, key=identity_text),
+            "matched_aliases": sorted(match.matched_aliases, key=evidence_order),
+            "matched_terms": sorted(match.matched_terms, key=evidence_order),
             "matched_fields": list(match.matched_fields),
             "reason": explainability_reason(match.service_display_name, match.risk_type),
         },

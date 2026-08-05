@@ -113,6 +113,30 @@ class MatchingTests(unittest.TestCase):
         self.assertEqual([result.pair for result in results], [("eks", "service-version-update")])
         self.assertEqual(results[0].matched_terms, ("engine version", "Kubernetes version"))
 
+    def test_terms_that_normalize_alike_still_order_deterministically(self):
+        """Evidence order cannot depend on set iteration order.
+
+        `identity_text` alone is not a total order, and `matched_terms` is built
+        from a set union, so two terms folding to the same key left `sorted`
+        breaking the tie by hash-seed-dependent iteration order. Reverting the
+        key to `identity_text` alone was run against this assertion: it passes
+        under `PYTHONHASHSEED=1` and `=3` and fails under `=5`, `=7`, `=11`, and
+        `=13`. Candidate identity does not read these values, but the contract
+        validator compares them literally.
+
+        The rule below cannot ship: `validate_config` rejects a rule repeating
+        normalized terms, which is why this is asserted against a hand-built
+        rule rather than `examples/config.yaml`. That rejection is the reason
+        the tie is unreachable in production and is covered separately in
+        `test_validate_config.py`; the tiebreak keeps the runtime from
+        depending on it.
+        """
+
+        rule = replace(BASE_RULE, any_terms=("End Of Support", "end of support"))
+        results = match_announcement(Announcement("Amazon EKS end of support"), [EKS], [rule])
+
+        self.assertEqual(results[0].matched_terms, ("End Of Support", "end of support"))
+
     def test_overlapping_evidence_alone_does_not_match(self):
         # The alias and the risk term cover the same characters, so the item
         # carries one piece of evidence read twice rather than two.

@@ -23,6 +23,7 @@ __all__ = [
     "content_fingerprint",
     "delivery_request_id",
     "digest_parts",
+    "evidence_order",
     "identity_text",
     "queue_dispatch_id",
     "release_id",
@@ -87,6 +88,21 @@ def identity_text(value: str) -> str:
     """
 
     return " ".join(unicodedata.normalize("NFKC", value).casefold().split())
+
+
+def evidence_order(value: str) -> tuple[str, str]:
+    """Sort key for the normalized lexical order chapter 04 fixes.
+
+    `identity_text` alone is not a total order. Two evidence values differing
+    only in case or spacing fold to the same key, and `sorted` then falls back
+    to input order, which for matched terms is set iteration order and so
+    depends on the hash seed. Configuration validation rejects aliases and
+    terms that collide once normalized, making the tie unreachable today; the
+    raw value is appended anyway so candidate identity does not rest on that
+    rule continuing to hold.
+    """
+
+    return (identity_text(value), value)
 
 
 def announcement_id(canonical_url: str) -> str:

@@ -428,16 +428,33 @@ class NormalizeItemUrlPolicyTests(unittest.TestCase):
         assert normalized is not None
         self.assertEqual(normalized.canonical_url, "https://aws.amazon.com/x")
 
-    def test_two_items_sharing_approved_hosts_both_survive(self):
-        shared = APPROVED
-        first = normalize_item(self.item("https://aws.amazon.com/a"), "feed-a", OBSERVED, shared)
-        second = normalize_item(self.item("https://aws.amazon.com/b"), "feed-a", OBSERVED, shared)
-        assert first is not None and second is not None
+    def test_user_info_item_url_is_dropped(self):
+        # Canonicalization keeps `hostname`, so the credentials vanish from the
+        # canonical URL while surviving in the provenance sighting, which the
+        # candidate contract rejects. The item has to go instead.
+        dropped = normalize_item(self.item("https://user:pw@aws.amazon.com/x"), "feed-a", OBSERVED, APPROVED)
+        self.assertIsNone(dropped)
 
-    def test_fragment_item_is_accepted_and_canonicalized(self):
+    def test_empty_user_info_item_url_is_dropped(self):
+        # `urlsplit("https://@host/x").username` is the empty string, so a
+        # username check alone would let this through.
+        self.assertIsNone(normalize_item(self.item("https://@aws.amazon.com/x"), "feed-a", OBSERVED, APPROVED))
+
+    def test_user_info_cannot_spoof_the_approved_host(self):
+        # The approved name is the user-info component here, not the host. This
+        # is dropped with or without the user-info guard above, because the
+        # allowlist reads `hostname`; it is here to keep that true.
+        self.assertIsNone(
+            normalize_item(self.item("https://aws.amazon.com@evil.example/x"), "feed-a", OBSERVED, APPROVED)
+        )
+
+    def test_fragment_item_is_accepted_and_the_sighting_keeps_it(self):
         normalized = normalize_item(self.item("https://aws.amazon.com/x#section-2"), "feed-a", OBSERVED, APPROVED)
         assert normalized is not None
         self.assertEqual(normalized.canonical_url, "https://aws.amazon.com/x")
+        # The sighting records what the feed published. `test_pipeline` proves
+        # the candidate contract accepts the difference.
+        self.assertEqual(normalized.provenance[0].item_url, "https://aws.amazon.com/x#section-2")
 
     def test_uppercase_host_item_is_accepted_and_casefolded(self):
         normalized = normalize_item(self.item("https://AWS.amazon.com/x"), "feed-a", OBSERVED, APPROVED)

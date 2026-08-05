@@ -25,6 +25,7 @@ from aws_public_change_feed.identity import (  # noqa: E402
     canonical_public_url,
     content_fingerprint,
     delivery_request_id,
+    evidence_order,
     identity_text,
     release_id,
     revision_id,
@@ -156,13 +157,27 @@ def validate_host(host: str, label: str):
         raise ValueError(f"{label} is not a valid DNS hostname: {host}")
 
 
-def validate_public_url(raw_url: str, allowed_hosts: set[str], label: str):
+def validate_public_url(raw_url: str, allowed_hosts: set[str], label: str, *, allow_fragment: bool = False):
+    """Apply the public URL policy to a configured or recorded link.
+
+    `allow_fragment` exists for one caller. Every other URL checked here is a
+    link the service publishes or fetches, and those carry no fragment. A
+    provenance `source_item_url` is different in kind: it records what a feed
+    said, and `validate_candidate_semantics` already requires only that the
+    sighting canonicalize to the announcement URL. Since fragment removal is
+    part of canonicalization, rejecting a fragment here contradicted that rule
+    and put an ordinary feed link outside the contract.
+    """
+
     parsed = urlsplit(raw_url)
-    if parsed.scheme != "https" or parsed.username or parsed.password:
+    # `parsed.username` is falsy for an empty user-info component, so the
+    # netloc is checked directly; `https://@host/path` is not unauthenticated
+    # HTTPS just because the credentials it carries are blank.
+    if parsed.scheme != "https" or "@" in parsed.netloc:
         raise ValueError(f"{label} must use unauthenticated HTTPS: {raw_url}")
     if parsed.port not in (None, 443):
         raise ValueError(f"{label} must use port 443: {raw_url}")
-    if parsed.fragment:
+    if parsed.fragment and not allow_fragment:
         raise ValueError(f"{label} cannot contain a fragment: {raw_url}")
     host = (parsed.hostname or "").casefold()
     if host not in allowed_hosts:
@@ -463,7 +478,7 @@ def validate_candidate_semantics(config, inventory, manifest, candidate):
     fields = {field: announcement[field] for field in rule["fields"]}
     matched_alias_values = sorted(
         (alias for alias in service["aliases"] if any(phrase_spans(text, alias) for text in fields.values())),
-        key=identity_text,
+        key=evidence_order,
     )
     if candidate["explainability"]["matched_aliases"] != matched_alias_values:
         raise ValueError("candidate matched aliases differ from announcement service evidence")
@@ -479,7 +494,7 @@ def validate_candidate_semantics(config, inventory, manifest, candidate):
     present_none = [term for term, locations in term_matches["none"].items() if any(locations.values())]
     if (rule["match"]["any"] and not present_any) or len(present_all) != len(rule["match"]["all"]) or present_none:
         raise ValueError("candidate announcement does not satisfy its risk rule")
-    matched_term_values = sorted(present_any + present_all, key=identity_text)
+    matched_term_values = sorted(present_any + present_all, key=evidence_order)
     if candidate["explainability"]["matched_terms"] != matched_term_values:
         raise ValueError("candidate matched terms differ from announcement risk evidence")
 
@@ -540,7 +555,7 @@ def validate_candidate_semantics(config, inventory, manifest, candidate):
         if canonical_public_url(item["feed_url"]) != expected_url:
             raise ValueError(f"announcement provenance URL differs from config: {item['feed_name']}")
         if item.get("source_item_url"):
-            validate_public_url(item["source_item_url"], feed_hosts, "source item URL")
+            validate_public_url(item["source_item_url"], feed_hosts, "source item URL", allow_fragment=True)
             if canonical_public_url(item["source_item_url"]) != canonical_public_url(announcement["url"]):
                 raise ValueError("announcement provenance item URL differs from the canonical announcement URL")
 
