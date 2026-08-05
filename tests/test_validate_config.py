@@ -44,6 +44,26 @@ def load_documents():
     }
 
 
+def move_environment_to_new_route(documents):
+    """Move the first environment onto a second, fully valid route.
+
+    The candidate keeps naming its original route, so its committed environment
+    list is no longer that route's complete audience. Derived from the shipped
+    inventory rather than hand-built, so the case follows the fixture when the
+    example release changes.
+    """
+
+    inventory = documents["inventory"]
+    routes = inventory["slack"]["routes"]
+    source_route_id = inventory["environments"][0]["route_id"]
+    new_route = copy.deepcopy(routes[source_route_id])
+    new_route["destination_key"] = "second-aws-change-alerts"
+    if "credential_secret_id" in new_route:
+        new_route["credential_secret_id"] = "aws-public-change-alerting/slack/second-alerts-webhook"
+    routes["second-alerts"] = new_route
+    inventory["environments"][0]["route_id"] = "second-alerts"
+
+
 def sync_inventory(documents):
     deployment = documents["deployment"]
     inventory = documents["inventory"]
@@ -710,9 +730,17 @@ class ConfigurationValidatorTests(unittest.TestCase):
                 ),
                 "complete route and profile mapping",
             ),
+            # Moves an environment to a second, valid route. Pointing it at a
+            # route that does not exist would be rejected as an unknown route
+            # before the audience is ever compared, which is the case below and
+            # not the exclusion this one is here to prove.
             "route": (
-                lambda documents: documents["inventory"]["environments"][0].__setitem__("route_id", "other-route"),
+                move_environment_to_new_route,
                 "complete route and profile mapping",
+            ),
+            "unknown route": (
+                lambda documents: documents["inventory"]["environments"][0].__setitem__("route_id", "other-route"),
+                "names unknown route",
             ),
             "disabled": (
                 lambda documents: documents["config"]["environment_policies"].__setitem__(

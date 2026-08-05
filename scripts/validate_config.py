@@ -29,6 +29,7 @@ from aws_public_change_feed.identity import (  # noqa: E402
     release_id,
     revision_id,
 )
+from aws_public_change_feed.profiles import route_audiences  # noqa: E402
 
 MINIMUM_PYTHON = (3, 12)
 GENERIC_ALIASES = {"cluster", "engine version", "runtime", "version"}
@@ -512,23 +513,20 @@ def validate_candidate_semantics(config, inventory, manifest, candidate):
     if candidate["explainability"]["matched_fields"] != evidence_fields:
         raise ValueError("candidate matched fields differ from announcement evidence")
 
-    profiles = config["service_profiles"]
-    inventory_environments = {environment["id"]: environment for environment in inventory["environments"]}
     if candidate["route_id"] not in inventory["slack"]["routes"]:
         raise ValueError("candidate references unknown route")
-    expected_environment_ids = []
-    expected_profile_ids = set()
-    for environment_id, environment in inventory_environments.items():
-        policy = config["environment_policies"][environment_id]
-        if policy["feed_monitoring"] != "enabled" or environment["route_id"] != candidate["route_id"]:
-            continue
-        profile_id = policy["profile"]
-        if service_id in profiles[profile_id]["service_ids"]:
-            expected_environment_ids.append(environment_id)
-            expected_profile_ids.add(profile_id)
-    if candidate["environment_ids"] != sorted(expected_environment_ids):
+    # The mapping rule lives in the runtime, for the reason identity.py gives:
+    # a validator with its own copy can agree with the fixture while disagreeing
+    # with the code that builds candidates, and the fixture still passes.
+    audience = next(
+        (entry for entry in route_audiences(config, inventory, service_id) if entry.route_id == candidate["route_id"]),
+        None,
+    )
+    expected_environment_ids = list(audience.environment_ids) if audience else []
+    expected_profile_ids = list(audience.profile_ids) if audience else []
+    if candidate["environment_ids"] != expected_environment_ids:
         raise ValueError("candidate environment IDs differ from the complete route and profile mapping")
-    if candidate["explainability"]["matched_profile_ids"] != sorted(expected_profile_ids):
+    if candidate["explainability"]["matched_profile_ids"] != expected_profile_ids:
         raise ValueError("candidate matched profile IDs differ from the complete environment mapping")
 
     feed_urls = {feed["name"]: canonical_public_url(feed["url"]) for feed in config["feeds"]}

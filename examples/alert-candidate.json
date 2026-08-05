@@ -40,7 +40,7 @@
     "matched_aliases": ["Amazon EKS"],
     "matched_terms": ["Kubernetes version"],
     "matched_fields": ["title", "summary"],
-    "reason": "The announcement matched the Amazon EKS service definition and the configured version-update rule."
+    "reason": "The announcement matched the Amazon EKS service definition and the configured service-version-update rule."
   },
   "recommended_action": "Review supported Kubernetes versions and plan required cluster upgrades.",
   "release": {
