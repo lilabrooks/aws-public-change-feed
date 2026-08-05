@@ -16,6 +16,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -57,7 +58,13 @@ def main() -> int:
 
     services = load_services(configuration)
     rules = load_risk_rules(configuration)
-    approved = tuple(sorted({str(feed["url"]).split("/")[2] for feed in configuration.get("feeds", ())}))
+    # Derived from the same hostname extraction `validate_feed_url` uses
+    # (hostname, casefolded), not from string slicing: `split("/")[2]` kept the
+    # port when one was present and preserved case, both of which reject items
+    # that the URL policy accepts.
+    approved = tuple(
+        sorted({(urlsplit(str(feed["url"])).hostname or "").casefold() for feed in configuration.get("feeds", ())})
+    )
     known = {entry["canonical_url"].rstrip("/") for entry in corpus["items"]}
 
     watcher = FeedWatcher(approved_hosts=approved, state=InMemoryFeedStateStore())

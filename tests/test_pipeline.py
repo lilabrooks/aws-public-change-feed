@@ -21,6 +21,9 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts"))
+
+import validate_config as validator  # noqa: E402
 
 from aws_public_change_feed.acquisition import FeedDefinition, FeedWatcher  # noqa: E402
 from aws_public_change_feed.candidates import build_candidates  # noqa: E402
@@ -275,6 +278,27 @@ class PipelineTests(unittest.TestCase):
         record = self.announcements.load(self.expected["announcement"]["announcement_id"])
         assert record is not None
         self.assertEqual(len(record.revision_ids), 2)
+
+    def test_candidate_title_within_the_schema_bound_passes_both_contracts(self):
+        title = "Amazon EKS Kubernetes version " + "x" * 170
+        self.assertEqual(len(title), 200)
+        self.serve(RSS.replace(b"Amazon EKS Kubernetes version 1.34 available", title.encode()))
+        candidates = self.candidates_for(self.run_feed())
+
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(len(candidate["announcement"]["title"]), 200)
+        validator.validate_schema(
+            ROOT / "schemas" / "alert-candidate.schema.json",
+            ROOT / "examples" / "alert-candidate.json",
+            candidate,
+        )
+        validator.validate_candidate_semantics(
+            self.config,
+            self.inventory,
+            load_json("active-versions.json"),
+            candidate,
+        )
 
     def test_the_delivery_request_targets_the_route_destination(self):
         candidates = self.candidates_for(self.run_feed())

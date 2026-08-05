@@ -545,10 +545,6 @@ def validate_candidate_semantics(config, inventory, manifest, candidate):
                 raise ValueError("announcement provenance item URL differs from the canonical announcement URL")
 
     policy = config["message_policy"]
-    if len(announcement["title"]) > policy["max_title_characters"]:
-        raise ValueError("candidate title exceeds configured rendering limit")
-    if len(announcement["summary"]) > policy["max_summary_characters"]:
-        raise ValueError("candidate summary exceeds configured rendering limit")
     if serialized_size(candidate) > policy["max_candidate_bytes"]:
         raise ValueError(f"alert candidate exceeds {policy['max_candidate_bytes']} UTF-8 JSON bytes")
 

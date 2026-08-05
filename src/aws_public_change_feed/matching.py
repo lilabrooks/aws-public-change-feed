@@ -20,6 +20,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from .identity import identity_text
 from .normalize import Span, fold, found_spans
 
 __all__ = [
@@ -249,8 +250,8 @@ def match_announcement(
                     rule_id=rule.id,
                     risk_type=rule.risk_type,
                     priority=rule.priority,
-                    matched_aliases=tuple(sorted(_matched_phrases(service_spans))),
-                    matched_terms=tuple(sorted(matched_any | matched_all)),
+                    matched_aliases=tuple(sorted(_matched_phrases(service_spans), key=identity_text)),
+                    matched_terms=tuple(sorted(matched_any | matched_all, key=identity_text)),
                     matched_fields=_evidence_fields(rule.fields, service_spans, risk_spans),
                 )
             )

@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import html
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from urllib.parse import urlsplit
 
 from .feedparse import ParsedItem
 from .identity import announcement_id, canonical_public_url, content_fingerprint, revision_id
@@ -125,11 +126,41 @@ def _parse_iso8601(value: str) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
-def normalize_item(item: ParsedItem, feed_name: str, observed_at: datetime) -> NormalizedAnnouncement | None:
-    """Normalize one parsed item, or return None when it cannot be accepted."""
+def normalize_item(
+    item: ParsedItem, feed_name: str, observed_at: datetime, approved_hosts: Collection[str]
+) -> NormalizedAnnouncement | None:
+    """Normalize one parsed item, or return None when it cannot be accepted.
 
-    canonical = canonical_public_url(item.url)
+    Canonicalize first, then validate the canonical result: canonicalization is
+    what strips fragments, casefolds the host, and removes tracking parameters,
+    so the host allowlist and default-port checks run on the value chapter 04
+    defines, never on raw feed text. A malformed URL (for example a non-numeric
+    port) cannot abort the acquisition run, so it is dropped here.
+    """
+
+    try:
+        canonical = canonical_public_url(item.url)
+    except ValueError:
+        return None
     if not canonical.startswith("https://"):
+        return None
+
+    # The allowlist is folded here rather than trusted from callers: hosts in
+    # the canonical URL are always lowercase, so an unfolded list would reject
+    # every item the moment one caller hands over a differently cased set.
+    approved = {host.casefold() for host in approved_hosts}
+    parsed = urlsplit(canonical)
+    if (parsed.hostname or "") not in approved:
+        return None
+    try:
+        if parsed.port not in (None, 443):
+            return None
+    except ValueError:
+        # Defensive only: canonicalization already raises on any non-numeric
+        # port and on IPv6-shaped hosts (urlsplit reads the last colon segment
+        # as a port), so nothing reachable today throws here. Kept because a
+        # future canonicalization change could reintroduce an unbracketed
+        # IPv6 netloc whose re-parsed port is meaningless.
         return None
 
     title = sanitize(item.title, MAX_TITLE_CHARACTERS)

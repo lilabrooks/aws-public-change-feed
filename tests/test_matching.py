@@ -102,6 +102,17 @@ class MatchingTests(unittest.TestCase):
         )
         self.assertEqual([result.pair for result in results], [("eks", "end-of-support")])
 
+    def test_terms_of_differing_case_follow_the_validator_lexical_order(self):
+        config = yaml.safe_load((ROOT / "examples" / "config.yaml").read_text(encoding="utf-8"))
+        announcement = Announcement(
+            "Amazon EKS now tracks the engine version of every Kubernetes version in a cluster",
+            "",
+        )
+        results = match_announcement(announcement, load_services(config), load_risk_rules(config))
+
+        self.assertEqual([result.pair for result in results], [("eks", "service-version-update")])
+        self.assertEqual(results[0].matched_terms, ("engine version", "Kubernetes version"))
+
     def test_overlapping_evidence_alone_does_not_match(self):
         # The alias and the risk term cover the same characters, so the item
         # carries one piece of evidence read twice rather than two.

@@ -665,6 +665,12 @@ class ConfigurationValidatorTests(unittest.TestCase):
         changed_request_id = identity.digest_parts("delivery-request:v2", changed["candidate_id"])
         self.assertNotEqual(changed_request_id, original_request_id)
 
+    def test_candidate_title_over_the_schema_bound_is_rejected(self):
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["title"] = "x" * 301
+        with self.assertRaises(ValueError):
+            self.validate_schema("alert_candidate", candidate)
+
     def test_candidate_and_delivery_timestamp_order_is_enforced(self):
         candidate = copy.deepcopy(self.documents["alert_candidate"])
         candidate["created_at"] = "2026-07-13T16:58:59Z"
