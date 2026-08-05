@@ -33,7 +33,11 @@ from aws_public_change_feed.matching import (  # noqa: E402
 )
 from aws_public_change_feed.outbox import InMemoryOutboxStore, emit, verify_durable  # noqa: E402
 from aws_public_change_feed.profiles import route_audiences  # noqa: E402
-from aws_public_change_feed.state import InMemoryFeedStateStore  # noqa: E402
+from aws_public_change_feed.state import (  # noqa: E402
+    InMemoryAnnouncementStateStore,
+    InMemoryFeedStateStore,
+    observe,
+)
 
 APPROVED = ("aws.amazon.com",)
 FEED_NAME = "aws-whats-new"
@@ -98,18 +102,22 @@ class PipelineTests(unittest.TestCase):
         self.inventory = load_json("inventory.json")
         self.expected = load_json("alert-candidate.json")
         self.state = InMemoryFeedStateStore()
+        self.announcements = InMemoryAnnouncementStateStore()
         self.store = InMemoryOutboxStore()
+        # Held directly rather than reached through `watcher.fetcher`, which is
+        # typed as the protocol and has no response to swap.
+        self.fetcher = StubFetcher(
+            FetchOutcome(
+                status=200,
+                body=RSS,
+                etag='"eks-134"',
+                content_type="application/rss+xml",
+            )
+        )
         self.watcher = FeedWatcher(
             approved_hosts=APPROVED,
             state=self.state,
-            fetcher=StubFetcher(
-                FetchOutcome(
-                    status=200,
-                    body=RSS,
-                    etag='"eks-134"',
-                    content_type="application/rss+xml",
-                )
-            ),
+            fetcher=self.fetcher,
             clock=lambda: OBSERVED,
         )
 
@@ -117,10 +125,24 @@ class PipelineTests(unittest.TestCase):
         return self.watcher.run([FeedDefinition(name=FEED_NAME, url=FEED_URL, source_type="public_rss")])
 
     def candidates_for(self, result):
+        """Run the emission half of the pipeline over one acquisition result.
+
+        `is_update` is derived from announcement state rather than passed in,
+        which is the only way chapter 04 defines it: true when state already
+        holds an earlier content revision for the same announcement.
+
+        A provenance-only sighting is deliberately *not* skipped here. Chapter
+        02 requires a repeated invocation to reconstruct the same candidates so
+        it can repair missing outbox records, and what prevents a second Slack
+        delivery is the unchanged candidate identity meeting an existing
+        delivery record, not refusing to build.
+        """
+
         services = load_services(self.config)
         rules = load_risk_rules(self.config)
         built: list[dict] = []
         for announcement in result.announcements:
+            observation = observe(self.announcements, announcement)
             for match in match_announcement(
                 Announcement(title=announcement.title, summary=announcement.summary),
                 services,
@@ -134,6 +156,7 @@ class PipelineTests(unittest.TestCase):
                         configuration=self.config,
                         release=self.expected["release"],
                         created_at=CREATED,
+                        is_update=observation.is_update,
                     )
                 )
         return built
@@ -186,6 +209,72 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(repaired.created_candidates, ())
         self.assertEqual(repaired.repaired_deliveries, emission.candidate_ids)
         self.assertTrue(verify_durable(self.store, repaired.candidate_ids))
+
+    def serve(self, body):
+        """Point the stub at a different response body for the next run."""
+
+        self.fetcher.outcome = FetchOutcome(
+            status=200,
+            body=body,
+            etag='"eks-135"',
+            content_type="application/rss+xml",
+        )
+
+    def test_the_same_announcement_on_a_second_feed_adds_no_delivery_work(self):
+        first = self.candidates_for(self.run_feed())
+        emit(self.store, first, inventory=self.inventory, created_at=CREATED)
+
+        # ADR-013: the same canonical URL seen through another configured feed.
+        second_feed = self.watcher.run(
+            [
+                FeedDefinition(
+                    name="aws-news-blog",
+                    url="https://aws.amazon.com/blogs/aws/feed/",
+                    source_type="public_rss",
+                )
+            ]
+        )
+        second = self.candidates_for(second_feed)
+
+        self.assertEqual(
+            [item["candidate_id"] for item in second],
+            [item["candidate_id"] for item in first],
+            msg="ADR-002: an overlapping feed enriches provenance without a second candidate",
+        )
+
+        emission = emit(self.store, second, inventory=self.inventory, created_at=CREATED)
+        self.assertEqual(emission.created_deliveries, ())
+        self.assertEqual(emission.repaired_deliveries, ())
+
+        record = self.announcements.load(self.expected["announcement"]["announcement_id"])
+        assert record is not None
+        self.assertEqual(
+            sorted(entry.feed_name for entry in record.provenance),
+            ["aws-news-blog", "aws-whats-new"],
+            msg="announcement state carries the merged provenance the candidate does not",
+        )
+        self.assertEqual(len(record.revision_ids), 1)
+
+    def test_an_edited_title_emits_a_new_candidate_marked_as_an_update(self):
+        first = self.candidates_for(self.run_feed())
+        emit(self.store, first, inventory=self.inventory, created_at=CREATED)
+        self.assertFalse(first[0]["announcement"]["is_update"])
+
+        self.serve(RSS.replace(b"version 1.34 available", b"version 1.35 available"))
+        second = self.candidates_for(self.run_feed())
+
+        self.assertTrue(
+            second[0]["announcement"]["is_update"],
+            msg="chapter 04: state already held an earlier content revision",
+        )
+        self.assertNotEqual(second[0]["candidate_id"], first[0]["candidate_id"])
+
+        emission = emit(self.store, second, inventory=self.inventory, created_at=CREATED)
+        self.assertEqual(emission.created_candidates, (second[0]["candidate_id"],))
+
+        record = self.announcements.load(self.expected["announcement"]["announcement_id"])
+        assert record is not None
+        self.assertEqual(len(record.revision_ids), 2)
 
     def test_the_delivery_request_targets_the_route_destination(self):
         candidates = self.candidates_for(self.run_feed())
