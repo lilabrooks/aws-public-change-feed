@@ -28,6 +28,7 @@ Slack carries the generated feed. It is not the source of truth for candidates o
 - DynamoDB feed, announcement, candidate, destination, and delivery state.
 - An encrypted SQS FIFO queue, dispatcher, Slack worker, DLQ, and recovery reconciler.
 - Incoming-webhook and bot-token delivery modes with destination pacing and explicit unknown outcomes.
+- A rendered sample of the canonical candidate on the public architecture page, produced by the delivery renderer rather than hand-written. This documents the message shape; it is not a second delivery path, and ADR-017 keeps Slack the only one.
 - Terraform bootstrap and service roots, least-privilege IAM, schedules, dashboards, alarms, and operational runbooks.
 - Historical-corpus, unit, contract, integration, recovery, load, and production preflight tests.
 
@@ -60,7 +61,7 @@ Slack carries the generated feed. It is not the source of truth for candidates o
 - [ ] Implement immutable release publishing and promotion. Verify hashes, exact object versions, compare-and-swap promotion, rollback, concurrent publishers, retention, and incompatible-version rejection.
 - [ ] Implement safe feed acquisition and source state. Verify host allowlisting, DNS/IP controls, TLS, no redirects, response and parser limits, validators, partial feed failures, provenance coalescing, raw snapshots, checkpoints, and per-feed freshness alarms.
 - [ ] Implement matching, profile mapping, candidate construction, and the durable outbox. Verify route isolation, sorted environment IDs, distinct service/risk evidence, revisions, provenance-only updates, identity vectors, candidate limits, and atomic checkpoint rules.
-- [ ] Implement dispatch, SQS FIFO transport, Slack delivery, and reconciliation. Verify message groups, dispatch dedupe, leases, destination pacing, retry classes, `Retry-After`, network-attempt accounting, every delivery state, crash boundaries, unknown outcomes, manual replay, and DLQ recovery.
+- [ ] Implement dispatch, SQS FIFO transport, Slack delivery, and reconciliation. Verify message groups, dispatch dedupe, leases, destination pacing, retry classes, `Retry-After`, network-attempt accounting, every delivery state, crash boundaries, unknown outcomes, manual replay, and DLQ recovery. Publish the rendered sample named in the deliverables from that same renderer, so the documented message cannot drift from the one Slack receives.
 - [ ] Implement `infra/bootstrap` and `infra/central`. Verify remote-state permissions, native lockfile use, provider locks, encryption, IAM boundaries, schedules, indexes, TTL, alarms, and reproducible packages.
 - [ ] Complete production preflight and operational validation. Verify every destination, notification subscription, corpus quality, feed freshness, declared load envelope, dashboards, backup and restore where configured, shadow mode, rollback, and runbook exercises.
 
