@@ -31,6 +31,8 @@ A session can show no `aws-mcp` tools at all while the endpoint is serving norma
 
 Start with `claude mcp list`, which distinguishes them. `claude mcp --help` documents the split: unapproved `.mcp.json` servers print `⏸ Pending approval`, approved ones are health-checked.
 
+Both remedies below are Claude Code's, and Codex has neither command. Its analogue of cause 1 is project trust, because Codex loads project configuration for trusted projects only: trust the project, then check `/mcp`. Nothing resembling cause 2 has been seen there, which is not the same as knowing it cannot happen.
+
 **Cause 1 — project-scope approval.** `.mcp.json` is checked into this repository, so Claude Code asks for a one-time approval before loading it, the protection that stops a cloned repository from silently running an MCP server its user never chose. That prompt only appears in an interactive session.
 
 ```text
@@ -45,7 +47,7 @@ Run `claude` once in the repository and approve it. The approval is recorded in 
 MCP server "aws-mcp": Skipping connection (cached needs-auth)
 ```
 
-Logs live under `~/Library/Caches/claude-cli-nodejs/<sanitized-project>/mcp-logs-<server>/`. Clear the classification:
+Logs live under the platform cache directory, which on macOS is `~/Library/Caches/claude-cli-nodejs/<sanitized-project>/mcp-logs-<server>/`. Only the macOS path has been checked here. Clear the classification:
 
 ```bash
 claude mcp logout aws-mcp
@@ -56,6 +58,10 @@ Verified 2026-08-05: afterwards a fresh session logged `Successfully connected (
 The trap in cause 2 is that `claude mcp list` reports `✔ Connected`, because `mcp list` connects even while sessions skip. A green `mcp list` beside a missing tool surface is therefore the *signature* of this bug, not evidence that nothing is wrong.
 
 **Neither fix is a sign-in, and the wording invites confusing them.** Approval says this repository may load the server. `logout` clears a cached classification and carries no credentials — it is the opposite of signing in, not a sign-out from anything anyone signed into. `call_aws`, `run_script`, `get_presigned_url`, and `get_tasks` still fail without credentials and are still denied by name in `.claude/settings.json`. An earlier revision of this note treated an authentication prompt as a reason to work without the server. That was wrong, and it would have given up a working documentation tool to avoid a risk neither remedy carries.
+
+**Until the tools are back, use `WebFetch` and web search — including for AWS documentation.** This is the ordinary state of a fresh clone, not an edge case: the cause 1 approval only prompts interactively, and a non-interactive session is exactly where cause 1 appears, so the fix can be unavailable at the moment it is needed. Nothing in this repository requires the server. `make check`, the validators, and the corpus harness all run without it, and the questions the routing table sends to `search_documentation` are answerable from `docs.aws.amazon.com` directly, more slowly and with worse ranking.
+
+Falling back changes nothing about corpus provenance. That rule already forbids *either* tool from supplying a historical item's `title` or `summary`, so the reserved fields stay reserved whichever way the documentation was read.
 
 **What set the cached flag was not observed.** The earliest log already said `cached`. Metadata discovery is the likeliest trigger, since the endpoint does advertise OAuth protected-resource metadata, and it matches the contingency the last section of this document already anticipated. Do not state it as the mechanism without watching the flag get set.
 
@@ -68,6 +74,16 @@ The trap in cause 2 is that `claude mcp list` reports `✔ Connected`, because `
 | `GET /.well-known/oauth-protected-resource` | 200, naming issuer `us-east-1.oauth.signin.aws` |
 
 The challenge appears on the account tools and nowhere else. AWS's own boundary therefore falls exactly where the deny list falls. That is a useful confirmation, not a substitute for the deny list, and on Codex nothing enforces the boundary at all.
+
+**A 401 from this server does not prove a tool exists and needs credentials.** Any unknown `aws___*` name answers with the same authentication error, measured 2026-08-05 in one session:
+
+| Call | Response |
+| --- | --- |
+| `aws___call_aws` | 401 `Authentication failed: Unable to verify your user identity` |
+| `aws___definitely_not_a_tool` | 401, byte-identical message |
+| `aws___search_documentation` | 200 with results |
+
+So the scoped-boundary reading above holds only because `tools/list` independently confirms `call_aws` is real. Check a tool name against `tools/list` before reading its 401 as an auth requirement: a misspelling is the cheapest way to talk yourself into signing in, and this document previously contained one. Names also need the `aws___` prefix — an unprefixed `search_documentation` is resolved in a different namespace and returns `-32602 Unknown tool: knowledge___search_documentation`, which is at least honest about being unknown.
 
 The issuer is written without a scheme on purpose. The metadata gives it as an `https://` URL with a trailing slash, but an OAuth issuer identifier names an authorization server rather than a page: that root returns 404, as does its `openid-configuration`. Written in full it would fail the reference check and imply something fetchable.
 
@@ -105,6 +121,8 @@ A 200 with the tools listed means the credential-free property is intact and the
 | Documentation chunk | `reference_documentation`, `general` | Verbatim page text, including headings and note blocks |
 | Announcement summary | `current_awareness` | Rewritten in third person. Not the announcement's wording |
 | Agent skill | any topic | `skill_name` and `skill_description` only. No page text, no URL |
+
+The middle column names indexes inside `search_documentation`, not tools. There is no `current_awareness` tool, and asking for one returns an authentication error rather than an unknown-tool error — see the 401 note above.
 
 Measured on 2026-08-04: an S3 conditional-writes chunk matched the live page exactly, while a `current_awareness` result rendered ["We're announcing availability changes"](https://aws.amazon.com/about-aws/whats-new/2026/03/aws-service-availability/) as "AWS has announced changes to various services and features." Same facts, different voice and different characters.
 
@@ -166,7 +184,9 @@ The server is the default path for AWS documentation. It is not the only path, a
 | --- | --- |
 | AWS API parameters, service semantics | AWS MCP `search_documentation`, then `read_documentation` |
 | A documentation page whose URL is already known | AWS MCP `read_documentation` |
-| Which announcements exist on a topic | AWS MCP `current_awareness`, then web search when ranking misses |
+| Which announcements exist on a topic | AWS MCP `search_documentation`, whose announcement hits come from its `current_awareness` index, then web search when ranking misses |
+| Region names, or whether a service is available in a Region | AWS MCP `list_regions`, `get_regional_availability` |
+| Any of the above while the MCP tools are absent | `WebFetch` or web search, AWS documentation included. See [When the tools are missing](#when-the-tools-are-missing) |
 | Historical corpus `title` and `summary` | Runtime acquisition or a retained raw snapshot. Never either tool |
 | Synthetic corpus `title` and `summary` | Authored by hand for the category under ADR-018. Never either tool |
 | Moto, GitHub, HashiCorp, RFCs, other vendors | `WebFetch` or web search. Outside the server's allow-list |
