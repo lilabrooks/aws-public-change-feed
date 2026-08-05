@@ -27,17 +27,37 @@ That last row is the part to understand before touching this configuration. The 
 
 ### When the tools are missing
 
-A session can show no `aws-mcp` tools at all while the endpoint is serving normally. Observed on 2026-08-04 in non-interactive Claude Code sessions, which listed the server among those requiring authentication. It did not require authentication. Three separate things get confused here, and keeping them apart is the point of this section.
+A session can show no `aws-mcp` tools at all while the endpoint is serving normally. This has now happened twice, on 2026-08-04 and 2026-08-05, from **two independent causes with different fixes**. Both times the harness listed the server among those requiring authentication, and neither time did it require authentication. Signing in is never the remedy.
 
-**The cause was project-scope approval, not credentials.** `.mcp.json` is checked into this repository, so Claude Code treats it as a project-scoped server and asks for a one-time approval before loading it — the protection that stops a cloned repository from silently running an MCP server its user never chose. That prompt only appears in an interactive session. `claude mcp list` reports the state without one:
+Start with `claude mcp list`, which distinguishes them. `claude mcp --help` documents the split: unapproved `.mcp.json` servers print `⏸ Pending approval`, approved ones are health-checked.
+
+**Cause 1 — project-scope approval.** `.mcp.json` is checked into this repository, so Claude Code asks for a one-time approval before loading it, the protection that stops a cloned repository from silently running an MCP server its user never chose. That prompt only appears in an interactive session.
 
 ```text
 aws-mcp: https://aws-mcp.us-east-1.api.aws/mcp (HTTP) - ⏸ Pending approval (run `claude` to approve)
 ```
 
-Confirmed against `~/.claude.json`, where this project's `enabledMcpjsonServers` and `disabledMcpjsonServers` were both empty: never approved, never refused, never asked. Run `claude` once in the repository and approve the server.
+Run `claude` once in the repository and approve it. The approval is recorded in `.claude/settings.local.json`, which `.gitignore` excludes, so it is per-clone and never travels with the repository. Every fresh clone meets this once.
 
-**Approving is not authenticating.** Approval says this repository may load this server. It carries no credentials and no account access. `call_aws`, `run_script`, `get_presigned_url`, and `get_tasks` still fail without a sign-in, and `.claude/settings.json` still denies them by name. An earlier revision of this note treated approval and authentication as the same act and told the reader to work without the server. That was wrong: it would have given up a working documentation tool to avoid a risk that approval does not carry.
+**Cause 2 — a cached needs-auth verdict.** The session exposes only `mcp__aws-mcp__authenticate` and `mcp__aws-mcp__complete_authentication`, the auth stubs, and none of the real tools. The per-server log shows the decision made within milliseconds of startup with no network request:
+
+```text
+MCP server "aws-mcp": Skipping connection (cached needs-auth)
+```
+
+Logs live under `~/Library/Caches/claude-cli-nodejs/<sanitized-project>/mcp-logs-<server>/`. Clear the classification:
+
+```bash
+claude mcp logout aws-mcp
+```
+
+Verified 2026-08-05: afterwards a fresh session logged `Successfully connected (transport: http) in 384ms` with `No token data found` throughout, and the five documentation tools appeared. Checked end to end rather than inferred — a headless session called `aws___list_regions` and received 37 regions, while `aws___call_aws` stayed absent because the deny list removes it before the model sees it.
+
+The trap in cause 2 is that `claude mcp list` reports `✔ Connected`, because `mcp list` connects even while sessions skip. A green `mcp list` beside a missing tool surface is therefore the *signature* of this bug, not evidence that nothing is wrong.
+
+**Neither fix is a sign-in, and the wording invites confusing them.** Approval says this repository may load the server. `logout` clears a cached classification and carries no credentials — it is the opposite of signing in, not a sign-out from anything anyone signed into. `call_aws`, `run_script`, `get_presigned_url`, and `get_tasks` still fail without credentials and are still denied by name in `.claude/settings.json`. An earlier revision of this note treated an authentication prompt as a reason to work without the server. That was wrong, and it would have given up a working documentation tool to avoid a risk neither remedy carries.
+
+**What set the cached flag was not observed.** The earliest log already said `cached`. Metadata discovery is the likeliest trigger, since the endpoint does advertise OAuth protected-resource metadata, and it matches the contingency the last section of this document already anticipated. Do not state it as the mechanism without watching the flag get set.
 
 **What the endpoint actually asks for.** It publishes OAuth protected-resource metadata, so a client that looks will find it, and the challenge is scoped:
 
@@ -49,7 +69,9 @@ Confirmed against `~/.claude.json`, where this project's `enabledMcpjsonServers`
 
 The challenge appears on the account tools and nowhere else. AWS's own boundary therefore falls exactly where the deny list falls. That is a useful confirmation, not a substitute for the deny list, and on Codex nothing enforces the boundary at all.
 
-Approval status explains a missing tool surface on Claude Code. It does not explain the endpoint changing underneath the repository, which is the other and more serious cause. Probe before concluding that one:
+CloudFront fronts this endpoint, so send `Accept: application/json` when re-checking the well-known document. A cached response once made the table above look wrong and produced a confident correction that was itself the error.
+
+Both causes above are local to the host and neither explains the endpoint changing underneath the repository, which is the third possibility and the only serious one. Probe before concluding that:
 
 ```bash
 curl -sS -D /tmp/mcp.hdr -X POST https://aws-mcp.us-east-1.api.aws/mcp \
@@ -72,7 +94,7 @@ call '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
 call '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"aws___search_documentation","arguments":{"search_phrase":"S3 conditional writes"}}}'
 ```
 
-A 200 with the tools listed means the credential-free property is intact and the gap is on this side: check `claude mcp list` for an unapproved project server before concluding anything about AWS. An auth challenge on `initialize`, or a `search_documentation` that fails where `call_aws` used to fail alone, is the case the last section describes, and no approval fixes it.
+A 200 with the tools listed means the credential-free property is intact and the gap is on this side. Work back through `claude mcp list` and the per-server log before concluding anything about AWS. An auth challenge on `initialize`, or a `search_documentation` that fails where `call_aws` used to fail alone, is the case the last section describes, and neither approval nor `logout` touches it.
 
 `search_documentation` does not return one kind of result, and the difference matters for how much weight its output carries:
 
@@ -193,7 +215,8 @@ What it cost is honest to state: the tool surface went from five read-only tools
 - If `current_awareness` starts returning verbatim announcement text, the result table above is wrong and the vocabulary workflow gets a shorter path. Re-measure before trusting it; the check is one search against one live page.
 - If a milestone needs AWS API calls to make progress rather than to verify it, the credentialed decision reopens on that evidence.
 - If AWS stops serving the documentation tools unauthenticated, the credential-free property is gone and the configuration needs rethinking rather than a quiet OAuth flow. The check is the probe in [When the tools are missing](#when-the-tools-are-missing). Rule out an unapproved project server first: both present as an absent tool surface, and only one of them is about AWS.
-- If a host ever gates this server on the advertised OAuth metadata rather than on a 401, the configuration stops repaying its cost there, and the choice is to drop it on that host or to accept documentation lookup through `WebFetch` and web search. Neither is authenticating it. Nothing observed so far is evidence of this; the one case that looked like it was project-scope approval.
+- If a host ever gates this server on the advertised OAuth metadata rather than on a 401, the configuration stops repaying its cost there, and the choice is to drop it on that host or to accept documentation lookup through `WebFetch` and web search. Neither is authenticating it. The cached needs-auth verdict of 2026-08-05 is the closest thing to evidence so far, and it is not proof: nobody watched the flag get set, and `claude mcp logout` cleared it without the endpoint changing. Watching one get set would settle it.
+- If `claude mcp logout` stops clearing the cached verdict, or the flag returns on every session rather than occasionally, the workaround has become a standing cost and the previous bullet's choice arrives for real.
 - If Codex gains a project-level tool deny list, the asymmetry noted above closes and both hosts can enforce the same boundary.
 
 The corpus-boundary question in the first draft is settled. Codex reviewed it, the rule held, and its wording was too broad twice over: it read as forbidding announcement research rather than reserving two fields, and it claimed a single acquisition path for a corpus that ADR-018 lets carry authored fixtures. Narrowed above. The property to preserve in any future revision is unchanged — historical corpus text equals what the matcher sees in production.
