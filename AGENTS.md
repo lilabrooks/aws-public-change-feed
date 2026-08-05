@@ -62,6 +62,8 @@ When network access is available, also run:
 make references-online
 ```
 
+CI enforces this now, so skipping it delays the failure rather than hiding it: `reference-links.yml` runs the same check on any pull request that changes Markdown. It was previously scheduled-only, and a dead link introduced by a pull request merged green and broke the following Monday's sweep on `main`. Running it locally is still the fast path — the gate tells you on push, the local run tells you before it.
+
 Review `git diff --check`, inspect the complete diff, and remove generated caches. Report checks that could not run and why.
 
 ## Working across Codex and Claude Code
