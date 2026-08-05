@@ -78,7 +78,7 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 └── requirements-dev.txt         Pinned validation dependencies
 ```
 
-The planned implementation adds `infra/bootstrap/` and `infra/central/` when those directories contain working files. `src/` currently holds normalization, matching, corpus evaluation, feed acquisition, announcement identity, and the feed-state ports; the delivery packages join it as those milestones land. The DynamoDB and S3 adapters behind the state and snapshot ports arrive with the Terraform roots that create the table and bucket. Keep a concept in one owning document and link to it elsewhere. Do not copy full requirements between the goal, specification, ADRs, and runbook.
+The planned implementation adds `infra/bootstrap/` and `infra/central/` when those directories contain working files. `src/` currently holds normalization, matching, corpus evaluation, feed acquisition, announcement identity, the feed-state ports, profile and route mapping, candidate construction, and the durable outbox port; the dispatch and Slack packages join it as those milestones land. The DynamoDB and S3 adapters behind the state, snapshot, and outbox ports arrive with the Terraform roots that create the table and bucket. Keep a concept in one owning document and link to it elsewhere. Do not copy full requirements between the goal, specification, ADRs, and runbook.
 
 ## Public page maintenance
 

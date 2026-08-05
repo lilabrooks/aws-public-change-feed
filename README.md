@@ -1,6 +1,6 @@
 # AWS Public Change Alerting
 
-[![Status](https://img.shields.io/badge/status-contracts%20%2B%20matching%20validated-00AA77)](#validation-status)
+[![Status](https://img.shields.io/badge/status-contracts%20%2B%20feed%20pipeline%20validated-00AA77)](#validation-status)
 [![Repository quality](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml)
 [![Reference links](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/reference-links.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/reference-links.yml)
 [![Architecture page](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/pages.yml/badge.svg?branch=main)](https://lilabrooks.github.io/aws-public-change-feed/)
@@ -21,14 +21,14 @@ The repository holds the service and its authoritative architecture package. The
 - A numbered [architecture specification](docs/architecture/README.md).
 - Accepted [architecture decisions](docs/architecture/README.md#architecture-decision-records).
 - Strict machine-readable [schemas](schemas/) and one canonical [example bundle](examples/).
-- The [matching runtime](src/aws_public_change_feed/) and the [labeled corpus](corpus/) its quality is measured against.
+- The [feed pipeline runtime](src/aws_public_change_feed/) and the [labeled corpus](corpus/) its matching quality is measured against.
 - Semantic validators and regression tests for cross-document rules and deterministic identities.
 
 Public announcements provide review evidence. They do not prove that an AWS account, environment, or resource is affected. Operators confirm applicability with their existing account-specific tools.
 
 ## Validation status
 
-The `contracts + matching validated` badge means the committed artifacts and the implemented matcher pass the repository's automated checks:
+The `contracts + feed pipeline validated` badge means the committed artifacts and the implemented runtime pass the repository's automated checks:
 
 - Each canonical example passes its paired JSON Schema.
 - The complete example bundle passes projections, references, route, release-hash, identity, retention, and size checks.
@@ -36,8 +36,13 @@ The `contracts + matching validated` badge means the committed artifacts and the
 - Python quality, YAML, local links, reference dates, the public page, and Git whitespace pass the same gate.
 - Deterministic matching scores at or above the approved thresholds against the labeled corpus.
 - Feed acquisition refuses unapproved hosts, non-public resolved addresses, redirects, unsupported content types, oversized responses, and any XML carrying a DOCTYPE.
+- Route-scoped candidates rebuild the committed example bundle field for field, binding the runtime to the contract rather than to its own output.
+- The durable outbox keeps a stored candidate immutable under a newer release, repairs a missing delivery record from the stored candidate, and reports a stored item whose identity disagrees with its key as a correctness failure.
+- One test drives the whole chain, from a raw feed response through matching and candidate construction to a feed checkpoint that advances only once the outbox records exist.
 
-Matching is the first implemented runtime package. Its corpus mixes real announcements taken from the four configured feeds with authored items covering shapes the recent feed window did not contain. No end-of-support announcement appeared in that window, so recall for that risk type rests on authored items alone. The Terraform roots and the remaining runtime packages are implementation milestones. Deployment, live feed acquisition, Slack delivery, recovery, load, and production preflight still require executable evidence.
+The implemented runtime now covers feed acquisition, normalization, announcement identity, deterministic matching, profile and route mapping, candidate construction, and the durable outbox creation boundary. Its corpus mixes real announcements taken from the four configured feeds with authored items covering shapes the recent feed window did not contain. No end-of-support announcement appeared in that window, so recall for that risk type rests on authored items alone.
+
+The Terraform roots, the DynamoDB and S3 adapters behind the state, snapshot, and outbox ports, and the dispatch and Slack packages remain implementation milestones. Deployment, live feed acquisition, Slack delivery, recovery, load, and production preflight still require executable evidence.
 
 ## Start here
 
