@@ -25,6 +25,37 @@ That last row is the part to understand before touching this configuration. The 
 
 [`.claude/settings.json`](../.claude/settings.json) denies those four tools outright. That is a Claude Code control; Codex has no project-level equivalent, so on Codex the only thing standing between the agent and those tools is the absence of credentials. Do not authenticate this server to do repository work. Nothing here needs an AWS account, and ADR-017 keeps account access out of the product.
 
+### When the host says the server needs authentication
+
+A session can report `aws-mcp` as requiring authentication, and expose none of its tools, while the endpoint is still serving anonymously. Observed on 2026-08-04 in a Claude Code session: no `aws-mcp` tool reached the session at all, yet the probe below returned 200 from `initialize`, all nine tools from `tools/list`, documentation from `search_documentation`, and a 401 from `call_aws` alone. The server had not changed. The host's MCP client declined to connect without an OAuth handshake.
+
+The remedy such a prompt invites is the one this repository refuses. Authorizing the server to get documentation lookup back also switches on `call_aws`, `run_script`, `get_presigned_url`, and `get_tasks` for that session. The deny list covers those four tool names on Claude Code; it does not cover the decision to sign in, and on Codex nothing does. Read an authentication prompt for this server as an instruction to proceed without it.
+
+That leaves two causes for a missing tool surface which look identical from inside a session and call for opposite responses. Probe the endpoint before concluding either:
+
+```bash
+curl -sS -D /tmp/mcp.hdr -X POST https://aws-mcp.us-east-1.api.aws/mcp \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"probe","version":"1.0"}}}'
+```
+
+Then reuse the `mcp-session-id` header it returns for `tools/list`, and for a `tools/call` that exercises a documentation tool:
+
+```bash
+SID=$(grep -i '^mcp-session-id' /tmp/mcp.hdr | tr -d '\r' | awk '{print $2}')
+call() {
+  curl -sS -X POST https://aws-mcp.us-east-1.api.aws/mcp \
+    -H 'Content-Type: application/json' \
+    -H 'Accept: application/json, text/event-stream' -H "mcp-session-id: $SID" -d "$1"
+}
+call '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+call '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+call '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"aws___search_documentation","arguments":{"search_phrase":"S3 conditional writes"}}}'
+```
+
+A 200 with the tools listed means the credential-free property is intact and the gap is host-side. Work without the server; nothing in the repository requires it, and the milestones that benefit most from it are not the only ones available. An auth challenge on `initialize`, or a `search_documentation` that fails where `call_aws` used to fail alone, is the different and more serious case the last section describes.
+
 `search_documentation` does not return one kind of result, and the difference matters for how much weight its output carries:
 
 | Result shape | Where it comes from | How faithful |
@@ -129,7 +160,7 @@ The earlier version of this note declined the Agent Toolkit on the strength of i
 
 The blocking question was whether the new server could be used without credentials, because "credential-free" was the property the old configuration rested on. Its setup guide documents only OAuth and SigV4, which reads like a hard requirement. The [GA announcement](https://aws.amazon.com/blogs/aws/the-aws-mcp-server-is-now-generally-available/) says documentation retrieval no longer requires authentication, which reads like the opposite.
 
-Settled by probing the endpoint rather than by choosing which page to believe. Unauthenticated `initialize` returns 200 with no auth challenge, `tools/list` returns all nine tools, `search_documentation` returns documentation, and `call_aws` fails with an authentication error. So the migration is viable credential-free.
+Settled by probing the endpoint rather than by choosing which page to believe. Unauthenticated `initialize` returns 200 with no auth challenge, `tools/list` returns all nine tools, `search_documentation` returns documentation, and `call_aws` fails with an authentication error. So the migration is viable credential-free. The commands are recorded under [When the host says the server needs authentication](#when-the-host-says-the-server-needs-authentication), and re-running them on 2026-08-04 returned the same four results.
 
 What it cost is honest to state: the tool surface went from five read-only tools to nine, four of which act on an AWS account. Denied on Claude Code, merely unusable on Codex. The old server could not have been made dangerous by a credential; this one can. That is a real reduction in the guarantee, accepted because the alternative was running a server against its vendor's own instruction.
 
@@ -143,7 +174,8 @@ What it cost is honest to state: the tool surface went from five read-only tools
 - If the server's regional-availability tools turn out to answer a question the specification leaves open, its role widens beyond documentation lookup.
 - If `current_awareness` starts returning verbatim announcement text, the result table above is wrong and the vocabulary workflow gets a shorter path. Re-measure before trusting it; the check is one search against one live page.
 - If a milestone needs AWS API calls to make progress rather than to verify it, the credentialed decision reopens on that evidence.
-- If AWS stops serving the documentation tools unauthenticated, the credential-free property is gone and the configuration needs rethinking rather than a quiet OAuth flow. The check is the probe recorded in the migration note: unauthenticated `initialize`, then `search_documentation`.
+- If AWS stops serving the documentation tools unauthenticated, the credential-free property is gone and the configuration needs rethinking rather than a quiet OAuth flow. The check is the probe in [When the host says the server needs authentication](#when-the-host-says-the-server-needs-authentication), which also separates that case from a host that declines to connect anonymously to a server still serving anonymously. Both present as an absent tool surface, and only one of them is about AWS.
+- If a host gates this server behind OAuth persistently rather than in one session, the configuration is carrying a cost it no longer repays on that host, and the choice is to drop it there or to accept documentation lookup through `WebFetch` and web search instead. Neither is authenticating it.
 - If Codex gains a project-level tool deny list, the asymmetry noted above closes and both hosts can enforce the same boundary.
 
 The corpus-boundary question in the first draft is settled. Codex reviewed it, the rule held, and its wording was too broad twice over: it read as forbidding announcement research rather than reserving two fields, and it claimed a single acquisition path for a corpus that ADR-018 lets carry authored fixtures. Narrowed above. The property to preserve in any future revision is unchanged — historical corpus text equals what the matcher sees in production.
