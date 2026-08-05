@@ -9,9 +9,12 @@ name: Reference links
 permissions:
   contents: read
 
+# Scheduled and dispatched sweeps share one group so full external checks never
+# run concurrently. Pull requests get a group per ref and supersede themselves,
+# so a push does not queue behind a twenty-minute sweep.
 concurrency:
-  group: reference-links
-  cancel-in-progress: false
+  group: reference-links-${{ github.event_name == 'pull_request' && github.ref || 'sweep' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   local-reference-validation:
@@ -25,6 +28,64 @@ jobs:
 
       - name: Validate reference metadata and local links
         run: python3 scripts/validate_references.py
+
+  # A dead link introduced by a pull request used to merge green and surface on
+  # the following Monday, on a branch nobody was watching. This runs the same
+  # check while the change is still attributable, and only when Markdown moved,
+  # so most pull requests skip it entirely.
+  pull-request-link-check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect Markdown changes
+        id: markdown
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --name-only "$BASE_SHA...$GITHUB_SHA" -- '*.md' | grep -q .; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Caches created on a pull-request ref are scoped to it, so this cannot
+      # disturb the sweep's cache. `max_cache_age` is one day, so the benefit is
+      # repeated pushes to the same pull request rather than across branches.
+      - name: Restore link-check cache
+        if: steps.markdown.outputs.changed == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .lycheecache
+          key: lychee-v0.24.2-${{ runner.os }}-${{ github.run_id }}
+          restore-keys: |
+            lychee-v0.24.2-${{ runner.os }}-
+
+      - name: Check external reference links
+        if: steps.markdown.outputs.changed == 'true'
+        uses: lycheeverse/lychee-action@e7477775783ea5526144ba13e8db5eec57747ce8  # v2.9.0
+        with:
+          args: .
+          fail: true
+          failIfEmpty: true
+          format: markdown
+          jobSummary: true
+          lycheeVersion: v0.24.2
+          output: lychee-report.md
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Save link-check cache
+        if: always() && steps.markdown.outputs.changed == 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .lycheecache
+          key: lychee-v0.24.2-${{ runner.os }}-${{ github.run_id }}
 
   online-reference-check:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
