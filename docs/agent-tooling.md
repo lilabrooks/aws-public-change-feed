@@ -65,9 +65,11 @@ The trap in cause 2 is that `claude mcp list` reports `✔ Connected`, because `
 | --- | --- |
 | `initialize`, `tools/list`, `search_documentation` | 200, no `WWW-Authenticate` |
 | `call_aws` | 401 with `WWW-Authenticate: Bearer realm="…/mcp", resource_metadata="…/.well-known/oauth-protected-resource"` |
-| `GET /.well-known/oauth-protected-resource` | 200, naming `https://us-east-1.oauth.signin.aws/` |
+| `GET /.well-known/oauth-protected-resource` | 200, naming issuer `us-east-1.oauth.signin.aws` |
 
 The challenge appears on the account tools and nowhere else. AWS's own boundary therefore falls exactly where the deny list falls. That is a useful confirmation, not a substitute for the deny list, and on Codex nothing enforces the boundary at all.
+
+The issuer is written without a scheme on purpose. The metadata gives it as an `https://` URL with a trailing slash, but an OAuth issuer identifier names an authorization server rather than a page: that root returns 404, as does its `openid-configuration`. Written in full it would fail the reference check and imply something fetchable.
 
 CloudFront fronts this endpoint, so send `Accept: application/json` when re-checking the well-known document. A cached response once made the table above look wrong and produced a confident correction that was itself the error.
 
