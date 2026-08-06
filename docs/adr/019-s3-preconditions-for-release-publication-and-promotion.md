@@ -66,7 +66,8 @@ The ETag is used only as an opaque concurrency token. Content integrity remains 
 
 ## Milestone-2 testing decision
 
-- Status: Proposed
+- Status: Accepted
+- Date: 2026-08-05
 
 The open question this ADR left for milestone 2 was boto3 against moto, or an opt-in integration suite against a dedicated real bucket. It named three places where mock fidelity was unproven: concurrent-publisher interleaving, the indeterminate `409` outcome, and versioned-bucket behavior including delete markers and the `404` case. All three were measured against moto 5.2.2 and boto3 1.43.65 before this section was written. `tests/test_s3_preconditions.py` carries the checks.
 
