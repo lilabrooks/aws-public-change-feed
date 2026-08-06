@@ -49,3 +49,12 @@ warn_return_any = true
 no_implicit_reexport = true
 strict_equality = true
 extra_checks = true
+
+# `boto3` and `botocore` ship no type information. Stub packages exist, but
+# they are large, they version independently of the SDK, and the only code
+# importing them is `tests/test_s3_preconditions.py`, which asserts HTTP status
+# codes and error strings rather than SDK types. Revisit when the milestone-2
+# publisher lands in `src/`, where the strict overrides above do apply.
+[[tool.mypy.overrides]]
+module = ["boto3.*", "botocore.*"]
+ignore_missing_imports = true

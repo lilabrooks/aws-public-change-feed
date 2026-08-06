@@ -1,4 +1,6 @@
+boto3==1.43.65
 jsonschema==4.26.0
+moto[s3]==5.2.2
 mypy==2.3.0
 PyYAML==6.0.3
 referencing==0.37.0
