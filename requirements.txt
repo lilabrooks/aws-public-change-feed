@@ -13,3 +13,9 @@
 # every caller constructing that client needs it and boto3 pins a compatible
 # botocore in turn.
 boto3==1.43.65
+#
+# The release loader parses `config.yaml` at runtime, so PyYAML joins it. The
+# audit that added the boto3 pin found that entry missing because the adapter
+# imported botocore lazily; this one is a module-level import in `loading.py`
+# and is declared with the code that needs it.
+PyYAML==6.0.3
