@@ -10,7 +10,7 @@ requires-python = ">=3.12"
 license = "Apache-2.0"
 # Pinned in requirements.txt, which ADR-006 makes the production pin file.
 # The range here stays compatible with it rather than restating the pin.
-dependencies = ["boto3>=1.43,<2"]
+dependencies = ["boto3>=1.43,<2", "PyYAML>=6.0,<7"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
