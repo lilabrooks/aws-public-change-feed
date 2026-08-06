@@ -104,26 +104,18 @@ class LoadedRelease:
 
         ADR-019: rollback writes the historical release references forward as a
         new document with a fresh `promoted_at`, and never republishes the
-        historical bytes unchanged. The freshness is load-bearing rather than
-        bookkeeping. Identical bytes reproduce the historical ETag, so a
-        concurrent publisher still holding that ETag would find its
-        precondition satisfied against a pointer that had moved away and come
-        back, and its write would land on a decision nobody made.
-
-        Refusing here rather than documenting the rule is deliberate: the
-        caller supplies the timestamp, and the one value that breaks the
-        guarantee is the one already sitting in the document being restored.
+        historical bytes unchanged. The freshness is enforced in
+        `promote_pointer`, which holds the pointer being replaced and so can
+        require the new time to follow it. An audit found the rule cannot be
+        enforced here: comparing against the version being restored misses the
+        case where restoring, promoting away, and restoring again reproduces
+        the first rollback's bytes rather than the original's.
         """
 
-        stamp = utc_timestamp(promoted_at)
-        if stamp == self.promoted_at:
-            raise ValueError(
-                f"rollback must record a fresh promoted_at; {stamp} is the one the restored pointer already carries"
-            )
         return {
             "schema_version": POINTER_SCHEMA_VERSION,
             "release_id": self.release_id,
-            "promoted_at": stamp,
+            "promoted_at": utc_timestamp(promoted_at),
             "config": dict(self.reference["config"]),
             "inventory": dict(self.reference["inventory"]),
         }
@@ -151,6 +143,13 @@ def _require_usable_pointer(pointer: Mapping[str, Any]) -> None:
     identifier = pointer.get("release_id")
     if not isinstance(identifier, str) or not identifier:
         raise IncompatibleRelease(f"active pointer release_id is missing or not a string: {identifier!r}")
+
+    # Required by the schema, and load-bearing rather than descriptive: the
+    # promotion guard compares against it, so an absent or non-string value
+    # would leave that guard unable to fire while everything still looked fine.
+    stamp = pointer.get("promoted_at")
+    if not isinstance(stamp, str) or not stamp:
+        raise IncompatibleRelease(f"active pointer promoted_at is missing or not a string: {stamp!r}")
 
     supported = {
         "config": SUPPORTED_CONFIG_SCHEMA_VERSIONS,

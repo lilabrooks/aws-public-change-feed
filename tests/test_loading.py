@@ -15,7 +15,7 @@ an operator read "release failed" and learn nothing about which.
 import json
 import sys
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import boto3
@@ -44,6 +44,9 @@ BUCKET = "release-bucket"
 REGION = "us-east-1"
 POINTER = "aws-public-change-alerting/active-versions.json"
 PROMOTED = datetime(2026, 7, 13, 16, 30, tzinfo=UTC)
+# A promotion must record a time after the pointer it replaces, so later
+# promotions derive their stamps rather than repeating the first.
+LATER = PROMOTED + timedelta(minutes=1)
 APPLICATION_VERSION = "0.1.0-design-fixture"
 
 
@@ -339,7 +342,7 @@ class RollbackTests(ReleaseFixture):
         promote_pointer(
             self.store,
             pointer_key=POINTER,
-            document=json.dumps(second.pointer_document(PROMOTED)).encode(),
+            document=json.dumps(second.pointer_document(LATER)).encode(),
             observed=historical,
         )
         return first, second, historical
@@ -399,24 +402,107 @@ class RollbackTests(ReleaseFixture):
         self.assertEqual(json.loads(forward)["release_id"], json.loads(historical.body)["release_id"])
         self.assertNotEqual(json.loads(forward)["promoted_at"], json.loads(historical.body)["promoted_at"])
 
-    def test_reusing_the_restored_promotion_time_is_refused(self):
-        """The fresh `promoted_at` is load-bearing, so reusing it is refused.
+    def test_a_second_rollback_cannot_reproduce_the_first_rollback_bytes(self):
+        """The hazard an audit found, which the narrower guard did not cover.
 
-        ADR-019: identical bytes reproduce the historical ETag, and a
-        concurrent publisher still holding it would find its precondition
-        satisfied against a pointer that had moved away and come back.
+        The first version of this rule compared the new `promoted_at` against
+        the version being restored. Restoring a release, promoting away, and
+        restoring it again with the same timestamp reproduces the *first
+        rollback's* bytes, not the original's, so that comparison never saw it.
+        The resulting object carried a retained version's ETag, which is
+        exactly what ADR-019's rule exists to prevent.
+
+        The rule now lives in `promote_pointer`, which holds the pointer being
+        replaced and can require the new time to follow it.
         """
 
-        _, _, historical = self.publish_second_release()
+        first, second, historical = self.publish_second_release()
+
         restored = load_release_version(
             self.store,
             pointer_key=POINTER,
             version_id=historical.version_id,
             application_version=APPLICATION_VERSION,
         )
+        promote_pointer(
+            self.store,
+            pointer_key=POINTER,
+            document=json.dumps(restored.forward_document(self.ROLLED_BACK)).encode(),
+            observed=self.store.read(POINTER),
+        )
+        rolled_back = self.store.read(POINTER)
 
-        with self.assertRaisesRegex(ValueError, "must record a fresh promoted_at"):
-            restored.forward_document(PROMOTED)
+        # Promote the second release again, then attempt the same rollback with
+        # the same timestamp. The bytes would equal `rolled_back` exactly.
+        promote_pointer(
+            self.store,
+            pointer_key=POINTER,
+            document=json.dumps(second.pointer_document(self.ROLLED_BACK + timedelta(minutes=1))).encode(),
+            observed=rolled_back,
+        )
+        repeat = load_release_version(
+            self.store,
+            pointer_key=POINTER,
+            version_id=historical.version_id,
+            application_version=APPLICATION_VERSION,
+        )
+        replay = json.dumps(repeat.forward_document(self.ROLLED_BACK)).encode()
+        self.assertEqual(replay, rolled_back.body)
+
+        with self.assertRaisesRegex(ValueError, "must record a time after the pointer it replaces"):
+            promote_pointer(
+                self.store,
+                pointer_key=POINTER,
+                document=replay,
+                observed=self.store.read(POINTER),
+            )
+
+    def test_a_promotion_at_the_same_instant_is_refused(self):
+        """The boundary the rule turns on, which `<` would let through.
+
+        Equal timestamps are the case that makes byte-identity reachable when
+        the release references also match, so the comparison has to reject
+        equality rather than only earlier times. An inversion run found this
+        boundary untested: relaxing `<=` to `<` broke nothing.
+        """
+
+        first = self.publish_and_promote()
+        observed = self.store.read(POINTER)
+        second = publish_objects(
+            self.store,
+            config_body=self.config_body.replace(b"max_title_characters: 150", b"max_title_characters: 180"),
+            inventory_body=self.inventory_body,
+            config_schema_version=4,
+            inventory_schema_version=3,
+            release_prefix=self.deployment["release_prefix"],
+            config_filename=self.deployment["config_filename"],
+            inventory_filename=self.deployment["inventory_filename"],
+        )
+        self.assertNotEqual(second.release_id, first.release_id)
+
+        with self.assertRaisesRegex(ValueError, "must record a time after the pointer it replaces"):
+            promote_pointer(
+                self.store,
+                pointer_key=POINTER,
+                document=json.dumps(second.pointer_document(PROMOTED)).encode(),
+                observed=observed,
+            )
+
+    def test_a_pointer_without_a_promotion_time_is_refused(self):
+        """The guard depends on it, so its absence cannot be silent.
+
+        A pointer missing `promoted_at` loaded cleanly before this, leaving the
+        recorded time empty and the freshness comparison unable to fire.
+        """
+
+        artifacts = self.publish_and_promote()
+        stripped = {key: value for key, value in artifacts.pointer_document(PROMOTED).items() if key != "promoted_at"}
+        # Written directly: `promote_pointer` now refuses to produce this, so
+        # the only way to reach the loader with one is to plant it.
+        self.client.put_object(Bucket=BUCKET, Key=POINTER, Body=json.dumps(stripped).encode())
+
+        with self.assertRaisesRegex(IncompatibleRelease, "promoted_at is missing"):
+            self.load()
 
     def test_a_rollback_against_a_stale_observation_is_refused(self):
         """Rollback is a promotion, so it loses the same race a promotion does."""
@@ -443,7 +529,7 @@ class RollbackTests(ReleaseFixture):
         promote_pointer(
             self.store,
             pointer_key=POINTER,
-            document=json.dumps(third.pointer_document(PROMOTED)).encode(),
+            document=json.dumps(third.pointer_document(self.ROLLED_BACK)).encode(),
             observed=stale,
         )
 

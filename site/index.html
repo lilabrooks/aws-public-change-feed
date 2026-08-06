@@ -376,7 +376,7 @@
               <li>S3 release preconditions measured against the mock the publisher is tested on, including where that mock cannot stand in for S3</li>
               <li>Release publication and promotion reproducing the committed release from the contract bundle's own bytes</li>
               <li>Release loading that reads the exact pinned versions, verifies their hashes, and refuses a release this build cannot evaluate</li>
-              <li>Rollback that verifies a retained release before restoring it, and records its own promotion time rather than replaying old bytes</li>
+              <li>Rollback that verifies a retained release before restoring it, with promotion times required to move forward so no later write can reproduce a retained version</li>
               <li>Semantic validation, deterministic identity vectors, and mutation tests</li>
               <li>Repository quality, page drift, link, Mermaid, and HTML checks</li>
             </ul>
