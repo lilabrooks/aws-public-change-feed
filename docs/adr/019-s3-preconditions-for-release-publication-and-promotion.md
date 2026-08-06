@@ -54,7 +54,7 @@ The fresh `promoted_at` is load-bearing, not bookkeeping. Republishing identical
 ### Promotion times move forward
 
 - Status: Proposed
-- Date: 2026-08-05
+- Date: 2026-08-06
 
 A promotion must record a `promoted_at` strictly later than the pointer version it replaces. Publication and rollback both go through this rule, and a pointer that records no parseable promotion time is not promotable.
 

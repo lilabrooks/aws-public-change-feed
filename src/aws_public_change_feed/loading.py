@@ -92,13 +92,6 @@ class LoadedRelease:
     checks a candidate against the same four fields.
     """
 
-    promoted_at: str = ""
-    """The promotion time recorded by the pointer this was loaded from.
-
-    Kept so a rollback can refuse to reuse it. Empty only for a release built
-    without a pointer, which no loader here produces.
-    """
-
     def forward_document(self, promoted_at: datetime) -> dict[str, Any]:
         """Build the pointer document that restores this release.
 
@@ -246,7 +239,6 @@ def _load_from_pointer(
 
     return LoadedRelease(
         release_id=pointer["release_id"],
-        promoted_at=str(pointer.get("promoted_at", "")),
         config=_parse(yaml.safe_load, config_body, "config"),
         inventory=_parse(json.loads, inventory_body, "inventory"),
         reference={

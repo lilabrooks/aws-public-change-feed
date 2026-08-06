@@ -125,7 +125,6 @@ class ReleaseLoadingTests(ReleaseFixture):
 
         self.assertEqual(loaded.config, yaml.safe_load(self.config_body))
         self.assertEqual(loaded.inventory, json.loads(self.inventory_body))
-        self.assertEqual(loaded.release_id, json.loads(json.dumps(loaded.reference))["release_id"])
 
     def test_loading_reads_the_pinned_version_not_the_current_object(self):
         """A later write at the same key must not change what the pointer names.

@@ -7,10 +7,10 @@ back by exact version and verify, then promote the pointer with `If-Match`
 against an ETag observed in the same read that produced the decision.
 
 Steps 1 and 2 belong to `scripts/validate_config.py`, which already validates
-schemas and cross-document rules. Step 8, the runtime compatibility probe,
-needs a loader that reads the active pointer and fetches the pinned versions.
-No such loader exists yet, so this module stops at a promoted pointer rather
-than announcing a success it cannot verify.
+schemas and cross-document rules. Step 8, the runtime compatibility probe, is
+`loading.probe_release`: this module stops at a promoted pointer, and the
+publisher proves the result is readable by loading it back before announcing
+success.
 
 The object store is a port, and the three exceptions it raises are named after
 HTTP outcomes rather than after meanings. That is deliberate: ADR-019 gives 412
