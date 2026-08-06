@@ -65,6 +65,26 @@ Slack carries the generated feed. It is not the source of truth for candidates o
 - [ ] Implement `infra/bootstrap` and `infra/central`. Verify remote-state permissions, native lockfile use, provider locks, encryption, IAM boundaries, schedules, indexes, TTL, alarms, and reproducible packages.
 - [ ] Complete production preflight and operational validation. Verify every destination, notification subscription, corpus quality, feed freshness, declared load envelope, dashboards, backup and restore where configured, shadow mode, rollback, and runbook exercises.
 
+## Current state
+
+A milestone is checked only when its whole verification list holds. Several unchecked milestones carry substantial working code, so this section records where each one actually stands. The repository runs 335 tests and scores the committed corpus at precision 1.000 and recall 1.000 across 27 true positives.
+
+**Corpus and evaluation harness.** Built. `corpus/announcements.json` holds 44 labeled announcements, 25 of them negative examples, and `src/evaluation.py` reports precision and recall per service and risk type. Edited announcements, overlapping feeds, missing publication dates, and deterministic replay are covered by tests. One gap keeps it unchecked: `corpus/thresholds.json` sets global floors only, so a single service or risk type degrading does not gate promotion even though the harness prints its figures. Per-pair overrides are supported and unset.
+
+**Immutable release publishing and promotion.** The write half is implemented. `src/releases.py` publishes both release objects with `If-None-Match: *`, verifies each by exact-version read-back, and compare-and-swaps the active pointer with `If-Match`, keeping ADR-019's 412, 409, and 404 outcomes distinct. A test rebuilds `examples/active-versions.json` from the committed configuration and inventory bytes, so the publisher is bound to the contract rather than to itself. Rollback, retention, and incompatible-version rejection are not implemented. Concurrent-publisher behavior cannot be verified against the mock at all, for the reason ADR-019's milestone-2 testing section measures and records.
+
+**Safe feed acquisition and source state.** Implemented behind ports. Host allowlisting, address validation, TLS pinning to a validated address, redirect refusal, response and parser limits, conditional requests, partial feed failures, provenance coalescing, and checkpoints all have tests. Raw snapshots have an in-memory store only, and per-feed freshness alarms are CloudWatch resources that arrive with the Terraform roots.
+
+**Matching, profile mapping, candidate construction, and the durable outbox.** Implemented behind ports, with an end-to-end test driving raw feed bytes through to an advanced checkpoint and reproducing the committed candidate. Route isolation, sorted environment IDs, distinct service and risk evidence, revisions, provenance-only updates, and identity vectors are covered. The announcement-state and outbox stores are in-memory and feed state adds a file-backed store for local replay across runs; the DynamoDB adapters behind all three arrive with the Terraform roots that create the table.
+
+**Dispatch, SQS transport, Slack delivery, and reconciliation.** Not started. No dispatch or Slack module exists. The rendered sample this milestone must publish is recorded as required evidence and has not been produced.
+
+**Terraform roots.** Not started. `infra/bootstrap/` and `infra/central/` do not exist yet, which is why every adapter above is still in-memory and why no deployed behavior has been demonstrated.
+
+**Production preflight.** Not started, and blocked on the milestones above.
+
+The shortest path to checking a box is the corpus one, which needs per-pair thresholds. The largest missing piece is the Terraform roots, because they are what turn the ports into deployed behavior and unblock the evidence the last milestone requires.
+
 ## Completion criteria
 
 The goal is complete when a clean checkout can build and deploy the service, a production-like environment passes all automated and operator-confirmed preflight checks, public announcements produce reproducible route-scoped candidates, Slack delivery and recovery behave according to the accepted ADRs, and the documentation matches the implemented system.
