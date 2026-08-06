@@ -164,7 +164,6 @@ class PublicationAgainstS3Tests(unittest.TestCase):
             self.store,
             pointer_key=POINTER,
             document=document,
-            release_identifier=artifacts.release_id,
             observed=None,
         )
         self.assertIsNone(first.prior_version_id)
@@ -175,7 +174,6 @@ class PublicationAgainstS3Tests(unittest.TestCase):
             self.store,
             pointer_key=POINTER,
             document=json.dumps({**artifacts.pointer_document(PROMOTED), "release_id": "b" * 64}).encode(),
-            release_identifier="b" * 64,
             observed=observed,
         )
         self.assertEqual(second.prior_version_id, observed.version_id)
@@ -189,7 +187,6 @@ class PublicationAgainstS3Tests(unittest.TestCase):
             self.store,
             pointer_key=POINTER,
             document=document,
-            release_identifier=artifacts.release_id,
             observed=None,
         )
         stale = self.store.read(POINTER)
@@ -199,7 +196,6 @@ class PublicationAgainstS3Tests(unittest.TestCase):
             self.store,
             pointer_key=POINTER,
             document=winner,
-            release_identifier="c" * 64,
             observed=stale,
         )
 
@@ -208,7 +204,6 @@ class PublicationAgainstS3Tests(unittest.TestCase):
                 self.store,
                 pointer_key=POINTER,
                 document=document,
-                release_identifier=artifacts.release_id,
                 observed=stale,
             )
         self.assertEqual(raised.exception.promoting, artifacts.release_id)
@@ -226,7 +221,6 @@ class PublicationAgainstS3Tests(unittest.TestCase):
                 self.store,
                 pointer_key=POINTER,
                 document=document,
-                release_identifier=artifacts.release_id,
                 observed=None,
             )
         self.assertEqual(raised.exception.observed, "d" * 64)
@@ -238,7 +232,6 @@ class PublicationAgainstS3Tests(unittest.TestCase):
             self.store,
             pointer_key=POINTER,
             document=document,
-            release_identifier=artifacts.release_id,
             observed=None,
         )
         observed = self.store.read(POINTER)
@@ -249,7 +242,6 @@ class PublicationAgainstS3Tests(unittest.TestCase):
                 self.store,
                 pointer_key=POINTER,
                 document=document,
-                release_identifier=artifacts.release_id,
                 observed=observed,
             )
 
@@ -317,7 +309,6 @@ class InjectedOutcomeTests(unittest.TestCase):
             store,
             pointer_key=POINTER,
             document=document,
-            release_identifier=identifier,
             observed=observed,
         )
 
@@ -339,8 +330,7 @@ class InjectedOutcomeTests(unittest.TestCase):
             promote_pointer(
                 store,
                 pointer_key=POINTER,
-                document=b"{}",
-                release_identifier=identifier,
+                document=json.dumps({"release_id": identifier}).encode(),
                 observed=observed,
             )
         self.assertEqual(raised.exception.observed, "0" * 64)
@@ -379,12 +369,62 @@ class InjectedOutcomeTests(unittest.TestCase):
             promote_pointer(
                 store,
                 pointer_key=POINTER,
-                document=b"{}",
-                release_identifier="a" * 64,
+                document=json.dumps({"release_id": "a" * 64}).encode(),
                 observed=observed,
             )
         self.assertIsNone(raised.exception.observed)
         self.assertIn("<unreadable>", str(raised.exception))
+
+    def test_a_document_naming_no_release_is_refused(self):
+        """The release comes out of the document, so the document must name one.
+
+        Taking it as a separate argument let the two disagree, and the 409
+        branch compares the re-read pointer against it: a mismatched pair
+        reported a converged promotion as a lost one. Deriving it removes the
+        pair, and this is the one input that derivation can still reject.
+        """
+
+        with self.assertRaisesRegex(ValueError, "does not name a release_id"):
+            promote_pointer(
+                RecordingStore(),
+                pointer_key=POINTER,
+                document=b"{}",
+                observed=None,
+            )
+
+    def test_an_indeterminate_first_promotion_resolves_like_any_other(self):
+        """409 on the create path, which a new deployment always takes.
+
+        Left uncaught, this put an undefined outcome on the only path a fresh
+        deployment can use. It resolves the same way as the replace path: the
+        pointer is re-read and convergence recorded without attribution.
+        """
+
+        identifier = "9" * 64
+        document = json.dumps({"release_id": identifier}).encode()
+        store = RecordingStore(raises=[WriteConflict("409")], bodies={POINTER: document})
+
+        promotion = promote_pointer(store, pointer_key=POINTER, document=document, observed=None)
+
+        self.assertTrue(promotion.converged)
+        self.assertIsNone(promotion.new_version_id)
+        self.assertIsNone(promotion.prior_version_id)
+
+    def test_an_indeterminate_first_promotion_that_lost_is_refused(self):
+        identifier = "8" * 64
+        store = RecordingStore(
+            raises=[WriteConflict("409")],
+            bodies={POINTER: json.dumps({"release_id": "7" * 64}).encode()},
+        )
+
+        with self.assertRaises(PromotionSuperseded) as raised:
+            promote_pointer(
+                store,
+                pointer_key=POINTER,
+                document=json.dumps({"release_id": identifier}).encode(),
+                observed=None,
+            )
+        self.assertEqual(raised.exception.observed, "7" * 64)
 
 
 class CommittedBundleTests(unittest.TestCase):

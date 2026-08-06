@@ -8,7 +8,9 @@ version = "0.1.0"
 description = "Route-scoped review candidates from public AWS announcement feeds"
 requires-python = ">=3.12"
 license = "Apache-2.0"
-dependencies = []
+# Pinned in requirements.txt, which ADR-006 makes the production pin file.
+# The range here stays compatible with it rather than restating the pin.
+dependencies = ["boto3>=1.43,<2"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

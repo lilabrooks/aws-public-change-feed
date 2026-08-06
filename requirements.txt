@@ -5,3 +5,11 @@
 # dependency-free: it reads normalized JSON and the release configuration,
 # both of which the standard library handles. Feed acquisition, DynamoDB
 # state, and Slack delivery will add entries here as those milestones land.
+#
+# Release publication is the first entry. `releases.py` imports
+# `botocore.exceptions` to translate S3 error codes into the outcomes ADR-019
+# distinguishes; the S3 client itself is injected, so the package never calls
+# `boto3.client` on its own. `boto3` is pinned rather than `botocore` because
+# every caller constructing that client needs it and boto3 pins a compatible
+# botocore in turn.
+boto3==1.43.65

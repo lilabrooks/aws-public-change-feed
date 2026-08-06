@@ -382,12 +382,38 @@ def publish_objects(
     )
 
 
+def _converged_or_superseded(
+    store: ObjectStore,
+    pointer_key: str,
+    promoting: str,
+    observed: StoredObject | None,
+) -> Promotion:
+    """Resolve an indeterminate 409 by re-reading the pointer.
+
+    ADR-019: if the pointer names this release, promotion has converged and the
+    publisher records the desired release as active. It does not record that
+    this request succeeded, because a competing publisher promoting the same
+    release produces an identical pointer and S3 does not attribute the winning
+    write. Anything else is not promoted.
+    """
+
+    current = _current_release(store, pointer_key)
+    if current != promoting:
+        raise PromotionSuperseded(promoting, current)
+    return Promotion(
+        release_id=promoting,
+        new_version_id=None,
+        prior_version_id=None if observed is None else observed.version_id,
+        prior_release_id=None if observed is None else _named_release(observed.body),
+        converged=True,
+    )
+
+
 def promote_pointer(
     store: ObjectStore,
     *,
     pointer_key: str,
     document: bytes,
-    release_identifier: str,
     observed: StoredObject | None,
 ) -> Promotion:
     """Chapter 03 steps 6 and 7: compare-and-swap the active pointer.
@@ -397,7 +423,17 @@ def promote_pointer(
     from that same read: a precondition read taken separately from the decision
     is not a compare-and-swap, and taking the whole read rather than a bare
     ETag makes supplying a detached one awkward on purpose.
+
+    The release being promoted is read out of `document` rather than accepted
+    alongside it. Passing both invites them to disagree, and the disagreement
+    is not visible: the 409 branch compares the re-read pointer against the
+    promoted release, so a mismatched pair reports a converged promotion as a
+    lost one.
     """
+
+    promoting = _named_release(document)
+    if promoting is None:
+        raise ValueError("pointer document does not name a release_id")
 
     if observed is None:
         # First promotion into a new deployment. A 412 here means the pointer
@@ -406,41 +442,34 @@ def promote_pointer(
         try:
             version_id = store.create(pointer_key, document)
         except PreconditionFailed:
-            raise PromotionSuperseded(release_identifier, _current_release(store, pointer_key)) from None
+            raise PromotionSuperseded(promoting, _current_release(store, pointer_key)) from None
+        except WriteConflict:
+            # A create can be left indeterminate exactly as a replace can, and
+            # it resolves the same way. Leaving this uncaught would put an
+            # undefined outcome on the one path a new deployment always takes.
+            return _converged_or_superseded(store, pointer_key, promoting, observed)
         return Promotion(
-            release_id=release_identifier,
+            release_id=promoting,
             new_version_id=version_id,
             prior_version_id=None,
             prior_release_id=None,
         )
 
-    prior_release_id = _named_release(observed.body)
     try:
         version_id = store.replace(pointer_key, document, if_match=observed.etag)
     except PreconditionFailed:
-        raise PromotionSuperseded(release_identifier, _current_release(store, pointer_key)) from None
+        raise PromotionSuperseded(promoting, _current_release(store, pointer_key)) from None
     except ObjectMissing:
         raise PointerVanished(
             f"active pointer {pointer_key} was expected to exist and does not; "
             "promotion stops and raises an operational alarm"
         ) from None
     except WriteConflict:
-        # Indeterminate. Re-read and record convergence rather than attribution:
-        # a competing publisher promoting this same release produces an
-        # identical pointer, and S3 does not say whose write won.
-        if _current_release(store, pointer_key) != release_identifier:
-            raise PromotionSuperseded(release_identifier, _current_release(store, pointer_key)) from None
-        return Promotion(
-            release_id=release_identifier,
-            new_version_id=None,
-            prior_version_id=observed.version_id,
-            prior_release_id=prior_release_id,
-            converged=True,
-        )
+        return _converged_or_superseded(store, pointer_key, promoting, observed)
 
     return Promotion(
-        release_id=release_identifier,
+        release_id=promoting,
         new_version_id=version_id,
         prior_version_id=observed.version_id,
-        prior_release_id=prior_release_id,
+        prior_release_id=_named_release(observed.body),
     )
