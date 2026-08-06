@@ -64,11 +64,22 @@ The ETag is used only as an opaque concurrency token. Content integrity remains 
 - Publication writes two immutable objects rather than three. No schema, example, or validator changes, because the dropped manifest never had one — that absence is what identified it as a phantom. Chapter 03's publication sequence loses a step and ADR-014's "write an immutable manifest" clause is superseded.
 - The milestone-2 acceptance test for compare-and-swap promotion can now be written against a real header contract instead of an invented one.
 
-## Open question for milestone 2
+## Milestone-2 testing decision
 
-Verifying this contract needs a testing decision that milestone 2 must make and this ADR deliberately does not: boto3 against moto, or an opt-in integration suite against a dedicated real bucket with a tightly scoped role.
+- Status: Accepted
+- Date: 2026-08-05
 
-Moto carries AWS-verified tests for `IfMatch` and `IfNoneMatch`, so single-request precondition behavior is credible under the mock. The parts this decision actually rests on are the parts where mock fidelity is unproven: concurrent-publisher interleaving, the indeterminate `409` outcome, and versioned-bucket behavior including delete markers and the `404` case. Record the choice before the promotion tests are written, because it determines which of the outcomes above can be asserted rather than assumed.
+The open question this ADR left for milestone 2 was boto3 against moto, or an opt-in integration suite against a dedicated real bucket. It named three places where mock fidelity was unproven: concurrent-publisher interleaving, the indeterminate `409` outcome, and versioned-bucket behavior including delete markers and the `404` case. All three were measured against moto 5.2.2 and boto3 1.43.65 before this section was written. `tests/test_s3_preconditions.py` carries the checks.
+
+**Use moto for single-request precondition semantics.** Every clause above that a single request can express behaves as this ADR specifies, including the two that were doubted: `If-Match` against a delete marker and against a never-written key both return `404 NoSuchKey` rather than `412`, and `If-None-Match: *` succeeds over a delete marker while noncurrent versions remain. Exact-version read-back returns the original bytes, and identical content reproduces the prior ETag, which is the hazard that makes rollback's fresh `promoted_at` load-bearing.
+
+**Do not use moto to verify concurrent promotion.** Moto does not evaluate a conditional write atomically. Twelve publishers released together against one shared ETag produced two winners in 13 of 60 trials, so the compare-and-swap property is not enforced under the mock. A promotion test asserting a single winner would pass roughly four times in five and would be worse than no test, because a green run would read as proof of the exact property that is absent. Concurrency was measured rather than assumed precisely because a single trial had shown one winner and looked conclusive.
+
+**Test both `409` branches by injection.** No deliberate create/delete race produced `409 ConditionalRequestConflict` under moto. A real bucket does not fix this: `409` is a genuine race that cannot be provoked on demand there either. The bounded retry on creation and the convergence-without-attribution handling on promotion are publisher logic, so they are tested by raising a `ClientError` carrying that code at the publisher's S3 seam. That measures the response to the outcome, which is the part carrying the decision.
+
+**No real-bucket suite gates milestone 2.** The properties a real bucket would add over moto are concurrent serialization and `409`, and neither is reliably reproducible in a test. Introducing credentials, a dedicated bucket, and a scoped role to gain an unreliable signal is not proportionate. Reconsider if the publisher later depends on behavior this list does not cover.
+
+Two limits of this evidence. Moto agreeing with this ADR shows the mock and the ADR share a reading of S3, not that the reading is correct; the two sources are only partly independent, since this ADR cites the AWS documentation and moto carries AWS-verified precondition tests. And the atomicity result is a property of moto 5.2.2 that an upstream fix could change, which is why the committed test asserts the sequential behavior the publisher may rely on rather than asserting the defect.
 
 ## Rollback
 
