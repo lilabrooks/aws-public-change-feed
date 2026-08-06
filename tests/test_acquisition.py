@@ -50,6 +50,20 @@ ATOM = b"""<?xml version="1.0"?>
   </entry>
 </feed>"""
 
+MALFORMED_PORT_RSS = b"""<?xml version="1.0"?>
+<rss version="2.0"><channel>
+  <item>
+    <title>Poison item</title>
+    <link>https://aws.amazon.com:abc/x</link>
+  </item>
+  <item>
+    <title>Amazon EKS end of support</title>
+    <link>https://aws.amazon.com/valid/</link>
+    <description>Cluster owners must act.</description>
+    <pubDate>Tue, 01 Jul 2026 10:00:00 GMT</pubDate>
+  </item>
+</channel></rss>"""
+
 BILLION_LAUGHS = b"""<?xml version="1.0"?>
 <!DOCTYPE lolz [<!ENTITY lol "lol"><!ENTITY lol2 "&lol;&lol;&lol;&lol;">]>
 <rss version="2.0"><channel><item><title>&lol2;</title>
@@ -359,8 +373,8 @@ class NormalizationTests(unittest.TestCase):
 
     def test_normalized_item_carries_deterministic_identity(self):
         item = parse_feed(RSS)[0]
-        first = normalize_item(item, "feed-a", OBSERVED)
-        second = normalize_item(item, "feed-a", OBSERVED)
+        first = normalize_item(item, "feed-a", OBSERVED, APPROVED)
+        second = normalize_item(item, "feed-a", OBSERVED, APPROVED)
         assert first is not None and second is not None
         self.assertEqual(first.announcement_id, second.announcement_id)
         self.assertEqual(first.revision_id, second.revision_id)
@@ -368,11 +382,12 @@ class NormalizationTests(unittest.TestCase):
 
     def test_title_change_produces_a_new_revision_but_same_announcement(self):
         item = parse_feed(RSS)[0]
-        original = normalize_item(item, "feed-a", OBSERVED)
+        original = normalize_item(item, "feed-a", OBSERVED, APPROVED)
         edited = normalize_item(
             type(item)(url=item.url, title="Amazon EKS end of support (updated)", summary=item.summary),
             "feed-a",
             OBSERVED,
+            APPROVED,
         )
         assert original is not None and edited is not None
         self.assertEqual(original.announcement_id, edited.announcement_id)
@@ -385,7 +400,66 @@ class NormalizationTests(unittest.TestCase):
 
     def test_non_https_item_is_dropped(self):
         item = type(parse_feed(RSS)[0])(url="http://aws.amazon.com/one/", title="t", summary="")
-        self.assertIsNone(normalize_item(item, "feed-a", OBSERVED))
+        self.assertIsNone(normalize_item(item, "feed-a", OBSERVED, APPROVED))
+
+
+class NormalizeItemUrlPolicyTests(unittest.TestCase):
+    """Item-link policy: canonicalize first, then validate the canonical URL."""
+
+    def item(self, url):
+        from aws_public_change_feed.feedparse import ParsedItem
+
+        return ParsedItem(url=url, title="t", summary="")
+
+    def test_malformed_port_item_is_dropped_not_fatal(self):
+        self.assertIsNone(normalize_item(self.item("https://aws.amazon.com:abc/x"), "feed-a", OBSERVED, APPROVED))
+
+    def test_hostless_item_url_is_dropped(self):
+        self.assertIsNone(normalize_item(self.item("https://"), "feed-a", OBSERVED, APPROVED))
+
+    def test_non_default_port_item_is_dropped(self):
+        self.assertIsNone(normalize_item(self.item("https://aws.amazon.com:8443/x"), "feed-a", OBSERVED, APPROVED))
+
+    def test_unapproved_host_item_is_dropped(self):
+        self.assertIsNone(normalize_item(self.item("https://evil.example/x"), "feed-a", OBSERVED, APPROVED))
+
+    def test_mixed_case_approved_hosts_still_accept(self):
+        normalized = normalize_item(self.item("https://aws.amazon.com/x"), "feed-a", OBSERVED, ("AWS.amazon.com",))
+        assert normalized is not None
+        self.assertEqual(normalized.canonical_url, "https://aws.amazon.com/x")
+
+    def test_user_info_item_url_is_dropped(self):
+        # Canonicalization keeps `hostname`, so the credentials vanish from the
+        # canonical URL while surviving in the provenance sighting, which the
+        # candidate contract rejects. The item has to go instead.
+        dropped = normalize_item(self.item("https://user:pw@aws.amazon.com/x"), "feed-a", OBSERVED, APPROVED)
+        self.assertIsNone(dropped)
+
+    def test_empty_user_info_item_url_is_dropped(self):
+        # `urlsplit("https://@host/x").username` is the empty string, so a
+        # username check alone would let this through.
+        self.assertIsNone(normalize_item(self.item("https://@aws.amazon.com/x"), "feed-a", OBSERVED, APPROVED))
+
+    def test_user_info_cannot_spoof_the_approved_host(self):
+        # The approved name is the user-info component here, not the host. This
+        # is dropped with or without the user-info guard above, because the
+        # allowlist reads `hostname`; it is here to keep that true.
+        self.assertIsNone(
+            normalize_item(self.item("https://aws.amazon.com@evil.example/x"), "feed-a", OBSERVED, APPROVED)
+        )
+
+    def test_fragment_item_is_accepted_and_the_sighting_keeps_it(self):
+        normalized = normalize_item(self.item("https://aws.amazon.com/x#section-2"), "feed-a", OBSERVED, APPROVED)
+        assert normalized is not None
+        self.assertEqual(normalized.canonical_url, "https://aws.amazon.com/x")
+        # The sighting records what the feed published. `test_pipeline` proves
+        # the candidate contract accepts the difference.
+        self.assertEqual(normalized.provenance[0].item_url, "https://aws.amazon.com/x#section-2")
+
+    def test_uppercase_host_item_is_accepted_and_casefolded(self):
+        normalized = normalize_item(self.item("https://AWS.amazon.com/x"), "feed-a", OBSERVED, APPROVED)
+        assert normalized is not None
+        self.assertEqual(normalized.canonical_url, "https://aws.amazon.com/x")
 
 
 class CoalescingTests(unittest.TestCase):
@@ -393,7 +467,7 @@ class CoalescingTests(unittest.TestCase):
         from aws_public_change_feed.feedparse import ParsedItem
 
         return normalize_item(
-            ParsedItem(url=url, title=title, summary=summary, published_raw=published), feed_name, OBSERVED
+            ParsedItem(url=url, title=title, summary=summary, published_raw=published), feed_name, OBSERVED, APPROVED
         )
 
     def test_overlapping_feeds_produce_one_announcement_with_merged_provenance(self):
@@ -457,6 +531,14 @@ class WatcherTests(unittest.TestCase):
 
         watcher.commit(result)
         self.assertEqual(stored(state, "aws-whats-new").etag, '"v2"')
+
+    def test_malformed_port_item_does_not_abort_the_run(self):
+        state = InMemoryFeedStateStore()
+        response = FakeResponse(200, MALFORMED_PORT_RSS, {"Content-Type": "application/rss+xml"})
+        result = self.watcher(response, state).run(self.feeds("f"))
+
+        self.assertEqual(result.outcomes[0].status, "fetched")
+        self.assertEqual([entry.canonical_url for entry in result.announcements], ["https://aws.amazon.com/valid/"])
 
     def test_not_modified_advances_success_without_work(self):
         state = InMemoryFeedStateStore()

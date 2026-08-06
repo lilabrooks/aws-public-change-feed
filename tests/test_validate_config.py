@@ -665,6 +665,12 @@ class ConfigurationValidatorTests(unittest.TestCase):
         changed_request_id = identity.digest_parts("delivery-request:v2", changed["candidate_id"])
         self.assertNotEqual(changed_request_id, original_request_id)
 
+    def test_candidate_title_over_the_schema_bound_is_rejected(self):
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["title"] = "x" * 301
+        with self.assertRaises(ValueError):
+            self.validate_schema("alert_candidate", candidate)
+
     def test_candidate_and_delivery_timestamp_order_is_enforced(self):
         candidate = copy.deepcopy(self.documents["alert_candidate"])
         candidate["created_at"] = "2026-07-13T16:58:59Z"
@@ -786,6 +792,30 @@ class ConfigurationValidatorTests(unittest.TestCase):
             "https://aws.amazon.com/about-aws/whats-new/2026/different-item/"
         )
         with self.assertRaisesRegex(ValueError, "differs from the canonical announcement URL"):
+            self.validate_candidate(candidate)
+
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["provenance"][0]["source_item_url"] += "#overview"
+        # Accepted, unlike every other URL this validator owns: the sighting
+        # records what the feed published, and the rule above requires only that
+        # it canonicalize to the announcement URL. The runtime emits this form,
+        # which `test_pipeline` drives through the whole chain.
+        self.validate_candidate(candidate)
+
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["provenance"][0]["source_item_url"] = (
+            "https://user:pw@aws.amazon.com/about-aws/whats-new/2026/example-eks-update/"
+        )
+        with self.assertRaisesRegex(ValueError, "must use unauthenticated HTTPS"):
+            self.validate_candidate(candidate)
+
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["provenance"][0]["source_item_url"] = (
+            "https://@aws.amazon.com/about-aws/whats-new/2026/example-eks-update/"
+        )
+        # Blank credentials are still a user-info component; `parsed.username`
+        # is the empty string here and a username check alone would pass it.
+        with self.assertRaisesRegex(ValueError, "must use unauthenticated HTTPS"):
             self.validate_candidate(candidate)
 
         candidate = copy.deepcopy(self.documents["alert_candidate"])

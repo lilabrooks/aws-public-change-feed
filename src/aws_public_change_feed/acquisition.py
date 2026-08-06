@@ -134,7 +134,9 @@ class FeedWatcher:
             snapshot_key = self.snapshots.put(feed.name, observed_at, response.body)
 
         announcements = [
-            normalized for item in items if (normalized := normalize_item(item, feed.name, observed_at)) is not None
+            normalized
+            for item in items
+            if (normalized := normalize_item(item, feed.name, observed_at, self.approved_hosts)) is not None
         ]
         newest = max((entry.published_at for entry in announcements if entry.published_at), default=None)
 
