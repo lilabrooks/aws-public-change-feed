@@ -67,7 +67,7 @@ Slack carries the generated feed. It is not the source of truth for candidates o
 
 ## Current state
 
-A milestone is checked only when its whole verification list holds. Several unchecked milestones carry substantial working code, so this section records where each one actually stands. The repository runs 347 tests and scores the committed corpus at precision 1.000 and recall 1.000 across 27 true positives.
+A milestone is checked only when its whole verification list holds. Several unchecked milestones carry substantial working code, so this section records where each one actually stands. The repository runs 350 tests and scores the committed corpus at precision 1.000 and recall 1.000 across 27 true positives.
 
 **Corpus and evaluation harness.** Built. `corpus/announcements.json` holds 44 labeled announcements, 25 of them negative examples, and `src/evaluation.py` reports precision and recall per service and risk type. Edited announcements, overlapping feeds, missing publication dates, and deterministic replay are covered by tests. One gap keeps it unchecked: `corpus/thresholds.json` sets global floors only, so a single service or risk type degrading does not gate promotion even though the harness prints its figures. Per-pair overrides are supported and unset.
 

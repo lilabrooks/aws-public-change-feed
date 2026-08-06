@@ -5,16 +5,25 @@ before rendering." This is the read half of the release model. `releases.py`
 writes the pointer; this reads it, fetches the exact versions it pins, checks
 their hashes, and refuses anything the running code cannot evaluate.
 
-Three refusals matter and are separate on purpose:
+The refusals are separate on purpose, because they send an operator to
+different places. `IncompatibleRelease` means the bytes are intact and this
+build cannot evaluate them:
 
-- A pointer whose `schema_version` this build does not implement. The document
-  shape itself is unreadable, so nothing further can be trusted.
+- A pointer whose `schema_version` this build does not implement, or whose
+  shape is missing a field this module reads.
 - A configuration or inventory schema version outside the supported set. The
-  bytes are intact and the runtime would misread them, which is worse than
-  failing.
-- A hash that disagrees with the pointer. The object at that version is not
-  what was published, and the pointer is the only record of what should be
-  there.
+  runtime would misread them, which is worse than failing.
+- A pinned document that hashed correctly and does not parse. Publication never
+  parses what it writes, so this is reachable.
+
+`ReleaseIntegrityError` means the stored bytes are not what the release says
+they are:
+
+- A pinned object whose hash disagrees with the pointer. The object at that
+  version is not what was published.
+- A pointer naming a release ID the objects it pins do not derive. The ID is a
+  digest of the two hashes, so such a pointer contradicts itself, and the ID is
+  what every candidate embeds.
 
 Chapter 03's step 8 calls for a runtime compatibility probe before publication
 announces success. `probe_release` is that probe: the publisher calls it with
@@ -30,12 +39,13 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 import yaml
 
+from .identity import release_id
 from .releases import POINTER_SCHEMA_VERSION, ObjectMissing, ObjectStore
 
 __all__ = [
@@ -80,12 +90,29 @@ class LoadedRelease:
     """
 
 
-def _require_versions(pointer: Mapping[str, Any]) -> None:
-    """Refuse a release this build cannot evaluate, before reading any object."""
+# Every field this module reads out of a pointer reference. Checked together
+# rather than at each use: reaching into an unvalidated document field by field
+# turns a corrupt pointer into a `KeyError` naming one key, which says nothing
+# about the release being unusable.
+_REFERENCE_FIELDS = ("key", "version_id", "sha256")
+
+
+def _require_usable_pointer(pointer: Mapping[str, Any]) -> None:
+    """Refuse a release this build cannot evaluate, before reading any object.
+
+    Shape and version are one check because they fail the same way for an
+    operator: the release cannot be evaluated and nothing was fetched. What
+    differs is only the message, so each refusal names the field it refused.
+    """
 
     pointer_version = pointer.get("schema_version")
     if pointer_version != POINTER_SCHEMA_VERSION:
         raise IncompatibleRelease(f"active pointer schema_version {pointer_version!r} is not {POINTER_SCHEMA_VERSION}")
+
+    identifier = pointer.get("release_id")
+    if not isinstance(identifier, str) or not identifier:
+        raise IncompatibleRelease(f"active pointer release_id is missing or not a string: {identifier!r}")
+
     supported = {
         "config": SUPPORTED_CONFIG_SCHEMA_VERSIONS,
         "inventory": SUPPORTED_INVENTORY_SCHEMA_VERSIONS,
@@ -94,6 +121,10 @@ def _require_versions(pointer: Mapping[str, Any]) -> None:
         reference = pointer.get(name)
         if not isinstance(reference, Mapping):
             raise IncompatibleRelease(f"active pointer is missing its {name} reference")
+        for field in _REFERENCE_FIELDS:
+            value = reference.get(field)
+            if not isinstance(value, str) or not value:
+                raise IncompatibleRelease(f"{name} reference {field} is missing or not a string: {value!r}")
         version = reference.get("schema_version")
         if version not in allowed:
             raise IncompatibleRelease(
@@ -117,6 +148,25 @@ def _load_pinned(store: ObjectStore, reference: Mapping[str, Any], name: str) ->
             f"{name} at the pinned version hashes to {digest}, not the {reference['sha256']} the pointer records"
         )
     return stored.body
+
+
+def _parse(parser: Callable[[bytes], Any], body: bytes, name: str) -> Mapping[str, Any]:
+    """Parse a pinned document, or refuse the release rather than raise raw.
+
+    These bytes hashed correctly, so the release is intact and simply not
+    something this build can evaluate, which is what `IncompatibleRelease`
+    means. Publication never parses what it writes, so hash-valid unparseable
+    content is reachable; letting a `yaml.ParserError` escape would put a
+    fourth, untyped refusal beside the three this module documents.
+    """
+
+    try:
+        document = parser(body)
+    except Exception as error:
+        raise IncompatibleRelease(f"{name} at the pinned version does not parse: {error}") from error
+    if not isinstance(document, Mapping):
+        raise IncompatibleRelease(f"{name} at the pinned version is not an object")
+    return document
 
 
 def load_active_release(
@@ -145,15 +195,28 @@ def load_active_release(
     if not isinstance(pointer, Mapping):
         raise IncompatibleRelease(f"active pointer at {pointer_key} is not an object")
 
-    _require_versions(pointer)
+    _require_usable_pointer(pointer)
 
     config_body = _load_pinned(store, pointer["config"], "config")
     inventory_body = _load_pinned(store, pointer["inventory"], "inventory")
 
+    # The release ID is derived from the two hashes, so a pointer that names an
+    # ID inconsistent with the objects it pins contradicts itself. Verifying the
+    # objects against the pointer is only half the check; without this the ID a
+    # candidate embeds could belong to a different release entirely.
+    # `validate_config.validate_manifest` makes the same comparison, which is
+    # what makes trusting the stored value here a divergence from the contract
+    # rather than a choice.
+    derived = release_id(pointer["config"]["sha256"], pointer["inventory"]["sha256"])
+    if pointer["release_id"] != derived:
+        raise ReleaseIntegrityError(
+            f"active pointer names release {pointer['release_id']}, but the objects it pins derive {derived}"
+        )
+
     return LoadedRelease(
         release_id=pointer["release_id"],
-        config=yaml.safe_load(config_body),
-        inventory=json.loads(inventory_body),
+        config=_parse(yaml.safe_load, config_body, "config"),
+        inventory=_parse(json.loads, inventory_body, "inventory"),
         reference={
             "release_id": pointer["release_id"],
             "config": dict(pointer["config"]),
