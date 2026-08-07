@@ -58,10 +58,10 @@ Repairs pending dispatch, re-enqueues eligible work, converts stale `sending` le
 
 Deploy shared resources in one AWS account and Region chosen by the operator. Customer account IDs and Regions are inventory metadata only. No organization membership or cross-account trust is required.
 
-Two Terraform roots are planned:
+Two Terraform roots exist:
 
-- `infra/bootstrap` for the remote-state bucket and optional key.
-- `infra/central` for the service resources.
+- `infra/bootstrap` provisions the remote-state bucket.
+- `infra/central` decodes a reviewed deployment input and provisions the service resources.
 
 The initial implementation uses Lambda, EventBridge Scheduler, DynamoDB, S3, SQS FIFO, Secrets Manager or Parameter Store, CloudWatch, and SNS. Equivalent substitutions need an accepted ADR because they affect state ownership or delivery guarantees.
 
@@ -85,4 +85,4 @@ The canonical deployment declares 100 accounts as metadata, 500 environments, 25
 
 ## Current status
 
-The architecture, contracts, examples, validators, and tests are present. Runtime and Terraform implementation are planned. Acceptance language distinguishes design validation from deployed evidence.
+The architecture, contracts, examples, validators, and tests are present. The Terraform data plane is provisioned; the Lambda functions, schedules, runtime adapters, and dispatch and Slack packages are the remaining implementation milestones. Acceptance language distinguishes design validation from deployed evidence.

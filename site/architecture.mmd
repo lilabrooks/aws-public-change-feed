@@ -1,11 +1,11 @@
 flowchart TB
     accTitle: AWS Public Change Alerting processing flow
-    accDescr: Approved public AWS feeds and an immutable configuration release enter deterministic processing. Route-scoped candidates are stored in DynamoDB, dispatched through SQS FIFO, and delivered to Slack with recovery state retained in DynamoDB.
+    accDescr: Approved public AWS feeds and an immutable configuration release from S3 enter deterministic processing. Route-scoped candidates are stored in DynamoDB, dispatched through SQS FIFO, and delivered to Slack. The worker reads Slack credentials from Secrets Manager. Recovery state returns to DynamoDB.
 
     subgraph Inputs["Approved inputs"]
         direction LR
         Feeds["AWS RSS and Atom feeds"]
-        Release["Immutable configuration and inventory release"]
+        S3["S3 config bucket"] --> Release["Immutable configuration and inventory release"]
     end
 
     subgraph Decisioning["Deterministic candidate generation"]
@@ -22,6 +22,7 @@ flowchart TB
         Queue --> Worker["Slack delivery worker"]
         Worker --> Slack["Slack channel"]
         Reconciler["Recovery reconciler"]
+        Secrets["Secrets Manager"] --> Worker
     end
 
     Feeds --> Watcher

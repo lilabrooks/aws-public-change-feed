@@ -42,7 +42,7 @@ The `contracts + feed pipeline validated` badge means the committed artifacts an
 
 The implemented runtime now covers feed acquisition, normalization, announcement identity, deterministic matching, profile and route mapping, candidate construction, and the durable outbox creation boundary. Its corpus mixes real announcements taken from the four configured feeds with authored items covering shapes the recent feed window did not contain. No end-of-support announcement appeared in that window, so recall for that risk type rests on authored items alone.
 
-The Terraform roots, the DynamoDB and S3 adapters behind the state, snapshot, and outbox ports, and the dispatch and Slack packages remain implementation milestones. Deployment, live feed acquisition, Slack delivery, recovery, load, and production preflight still require executable evidence.
+The Terraform roots are built and applied to the dev deployment. The config bucket, DynamoDB tables, FIFO queue, DLQ, IAM roles, log groups, alarms, and dashboard are provisioned. The DynamoDB, SQS, S3, and Secrets Manager adapters that turn the in-memory feed-pipeline ports into deployed behavior, the four Lambda functions and their schedules, and the dispatch and Slack packages remain implementation milestones. Deployment, live feed acquisition, Slack delivery, recovery, load, and production preflight still require executable evidence.
 
 ## Start here
 

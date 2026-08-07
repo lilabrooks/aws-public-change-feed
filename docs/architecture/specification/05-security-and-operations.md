@@ -80,7 +80,7 @@ Customer-managed keys require exact grants for each service and role. Key polici
 
 ### Terraform and backend
 
-Deployment roles follow least privilege for planned resources. Backend access includes exact state and `.tflock` object actions, prefix-conditioned `s3:ListBucket`, and KMS access only when the state bucket uses a customer-managed key.
+Deployment roles follow least privilege for provisioned resources. Backend access includes exact state and `.tflock` object actions, prefix-conditioned `s3:ListBucket`, and KMS access only when the state bucket uses a customer-managed key.
 
 ## Retention
 

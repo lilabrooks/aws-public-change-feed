@@ -3,9 +3,12 @@ LYCHEE ?= lychee
 PYTHON_PATHS := scripts tests $(wildcard src)
 MYPY_PATHS := $(PYTHON_PATHS)
 YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml $(wildcard .github/workflows)
+TERRAFORM ?= terraform
+TERRAFORM_ROOTS := infra/bootstrap infra/central
 
 .PHONY: help install format format-check lint lint-python lint-yaml typecheck validate validate-config \
-	validate-references validate-site evaluate-corpus references-online screen-feeds test whitespace check clean
+	validate-references validate-site evaluate-corpus references-online screen-feeds terraform-check \
+	test whitespace check clean
 
 help:
 	@echo "Available targets:"
@@ -18,6 +21,7 @@ help:
 	@echo "  evaluate-corpus    Score matching against the labeled corpus and approved thresholds"
 	@echo "  references-online  Check external links with Lychee (requires network)"
 	@echo "  screen-feeds       Screen live feeds against the rules (requires network)"
+	@echo "  terraform-check    Format-check and validate Terraform roots (skips cleanly if absent)"
 	@echo "  test          Run the unittest suite"
 	@echo "  whitespace    Check changed files for Git whitespace errors"
 	@echo "  check         Run every non-mutating repository check"
@@ -64,13 +68,25 @@ references-online: validate-references
 screen-feeds:
 	$(PYTHON) scripts/screen_feeds.py
 
+terraform-check:
+	@if ! command -v $(TERRAFORM) >/dev/null 2>&1; then \
+		echo "terraform not installed; skipping terraform-check"; \
+		exit 0; \
+	fi
+	@for root in $(TERRAFORM_ROOTS); do \
+		echo "Checking $$root"; \
+		$(TERRAFORM) -chdir=$$root fmt -check || exit 1; \
+		$(TERRAFORM) -chdir=$$root init -backend=false -input=false || exit 1; \
+		$(TERRAFORM) -chdir=$$root validate || exit 1; \
+	done
+
 test:
 	$(PYTHON) -m unittest discover -s tests
 
 whitespace:
 	git diff --check HEAD
 
-check: format-check lint typecheck validate test whitespace
+check: format-check lint typecheck validate test terraform-check whitespace
 
 clean:
 	find $(PYTHON_PATHS) -type d -name __pycache__ -prune -exec rm -rf {} +

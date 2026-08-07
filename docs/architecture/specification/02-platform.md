@@ -2,7 +2,7 @@
 
 ## AWS resources
 
-The planned `infra/central` root creates:
+The `infra/central` root creates:
 
 - A versioned S3 configuration bucket with immutable release, active-manifest, and short-lived raw-feed snapshot prefixes.
 - A feed watcher Lambda and schedule.
