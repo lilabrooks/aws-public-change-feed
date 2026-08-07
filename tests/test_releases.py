@@ -24,7 +24,7 @@ import hashlib
 import json
 import sys
 import unittest
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import boto3
@@ -37,6 +37,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import validate_config as validator  # noqa: E402
 
+from aws_public_change_feed.candidates import utc_timestamp  # noqa: E402
 from aws_public_change_feed.releases import (  # noqa: E402
     CREATE_CONFLICT_ATTEMPTS,
     ObjectMissing,
@@ -56,6 +57,20 @@ REGION = "us-east-1"
 PREFIX = "aws-public-change-alerting/releases"
 POINTER = "aws-public-change-alerting/active-versions.json"
 PROMOTED = datetime(2026, 7, 13, 16, 30, tzinfo=UTC)
+# A promotion must record a time after the pointer it replaces, so a second
+# promotion in the same test derives its stamp rather than repeating the first.
+LATER = PROMOTED + timedelta(minutes=1)
+LATEST = PROMOTED + timedelta(minutes=2)
+
+
+def pointer_bytes(release_id, promoted_at=PROMOTED):
+    """A minimal pointer document for the fake store.
+
+    Carries the two fields `promote_pointer` reads: the release it names and
+    the time it was promoted.
+    """
+
+    return json.dumps({"release_id": release_id, "promoted_at": utc_timestamp(promoted_at)}).encode()
 
 
 def load_deployment():
@@ -173,7 +188,7 @@ class PublicationAgainstS3Tests(unittest.TestCase):
         second = promote_pointer(
             self.store,
             pointer_key=POINTER,
-            document=json.dumps({**artifacts.pointer_document(PROMOTED), "release_id": "b" * 64}).encode(),
+            document=json.dumps({**artifacts.pointer_document(LATER), "release_id": "b" * 64}).encode(),
             observed=observed,
         )
         self.assertEqual(second.prior_version_id, observed.version_id)
@@ -191,7 +206,7 @@ class PublicationAgainstS3Tests(unittest.TestCase):
         )
         stale = self.store.read(POINTER)
 
-        winner = json.dumps({**artifacts.pointer_document(PROMOTED), "release_id": "c" * 64}).encode()
+        winner = json.dumps({**artifacts.pointer_document(LATER), "release_id": "c" * 64}).encode()
         promote_pointer(
             self.store,
             pointer_key=POINTER,
@@ -199,11 +214,14 @@ class PublicationAgainstS3Tests(unittest.TestCase):
             observed=stale,
         )
 
+        # The loser carries a later stamp than the pointer it read, so the 412
+        # is what refuses it rather than the freshness rule.
+        loser = json.dumps(artifacts.pointer_document(LATEST)).encode()
         with self.assertRaises(PromotionSuperseded) as raised:
             promote_pointer(
                 self.store,
                 pointer_key=POINTER,
-                document=document,
+                document=loser,
                 observed=stale,
             )
         self.assertEqual(raised.exception.promoting, artifacts.release_id)
@@ -212,7 +230,7 @@ class PublicationAgainstS3Tests(unittest.TestCase):
     def test_a_first_promotion_that_races_another_is_refused(self):
         artifacts = self.publish()
         document = json.dumps(artifacts.pointer_document(PROMOTED)).encode()
-        self.client.put_object(Bucket=BUCKET, Key=POINTER, Body=json.dumps({"release_id": "d" * 64}).encode())
+        self.client.put_object(Bucket=BUCKET, Key=POINTER, Body=pointer_bytes("d" * 64))
 
         # `observed=None` says this publisher read no pointer. One exists, so
         # the create's 412 means restart from a fresh read, never fall back.
@@ -241,7 +259,7 @@ class PublicationAgainstS3Tests(unittest.TestCase):
             promote_pointer(
                 self.store,
                 pointer_key=POINTER,
-                document=document,
+                document=json.dumps(artifacts.pointer_document(LATER)).encode(),
                 observed=observed,
             )
 
@@ -299,11 +317,11 @@ class InjectedOutcomeTests(unittest.TestCase):
 
     def test_an_indeterminate_promotion_that_converged_is_recorded_as_convergence(self):
         identifier = "e" * 64
-        document = json.dumps({"release_id": identifier}).encode()
+        document = pointer_bytes(identifier, LATER)
         # The pointer already names this release, which is what a competing
         # publisher promoting the same release would leave behind.
         store = RecordingStore(raises=[WriteConflict("409")], bodies={POINTER: document})
-        observed = StoredObject(body=b'{"release_id": "old"}', etag='"e"', version_id="v-observed")
+        observed = StoredObject(body=pointer_bytes("old" + "0" * 61), etag='"e"', version_id="v-observed")
 
         promotion = promote_pointer(
             store,
@@ -322,15 +340,15 @@ class InjectedOutcomeTests(unittest.TestCase):
         identifier = "f" * 64
         store = RecordingStore(
             raises=[WriteConflict("409")],
-            bodies={POINTER: json.dumps({"release_id": "0" * 64}).encode()},
+            bodies={POINTER: pointer_bytes("0" * 64)},
         )
-        observed = StoredObject(body=b'{"release_id": "old"}', etag='"e"', version_id="v-observed")
+        observed = StoredObject(body=pointer_bytes("old" + "0" * 61), etag='"e"', version_id="v-observed")
 
         with self.assertRaises(PromotionSuperseded) as raised:
             promote_pointer(
                 store,
                 pointer_key=POINTER,
-                document=json.dumps({"release_id": identifier}).encode(),
+                document=pointer_bytes(identifier, LATER),
                 observed=observed,
             )
         self.assertEqual(raised.exception.observed, "0" * 64)
@@ -369,7 +387,7 @@ class InjectedOutcomeTests(unittest.TestCase):
             promote_pointer(
                 store,
                 pointer_key=POINTER,
-                document=json.dumps({"release_id": "a" * 64}).encode(),
+                document=pointer_bytes("a" * 64, LATER),
                 observed=observed,
             )
         self.assertIsNone(raised.exception.observed)
@@ -401,7 +419,7 @@ class InjectedOutcomeTests(unittest.TestCase):
         """
 
         identifier = "9" * 64
-        document = json.dumps({"release_id": identifier}).encode()
+        document = pointer_bytes(identifier)
         store = RecordingStore(raises=[WriteConflict("409")], bodies={POINTER: document})
 
         promotion = promote_pointer(store, pointer_key=POINTER, document=document, observed=None)
@@ -414,14 +432,14 @@ class InjectedOutcomeTests(unittest.TestCase):
         identifier = "8" * 64
         store = RecordingStore(
             raises=[WriteConflict("409")],
-            bodies={POINTER: json.dumps({"release_id": "7" * 64}).encode()},
+            bodies={POINTER: pointer_bytes("7" * 64)},
         )
 
         with self.assertRaises(PromotionSuperseded) as raised:
             promote_pointer(
                 store,
                 pointer_key=POINTER,
-                document=json.dumps({"release_id": identifier}).encode(),
+                document=pointer_bytes(identifier, LATER),
                 observed=None,
             )
         self.assertEqual(raised.exception.observed, "7" * 64)

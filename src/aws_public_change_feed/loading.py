@@ -41,12 +41,14 @@ import hashlib
 import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any
 
 import yaml
 
+from .candidates import utc_timestamp
 from .identity import release_id
-from .releases import POINTER_SCHEMA_VERSION, ObjectMissing, ObjectStore
+from .releases import POINTER_SCHEMA_VERSION, ObjectMissing, ObjectStore, StoredObject
 
 __all__ = [
     "SUPPORTED_CONFIG_SCHEMA_VERSIONS",
@@ -55,6 +57,7 @@ __all__ = [
     "LoadedRelease",
     "ReleaseIntegrityError",
     "load_active_release",
+    "load_release_version",
     "probe_release",
 ]
 
@@ -89,6 +92,27 @@ class LoadedRelease:
     checks a candidate against the same four fields.
     """
 
+    def forward_document(self, promoted_at: datetime) -> dict[str, Any]:
+        """Build the pointer document that restores this release.
+
+        ADR-019: rollback writes the historical release references forward as a
+        new document with a fresh `promoted_at`, and never republishes the
+        historical bytes unchanged. The freshness is enforced in
+        `promote_pointer`, which holds the pointer being replaced and so can
+        require the new time to follow it. An audit found the rule cannot be
+        enforced here: comparing against the version being restored misses the
+        case where restoring, promoting away, and restoring again reproduces
+        the first rollback's bytes rather than the original's.
+        """
+
+        return {
+            "schema_version": POINTER_SCHEMA_VERSION,
+            "release_id": self.release_id,
+            "promoted_at": utc_timestamp(promoted_at),
+            "config": dict(self.reference["config"]),
+            "inventory": dict(self.reference["inventory"]),
+        }
+
 
 # Every field this module reads out of a pointer reference. Checked together
 # rather than at each use: reaching into an unvalidated document field by field
@@ -112,6 +136,13 @@ def _require_usable_pointer(pointer: Mapping[str, Any]) -> None:
     identifier = pointer.get("release_id")
     if not isinstance(identifier, str) or not identifier:
         raise IncompatibleRelease(f"active pointer release_id is missing or not a string: {identifier!r}")
+
+    # Required by the schema, and load-bearing rather than descriptive: the
+    # promotion guard compares against it, so an absent or non-string value
+    # would leave that guard unable to fire while everything still looked fine.
+    stamp = pointer.get("promoted_at")
+    if not isinstance(stamp, str) or not stamp:
+        raise IncompatibleRelease(f"active pointer promoted_at is missing or not a string: {stamp!r}")
 
     supported = {
         "config": SUPPORTED_CONFIG_SCHEMA_VERSIONS,
@@ -169,6 +200,56 @@ def _parse(parser: Callable[[bytes], Any], body: bytes, name: str) -> Mapping[st
     return document
 
 
+def _load_from_pointer(
+    store: ObjectStore, current: StoredObject, label: str, application_version: str
+) -> LoadedRelease:
+    """Verify one pointer document and everything it pins.
+
+    Shared by the active load and the versioned load a rollback needs. The
+    runbook asks an operator to verify keys, version IDs, hashes, and schema
+    versions of the release being restored, which is the same work as loading
+    the active one; doing it twice in two places is how the two would come to
+    disagree about what "verified" means.
+    """
+
+    try:
+        pointer = json.loads(current.body)
+    except ValueError as error:
+        raise IncompatibleRelease(f"{label} is not JSON") from error
+    if not isinstance(pointer, Mapping):
+        raise IncompatibleRelease(f"{label} is not an object")
+
+    _require_usable_pointer(pointer)
+
+    config_body = _load_pinned(store, pointer["config"], "config")
+    inventory_body = _load_pinned(store, pointer["inventory"], "inventory")
+
+    # The release ID is derived from the two hashes, so a pointer that names an
+    # ID inconsistent with the objects it pins contradicts itself. Verifying the
+    # objects against the pointer is only half the check; without this the ID a
+    # candidate embeds could belong to a different release entirely.
+    # `validate_config.validate_manifest` makes the same comparison, which is
+    # what makes trusting the stored value here a divergence from the contract
+    # rather than a choice.
+    derived = release_id(pointer["config"]["sha256"], pointer["inventory"]["sha256"])
+    if pointer["release_id"] != derived:
+        raise ReleaseIntegrityError(
+            f"{label} names release {pointer['release_id']}, but the objects it pins derive {derived}"
+        )
+
+    return LoadedRelease(
+        release_id=pointer["release_id"],
+        config=_parse(yaml.safe_load, config_body, "config"),
+        inventory=_parse(json.loads, inventory_body, "inventory"),
+        reference={
+            "release_id": pointer["release_id"],
+            "config": dict(pointer["config"]),
+            "inventory": dict(pointer["inventory"]),
+            "application_version": application_version,
+        },
+    )
+
+
 def load_active_release(
     store: ObjectStore,
     *,
@@ -187,42 +268,35 @@ def load_active_release(
         current = store.read(pointer_key)
     except ObjectMissing as missing:
         raise ReleaseIntegrityError(f"no active release pointer at {pointer_key}") from missing
+    return _load_from_pointer(store, current, f"active pointer at {pointer_key}", application_version)
+
+
+def load_release_version(
+    store: ObjectStore,
+    *,
+    pointer_key: str,
+    version_id: str,
+    application_version: str,
+) -> LoadedRelease:
+    """Read one retained pointer version and verify everything it pins.
+
+    Runbook step 2 of a rollback: verify object keys, version IDs, hashes, and
+    schema versions of the release being restored. A retained pointer version
+    is only a record of what was once active, so the objects it names can have
+    been deleted or the build can have moved past their schema versions. This
+    is the check that turns "the pointer exists" into "this release is still
+    usable", and it runs before anything is promoted.
+    """
 
     try:
-        pointer = json.loads(current.body)
-    except ValueError as error:
-        raise IncompatibleRelease(f"active pointer at {pointer_key} is not JSON") from error
-    if not isinstance(pointer, Mapping):
-        raise IncompatibleRelease(f"active pointer at {pointer_key} is not an object")
-
-    _require_usable_pointer(pointer)
-
-    config_body = _load_pinned(store, pointer["config"], "config")
-    inventory_body = _load_pinned(store, pointer["inventory"], "inventory")
-
-    # The release ID is derived from the two hashes, so a pointer that names an
-    # ID inconsistent with the objects it pins contradicts itself. Verifying the
-    # objects against the pointer is only half the check; without this the ID a
-    # candidate embeds could belong to a different release entirely.
-    # `validate_config.validate_manifest` makes the same comparison, which is
-    # what makes trusting the stored value here a divergence from the contract
-    # rather than a choice.
-    derived = release_id(pointer["config"]["sha256"], pointer["inventory"]["sha256"])
-    if pointer["release_id"] != derived:
-        raise ReleaseIntegrityError(
-            f"active pointer names release {pointer['release_id']}, but the objects it pins derive {derived}"
-        )
-
-    return LoadedRelease(
-        release_id=pointer["release_id"],
-        config=_parse(yaml.safe_load, config_body, "config"),
-        inventory=_parse(json.loads, inventory_body, "inventory"),
-        reference={
-            "release_id": pointer["release_id"],
-            "config": dict(pointer["config"]),
-            "inventory": dict(pointer["inventory"]),
-            "application_version": application_version,
-        },
+        historical = store.read(pointer_key, version_id)
+    except ObjectMissing as missing:
+        raise ReleaseIntegrityError(f"retained pointer version {version_id} is missing at {pointer_key}") from missing
+    return _load_from_pointer(
+        store,
+        historical,
+        f"retained pointer version {version_id}",
+        application_version,
     )
 
 

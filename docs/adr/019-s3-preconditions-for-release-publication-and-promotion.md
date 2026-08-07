@@ -51,6 +51,19 @@ Rollback promotes an earlier retained pointer version through the same `If-Match
 
 The fresh `promoted_at` is load-bearing, not bookkeeping. Republishing identical historical bytes would reproduce the historical ETag, so a concurrent publisher holding that old ETag would find its precondition satisfied against a pointer that had moved away and come back. `promoted_at` is already required by `active-versions.schema.json`, so a rollback that records its own promotion time cannot collide with the version it restores.
 
+### Promotion times move forward
+
+- Status: Proposed
+- Date: 2026-08-06
+
+A promotion must record a `promoted_at` strictly later than the pointer version it replaces. Publication and rollback both go through this rule, and a pointer that records no parseable promotion time is not promotable.
+
+The rollback clause above states the property this enforces, and implementation showed the clause alone is not enough to reach it. Refusing to reuse the timestamp of the version being restored looks sufficient and is not: restoring a release, promoting away, and restoring it again with the same timestamp reproduces the bytes of the *first rollback*, which that comparison never examines. The resulting object carries a retained version's ETag, which is the outcome this decision exists to prevent. Re-promoting an unchanged release reaches the same place by a shorter route.
+
+Comparing against every retained version would close it and costs an unbounded number of reads. A strictly forward promotion time makes the whole family unreachable using the pointer the publisher has already read, because the recorded time alone distinguishes each version from every earlier one.
+
+Two consequences worth stating. Two publishers promoting within the same clock tick will see one refused; that is the intended reading of a compare-and-swap, and the loser re-reads and decides again. And a pointer whose own `promoted_at` cannot be parsed is still replaceable, or a malformed pointer could never be corrected.
+
 ### Integrity stays separate from concurrency
 
 The ETag is used only as an opaque concurrency token. Content integrity remains the manifest's SHA-256 hashes, verified by the publisher on read-back and by the runtime before rendering. S3 does not define the ETag as a content hash across all upload and encryption modes, and identical content can produce an identical ETag on two versions of a key. No code may treat an ETag as a content hash or as a version identifier.

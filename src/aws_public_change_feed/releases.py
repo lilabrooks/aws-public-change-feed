@@ -7,10 +7,10 @@ back by exact version and verify, then promote the pointer with `If-Match`
 against an ETag observed in the same read that produced the decision.
 
 Steps 1 and 2 belong to `scripts/validate_config.py`, which already validates
-schemas and cross-document rules. Step 8, the runtime compatibility probe,
-needs a loader that reads the active pointer and fetches the pinned versions.
-No such loader exists yet, so this module stops at a promoted pointer rather
-than announcing a success it cannot verify.
+schemas and cross-document rules. Step 8, the runtime compatibility probe, is
+`loading.probe_release`: this module stops at a promoted pointer, and the
+publisher proves the result is readable by loading it back before announcing
+success.
 
 The object store is a port, and the three exceptions it raises are named after
 HTTP outcomes rather than after meanings. That is deliberate: ADR-019 gives 412
@@ -33,7 +33,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 # `utc_timestamp` formats a contract timestamp and rejects naive datetimes.
@@ -409,6 +409,56 @@ def _converged_or_superseded(
     )
 
 
+def _promoted_at(body: bytes) -> datetime | None:
+    """Return the promotion time a pointer document records, or None."""
+
+    try:
+        document = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(document, dict):
+        return None
+    raw = document.get("promoted_at")
+    if not isinstance(raw, str) or not raw:
+        return None
+    text = f"{raw[:-1]}+00:00" if raw.endswith(("Z", "z")) else raw
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
+
+
+def _require_forward_promotion(document: bytes, observed: StoredObject | None) -> None:
+    """Refuse a promotion that could reproduce a retained version's ETag.
+
+    ADR-019 requires rollback never to republish historical bytes unchanged,
+    because identical bytes reproduce the historical ETag and a concurrent
+    publisher still holding it would find its precondition satisfied against a
+    pointer that had moved away and come back. Comparing only against the
+    version being restored is too narrow: restoring a release, promoting away,
+    and restoring it again with the same timestamp reproduces the *first
+    rollback's* bytes, which that comparison never sees.
+
+    A promotion time strictly later than the pointer being replaced makes the
+    whole family unreachable, including re-promoting the same release, without
+    reading every retained version. A pointer whose own time cannot be parsed
+    is replaceable, or a malformed pointer could not be corrected.
+    """
+
+    promoting = _promoted_at(document)
+    if promoting is None:
+        raise ValueError("pointer document does not record a parseable promoted_at")
+    if observed is None:
+        return
+    replaced = _promoted_at(observed.body)
+    if replaced is not None and promoting <= replaced:
+        raise ValueError(
+            f"promotion must record a time after the pointer it replaces: "
+            f"{promoting.isoformat()} does not follow {replaced.isoformat()}"
+        )
+
+
 def promote_pointer(
     store: ObjectStore,
     *,
@@ -434,6 +484,7 @@ def promote_pointer(
     promoting = _named_release(document)
     if promoting is None:
         raise ValueError("pointer document does not name a release_id")
+    _require_forward_promotion(document, observed)
 
     if observed is None:
         # First promotion into a new deployment. A 412 here means the pointer
