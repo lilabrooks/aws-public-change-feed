@@ -353,6 +353,40 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.assertEqual(setup["with"]["python-version"], "3.12")
         self.assertEqual(checks["run"], "make check PYTHON=python")
 
+    def test_quality_workflow_installs_terraform_before_the_checks(self):
+        """Without terraform the check target skips, so the roots go unvalidated.
+
+        That failure is silent: make check still passes, and the Terraform gate
+        reports nothing rather than reporting a problem. This asserts the runner
+        actually has the binary, and that it arrives before the checks run.
+        """
+
+        workflow = yaml.safe_load((ROOT / ".github/workflows/quality.yml").read_text(encoding="utf-8"))
+        steps = workflow["jobs"]["validate"]["steps"]
+        names = [step.get("name") for step in steps]
+        setup = next(step for step in steps if step.get("name") == "Set up Terraform")
+        workflow_pins.assert_pinned(setup["uses"], "hashicorp/setup-terraform")
+        self.assertLess(names.index("Set up Terraform"), names.index("Run repository checks"))
+        self.assertFalse(setup["with"]["terraform_wrapper"], "the Makefile reads exit codes directly")
+
+        constraint = (ROOT / "infra/central/versions.tf").read_text(encoding="utf-8")
+        self.assertIn(">= 1.10.0, < 2.0.0", constraint)
+        major, minor, _ = (int(part) for part in str(setup["with"]["terraform_version"]).split("."))
+        self.assertEqual(major, 1, "pinned terraform must satisfy the roots' required_version")
+        self.assertGreaterEqual(minor, 10, "pinned terraform must satisfy the roots' required_version")
+
+    def test_provider_lockfiles_cover_the_ci_and_local_platforms(self):
+        """A lockfile locked only on the author's platform fails init on the runner."""
+
+        for root in ("infra/bootstrap", "infra/central"):
+            lockfile = (ROOT / root / ".terraform.lock.hcl").read_text(encoding="utf-8")
+            self.assertEqual(
+                lockfile.count('"h1:'),
+                2,
+                f"{root} must lock both linux_amd64 (CI) and darwin_arm64; "
+                "run terraform providers lock -platform=linux_amd64 -platform=darwin_arm64",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
