@@ -68,17 +68,20 @@ references-online: validate-references
 screen-feeds:
 	$(PYTHON) scripts/screen_feeds.py
 
+# One recipe line, so the absent-terraform branch skips the whole target. Split
+# across two lines Make runs two shells, and `exit 0` in the first ends only
+# that shell: the guard printed "skipping" and the loop then ran anyway.
 terraform-check:
 	@if ! command -v $(TERRAFORM) >/dev/null 2>&1; then \
 		echo "terraform not installed; skipping terraform-check"; \
-		exit 0; \
+	else \
+		for root in $(TERRAFORM_ROOTS); do \
+			echo "Checking $$root"; \
+			$(TERRAFORM) -chdir=$$root fmt -check || exit 1; \
+			$(TERRAFORM) -chdir=$$root init -backend=false -input=false || exit 1; \
+			$(TERRAFORM) -chdir=$$root validate || exit 1; \
+		done; \
 	fi
-	@for root in $(TERRAFORM_ROOTS); do \
-		echo "Checking $$root"; \
-		$(TERRAFORM) -chdir=$$root fmt -check || exit 1; \
-		$(TERRAFORM) -chdir=$$root init -backend=false -input=false || exit 1; \
-		$(TERRAFORM) -chdir=$$root validate || exit 1; \
-	done
 
 test:
 	$(PYTHON) -m unittest discover -s tests
