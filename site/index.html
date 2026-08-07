@@ -166,6 +166,7 @@
         <div class="site-status" role="group" aria-label="Project status">
           <span class="compact-tag">Architecture defined</span>
           <span class="compact-tag">Contracts validated</span>
+          <span class="compact-tag">Infrastructure provisioned</span>
           <span class="compact-tag">Runtime planned</span>
         </div>
       </div>
@@ -247,12 +248,12 @@
         <figure class="architecture-figure">
           <pre class="mermaid" data-architecture-diagram>flowchart TB
     accTitle: AWS Public Change Alerting processing flow
-    accDescr: Approved public AWS feeds and an immutable configuration release enter deterministic processing. Route-scoped candidates are stored in DynamoDB, dispatched through SQS FIFO, and delivered to Slack with recovery state retained in DynamoDB.
+    accDescr: Approved public AWS feeds and an immutable configuration release from S3 enter deterministic processing. Route-scoped candidates are stored in DynamoDB, dispatched through SQS FIFO, and delivered to Slack. The worker reads Slack credentials from Secrets Manager. Recovery state returns to DynamoDB.
 
     subgraph Inputs["Approved inputs"]
         direction LR
         Feeds["AWS RSS and Atom feeds"]
-        Release["Immutable configuration and inventory release"]
+        S3["S3 config bucket"] --> Release["Immutable configuration and inventory release"]
     end
 
     subgraph Decisioning["Deterministic candidate generation"]
@@ -269,6 +270,7 @@
         Queue --> Worker["Slack delivery worker"]
         Worker --> Slack["Slack channel"]
         Reconciler["Recovery reconciler"]
+        Secrets["Secrets Manager"] --> Worker
     end
 
     Feeds --> Watcher
@@ -357,8 +359,8 @@
         <div class="compact-section-head">
           <p class="compact-eyebrow">Evidence and status</p>
           <div>
-            <h2 class="compact-section-title">Repository contracts are validated; runtime evidence remains planned.</h2>
-            <p class="compact-section-copy">The current repository proves that its schemas, examples, semantic rules, deterministic identities, documentation, and CI checks agree. It does not yet prove deployed AWS behavior or live Slack delivery.</p>
+            <h2 class="compact-section-title">Repository contracts are validated; Terraform roots are provisioned.</h2>
+            <p class="compact-section-copy">The current repository proves that its schemas, examples, semantic rules, deterministic identities, documentation, Terraform roots, and CI checks agree. It does not yet prove deployed AWS runtime behavior or live Slack delivery.</p>
           </div>
         </div>
 
@@ -378,6 +380,7 @@
               <li>Release loading that reads the exact pinned versions, verifies their hashes, and refuses a release this build cannot evaluate</li>
               <li>Rollback that verifies a retained release before restoring it, with promotion times required to move forward so no later write can reproduce a retained version</li>
               <li>A recorded decision on where the release contract is measured, including the one property the mock contradicts and the suite that will cover it</li>
+              <li>Terraform bootstrap and central roots provisioned with least-privilege IAM, encryption, S3 lifecycle retention, DynamoDB TTL, FIFO redrive, alarms, and a dashboard</li>
               <li>Semantic validation, deterministic identity vectors, and mutation tests</li>
               <li>Repository quality, page drift, link, Mermaid, and HTML checks</li>
             </ul>
@@ -386,7 +389,8 @@
             <h3>Required implementation evidence</h3>
             <ul class="site-list">
               <li>Corpus coverage of end-of-support announcements from real feeds</li>
-              <li>Terraform bootstrap and service roots, and the DynamoDB and snapshot adapters behind the ports the runtime already uses</li>
+              <li>DynamoDB, SQS, S3, and Secrets Manager adapters behind the ports the runtime already uses</li>
+              <li>Lambda packaging, schedules, and event source mappings for the four functions</li>
               <li>Dispatch, SQS transport, Slack delivery, and reconciliation</li>
               <li>Feed, delivery, recovery, load, and security tests</li>
               <li>Production preflight and confirmed Slack destination checks</li>

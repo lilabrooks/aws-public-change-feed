@@ -67,6 +67,7 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 │   │   └── specification/       Normative requirements, in order
 │   ├── adr/                     Accepted decisions and superseded archive
 │   └── runbooks/                Operational procedures
+├── infra/                       Terraform roots (bootstrap and central built)
 ├── schemas/                     JSON Schema contracts
 ├── examples/                    Canonical executable contract fixtures
 ├── corpus/                      Labeled announcements and approved thresholds
@@ -78,7 +79,7 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 └── requirements-dev.txt         Pinned validation dependencies
 ```
 
-The planned implementation adds `infra/bootstrap/` and `infra/central/` when those directories contain working files. `src/` currently holds normalization, matching, corpus evaluation, feed acquisition, announcement identity, the feed-state ports, profile and route mapping, candidate construction, the durable outbox port, and release publication, promotion, and loading; the dispatch and Slack packages join it as those milestones land. The DynamoDB adapters behind the state and outbox ports arrive with the Terraform roots that create the table. Release publication has an S3 adapter already, because [ADR-019](../adr/019-s3-preconditions-for-release-publication-and-promotion.md) makes the store's error codes part of the contract rather than a deployment detail; it is exercised against a mock, and the bucket it will run against still arrives with those roots. Keep a concept in one owning document and link to it elsewhere. Do not copy full requirements between the goal, specification, ADRs, and runbook.
+`infra/bootstrap/` provisions the versioned remote-state bucket, and `infra/central/` decodes the deployment input and provisions the config bucket, source-state and delivery tables, FIFO queue and DLQ, Slack credential containers, operational topic, the chapter 05 IAM roles, and the log groups, dashboard, and alarms; the four Lambda functions and their schedules arrive with the runtime packages they host. `src/` currently holds normalization, matching, corpus evaluation, feed acquisition, announcement identity, the feed-state ports, profile and route mapping, candidate construction, the durable outbox port, and release publication, promotion, and loading; the dispatch and Slack packages join it as those milestones land. The DynamoDB adapters behind the state and outbox ports target tables the roots now provision. Release publication has an S3 adapter already, because [ADR-019](../adr/019-s3-preconditions-for-release-publication-and-promotion.md) makes the store's error codes part of the contract rather than a deployment detail; it is exercised against a mock, and the bucket and retention rule it publishes into are provisioned by `infra/central`. Keep a concept in one owning document and link to it elsewhere. Do not copy full requirements between the goal, specification, ADRs, and runbook.
 
 ## Public page maintenance
 

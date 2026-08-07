@@ -90,8 +90,8 @@ Three differences between the hosts are deliberate:
 - `examples/`: canonical valid fixtures.
 - `scripts/`: local validators.
 - `tests/`: regression coverage.
-- `infra/bootstrap/`: planned Terraform remote-state bootstrap root.
-- `infra/central/`: planned Terraform service root.
+- `infra/bootstrap/`: built Terraform remote-state bootstrap root.
+- `infra/central/`: built Terraform service root.
 - `corpus/`: labeled announcements and the approved matching thresholds.
 - `src/`: Python runtime packages.
 
