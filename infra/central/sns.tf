@@ -1,6 +1,17 @@
 resource "aws_sns_topic" "operations" {
   name = local.sns_topic_name
   tags = local.tags
+
+  # deploy_operational_sns_topic is const true in deployment.schema.json, so a
+  # count on it would be unreachable code. This binds the input to the resource
+  # instead: a hand-edited deployment.yaml that turns it off fails the plan
+  # rather than quietly getting a topic it asked not to have.
+  lifecycle {
+    precondition {
+      condition     = local.deployment.deploy_operational_sns_topic
+      error_message = "deploy_operational_sns_topic must be true; this root always creates the operational topic."
+    }
+  }
 }
 
 data "aws_iam_policy_document" "operations_topic" {

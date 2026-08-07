@@ -36,6 +36,20 @@ It contains secret identifiers, never secret values. Infrastructure-coupled keys
 
 `active-versions.json` is version 2. It names one immutable release and exact versioned S3 objects for configuration and inventory. It contains SHA-256 hashes and schema versions. Runtime never loads mutable “latest” objects by convention.
 
+### Configuration bucket layout
+
+Three kinds of object share the configuration bucket, and each has different write and retention behavior:
+
+| Location | Written by | Versioning behavior |
+| --- | --- | --- |
+| `<release_prefix>/<release_id>/` | Release publisher | Write-once per release ID. Never overwritten, so these keys hold exactly one version. |
+| `<active_versions_object_key>` | Release publisher | Overwritten on every promotion. Its superseded versions are the retained promotion history. |
+| `<manifest directory>/raw-snapshots/` | Feed watcher | New key per fetch, deleted by lifecycle after its retention. |
+
+The raw-snapshot prefix is the directory of `active_versions_object_key` followed by `raw-snapshots/`. It is not a free choice for either side: the feed watcher role's `s3:PutObject` grant and the snapshot lifecycle rules are both scoped to it. `infra/central` publishes it as the `raw_snapshot_prefix` output, and the S3 `SnapshotStore` adapter reads that output rather than rebuilding the string.
+
+The write-once shape of release keys is why release retention is not an S3 lifecycle rule. See [chapter 05](05-security-and-operations.md#retention).
+
 ## Cross-document rules
 
 Validation must prove:

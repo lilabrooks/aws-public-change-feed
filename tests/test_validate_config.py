@@ -5,6 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import yaml
 from jsonschema.exceptions import SchemaError
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -924,6 +925,48 @@ class ConfigurationValidatorTests(unittest.TestCase):
                 self.documents["alert_candidate"],
                 self.documents["delivery_request"],
             )
+
+
+class DeploymentInputTests(unittest.TestCase):
+    """Cover the deployment files Terraform roots decode, not just the example."""
+
+    def test_committed_deployment_inputs_pass_the_schema(self):
+        validator.validate_deployment_inputs(ROOT)
+
+    def _staged_root(self, directory, deployment):
+        """Build a throwaway root holding schemas and one deployment input."""
+
+        root = Path(directory)
+        (root / "schemas").mkdir()
+        for schema in (ROOT / "schemas").glob("*.json"):
+            (root / "schemas" / schema.name).write_text(schema.read_text(), encoding="utf-8")
+        target = root / validator.DEPLOYMENT_INPUTS[0]
+        target.parent.mkdir(parents=True)
+        if deployment is not None:
+            target.write_text(yaml.safe_dump(deployment), encoding="utf-8")
+        return root
+
+    def test_invalid_deployment_input_is_rejected(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        deployment["log_retention_days"] = 0
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "log_retention_days"):
+                validator.validate_deployment_inputs(root)
+
+    def test_unknown_field_in_deployment_input_is_rejected(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        deployment["raw_snapshot_prefix"] = "apcf/raw-snapshots/"
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "raw_snapshot_prefix"):
+                validator.validate_deployment_inputs(root)
+
+    def test_missing_deployment_input_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, None)
+            with self.assertRaisesRegex(ValueError, "declared deployment input is missing"):
+                validator.validate_deployment_inputs(root)
 
 
 if __name__ == "__main__":

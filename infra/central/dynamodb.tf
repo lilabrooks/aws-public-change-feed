@@ -53,9 +53,18 @@ resource "aws_dynamodb_table" "delivery" {
   }
 
   global_secondary_index {
-    name            = "status-next-action-index"
-    hash_key        = "status"
-    range_key       = "next_action_at"
+    name = local.delivery_index_name
+
+    key_schema {
+      attribute_name = "status"
+      key_type       = "HASH"
+    }
+
+    key_schema {
+      attribute_name = "next_action_at"
+      key_type       = "RANGE"
+    }
+
     projection_type = "ALL"
   }
 

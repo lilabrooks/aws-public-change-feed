@@ -103,9 +103,11 @@ data "aws_iam_policy_document" "feed_watcher" {
     ]
   }
 
+  # emit() reads the stored candidate and delivery record before writing, so the
+  # watcher needs GetItem on the delivery table and not writes alone.
   statement {
     sid     = "DurableOutboxWrites"
-    actions = ["dynamodb:PutItem", "dynamodb:UpdateItem"]
+    actions = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
     resources = [
       aws_dynamodb_table.delivery.arn,
     ]
@@ -113,9 +115,20 @@ data "aws_iam_policy_document" "feed_watcher" {
 }
 
 data "aws_iam_policy_document" "outbox_dispatcher" {
+  # A global secondary index is a distinct IAM resource. Querying
+  # status-next-action-index needs the index ARN; the table ARN alone denies it.
   statement {
     sid     = "QueryDeliveryIndex"
-    actions = ["dynamodb:Query", "dynamodb:GetItem"]
+    actions = ["dynamodb:Query"]
+    resources = [
+      aws_dynamodb_table.delivery.arn,
+      local.delivery_index_arn,
+    ]
+  }
+
+  statement {
+    sid     = "ReadDeliveryRecords"
+    actions = ["dynamodb:GetItem"]
     resources = [
       aws_dynamodb_table.delivery.arn,
     ]
@@ -169,7 +182,16 @@ data "aws_iam_policy_document" "slack_worker" {
 data "aws_iam_policy_document" "recovery_reconciler" {
   statement {
     sid     = "QueryDeliveryIndex"
-    actions = ["dynamodb:Query", "dynamodb:Scan", "dynamodb:GetItem"]
+    actions = ["dynamodb:Query", "dynamodb:Scan"]
+    resources = [
+      aws_dynamodb_table.delivery.arn,
+      local.delivery_index_arn,
+    ]
+  }
+
+  statement {
+    sid     = "ReadDeliveryRecords"
+    actions = ["dynamodb:GetItem"]
     resources = [
       aws_dynamodb_table.delivery.arn,
     ]

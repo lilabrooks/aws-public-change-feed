@@ -380,7 +380,8 @@
               <li>Release loading that reads the exact pinned versions, verifies their hashes, and refuses a release this build cannot evaluate</li>
               <li>Rollback that verifies a retained release before restoring it, with promotion times required to move forward so no later write can reproduce a retained version</li>
               <li>A recorded decision on where the release contract is measured, including the one property the mock contradicts and the suite that will cover it</li>
-              <li>Terraform bootstrap and central roots provisioned with least-privilege IAM, encryption, S3 lifecycle retention, DynamoDB TTL, FIFO redrive, alarms, and a dashboard</li>
+              <li>Terraform bootstrap and central roots provisioned with least-privilege IAM, encryption, manifest and snapshot lifecycle rules, DynamoDB TTL, FIFO redrive, alarms, and a dashboard</li>
+              <li>Least-privilege policies checked against the deployed account with the IAM policy simulator, rather than by reading the Terraform</li>
               <li>Semantic validation, deterministic identity vectors, and mutation tests</li>
               <li>Repository quality, page drift, link, Mermaid, and HTML checks</li>
             </ul>
@@ -391,6 +392,7 @@
               <li>Corpus coverage of end-of-support announcements from real feeds</li>
               <li>DynamoDB, SQS, S3, and Secrets Manager adapters behind the ports the runtime already uses</li>
               <li>Lambda packaging, schedules, and event source mappings for the four functions</li>
+              <li>Publisher-side retirement of superseded releases, which S3 lifecycle cannot express safely</li>
               <li>Dispatch, SQS transport, Slack delivery, and reconciliation</li>
               <li>Feed, delivery, recovery, load, and security tests</li>
               <li>Production preflight and confirmed Slack destination checks</li>
