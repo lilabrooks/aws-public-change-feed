@@ -28,6 +28,28 @@ resource "aws_cloudwatch_metric_alarm" "delivery_queue_age" {
   tags                      = local.common_alarm_tags
 }
 
+# Chapter 05 asks for oldest pending_queue, queued, or retryable work beyond the
+# service objective. delivery_queue_age only sees work already in SQS, so it
+# cannot observe a record stuck at pending_queue because the dispatcher is down.
+# This reads the durable outbox instead.
+resource "aws_cloudwatch_metric_alarm" "outbox_backlog_age" {
+  alarm_name          = "apcf-${local.deployment_id}-outbox-backlog-age"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "OldestPendingDeliveryAgeSeconds"
+  namespace           = local.metrics_namespace
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 900
+  treat_missing_data  = "notBreaching"
+
+  alarm_description         = "Oldest unresolved outbox work exceeds 15 minutes. Deployment ${local.deployment_id}, region ${local.region}, table ${local.delivery_table}. See operations runbook 'Outbox or queue backlog'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
 resource "aws_cloudwatch_metric_alarm" "delivery_dlq_depth" {
   alarm_name          = "apcf-${local.deployment_id}-delivery-dlq-depth"
   comparison_operator = "GreaterThanThreshold"
@@ -316,6 +338,11 @@ resource "aws_cloudwatch_metric_alarm" "terminal_failures" {
   tags                      = local.common_alarm_tags
 }
 
+# One alarm across all feeds, not one alarm per feed. The feed list lives in
+# config.yaml, which is a release artifact this root never reads, so Terraform
+# cannot enumerate feeds at plan time. MaxFeedStalenessSeconds is the watcher's
+# max across sources; per-feed attribution comes from the metric's own
+# per-feed dimensions in the dashboard, not from separate alarms.
 resource "aws_cloudwatch_metric_alarm" "feed_staleness" {
   alarm_name          = "apcf-${local.deployment_id}-feed-staleness"
   comparison_operator = "GreaterThanThreshold"

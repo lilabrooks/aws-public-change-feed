@@ -10,6 +10,12 @@ locals {
   release_prefix      = local.deployment.release_prefix
   active_versions_key = local.deployment.active_versions_object_key
   top_prefix          = dirname(local.active_versions_key)
+
+  # Chapter 03 "Configuration bucket layout" fixes this prefix. It is not a free
+  # choice: the watcher's s3:PutObject grant and the snapshot lifecycle rules are
+  # both scoped to it, and the S3 SnapshotStore adapter must write here. The
+  # raw_snapshot_prefix output publishes it so the adapter reads it rather than
+  # reconstructing the string.
   raw_snapshot_prefix = "${local.top_prefix}/raw-snapshots/"
 
   secret_store = local.deployment.secret_store
@@ -29,6 +35,10 @@ locals {
 
   source_state_table = "apcf-source-state-${local.deployment_id}"
   delivery_table     = "apcf-delivery-${local.deployment_id}"
+
+  # ADR-007: the dispatcher and reconciler read due work through this index.
+  delivery_index_name = "status-next-action-index"
+  delivery_index_arn  = "${aws_dynamodb_table.delivery.arn}/index/${local.delivery_index_name}"
 
   delivery_queue_name = "apcf-delivery-${local.deployment_id}.fifo"
   delivery_dlq_name   = "apcf-delivery-dlq-${local.deployment_id}.fifo"

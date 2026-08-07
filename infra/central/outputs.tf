@@ -8,6 +8,16 @@ output "config_bucket_arn" {
   value       = aws_s3_bucket.config.arn
 }
 
+output "raw_snapshot_prefix" {
+  description = "Key prefix the feed watcher writes raw feed snapshots to. The S3 SnapshotStore adapter reads this rather than reconstructing it."
+  value       = local.raw_snapshot_prefix
+}
+
+output "release_prefix" {
+  description = "Key prefix holding write-once release objects."
+  value       = "${local.release_prefix}/"
+}
+
 output "source_state_table" {
   description = "DynamoDB source-state table for feed checkpoints and announcement records."
   value       = aws_dynamodb_table.source_state.name
@@ -16,6 +26,11 @@ output "source_state_table" {
 output "delivery_table" {
   description = "DynamoDB delivery table for candidates, outbox work, pacing, and outcomes."
   value       = aws_dynamodb_table.delivery.name
+}
+
+output "delivery_index_name" {
+  description = "Global secondary index the dispatcher and reconciler query for due work."
+  value       = local.delivery_index_name
 }
 
 output "delivery_queue" {

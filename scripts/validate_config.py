@@ -581,6 +581,23 @@ def validate_event_contract_semantics(config, inventory, manifest, candidate, de
         raise ValueError(f"delivery request exceeds {maximum_size} UTF-8 JSON bytes")
 
 
+DEPLOYMENT_INPUTS = ("infra/central/deployment.yaml",)
+
+
+def validate_deployment_inputs(root: Path):
+    """Check the deployment inputs Terraform roots actually decode.
+
+    examples/deployment.yaml is the canonical fixture, but a Terraform root reads
+    its own committed file. Without this, a root could decode an input no check
+    had ever seen and the schema would only govern the example.
+    """
+    for relative in DEPLOYMENT_INPUTS:
+        path = root / relative
+        if not path.exists():
+            raise ValueError(f"declared deployment input is missing: {relative}")
+        validate_schema(root / "schemas" / "deployment.schema.json", path, load_yaml(path))
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", type=Path, default=Path(__file__).resolve().parents[1])
@@ -614,6 +631,7 @@ def main():
             / ({"deployment": "deployment.yaml", "config": "config.yaml"}.get(name, f"{name.replace('_', '-')}.json")),
             documents[name],
         )
+    validate_deployment_inputs(root)
     validate_semantics(documents["deployment"], documents["config"], documents["inventory"])
     validate_manifest(root, documents["deployment"], documents["active_versions"])
     validate_event_contract_semantics(

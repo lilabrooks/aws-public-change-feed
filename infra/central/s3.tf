@@ -67,12 +67,16 @@ resource "aws_s3_bucket_lifecycle_configuration" "config" {
     }
   }
 
+  # The manifest is the one key that is overwritten in place, so its superseded
+  # versions are the retained promotion history ADR-019 relies on. The filter is
+  # the exact key: a prefix of the whole tree would silently govern the release
+  # and snapshot objects too, and the retention numbers only happen to agree.
   rule {
     id     = "manifest-retention"
     status = "Enabled"
 
     filter {
-      prefix = "${local.top_prefix}/"
+      prefix = local.active_versions_key
     }
 
     noncurrent_version_expiration {
@@ -81,20 +85,12 @@ resource "aws_s3_bucket_lifecycle_configuration" "config" {
     }
   }
 
-  rule {
-    id     = "retired-release-retention"
-    status = "Enabled"
-
-    filter {
-      prefix = "${local.release_prefix}/"
-    }
-
-    noncurrent_version_expiration {
-      noncurrent_days           = local.deployment.s3_lifecycle.retired_release_retention_days
-      newer_noncurrent_versions = local.deployment.s3_lifecycle.minimum_retained_releases
-    }
-  }
-
+  # Raw snapshots need two rules on a versioned bucket. Expiration alone only
+  # writes a delete marker and leaves the body as a noncurrent version, and S3
+  # expires a noncurrent version only when both noncurrent_days and
+  # newer_noncurrent_versions are exceeded. The second rule reaps the markers
+  # once they are the only version left. ExpiredObjectDeleteMarker cannot share
+  # a rule with Days, which is why this is not one rule.
   rule {
     id     = "raw-feed-snapshots"
     status = "Enabled"
@@ -106,5 +102,33 @@ resource "aws_s3_bucket_lifecycle_configuration" "config" {
     expiration {
       days = local.deployment.s3_lifecycle.raw_feed_snapshots_expiration_days
     }
+
+    noncurrent_version_expiration {
+      noncurrent_days = 1
+    }
+  }
+
+  rule {
+    id     = "raw-feed-snapshot-delete-markers"
+    status = "Enabled"
+
+    filter {
+      prefix = local.raw_snapshot_prefix
+    }
+
+    expiration {
+      expired_object_delete_marker = true
+    }
   }
 }
+
+# No lifecycle rule governs ${local.release_prefix}/. Release objects are
+# write-once at a per-release key, created with If-None-Match: * and never
+# overwritten, so they have no noncurrent versions for a noncurrent_version
+# rule to reach. The age-based alternative is unsafe: it deletes by object age
+# with no notion of which release is active, and a deployment that has not
+# republished within retired_release_retention_days would lose the release its
+# candidates still resolve against. S3 lifecycle also cannot express the
+# minimum_retained_releases floor, which counts releases rather than versions.
+# Retiring old releases therefore belongs to the publisher, which knows the
+# active pointer and the release order. Tracked in docs/GOAL.md.

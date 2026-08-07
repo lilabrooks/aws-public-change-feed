@@ -92,6 +92,8 @@ Deployment roles follow least privilege for provisioned resources. Backend acces
 
 Unresolved delivery work cannot expire before resolution. Retention changes must keep releases available longer than any delivery replay or investigation period.
 
+S3 lifecycle enforces the manifest history, the log groups, and the raw-snapshot window. It does not enforce release retirement, and `infra/central` deliberately configures no rule over the release prefix. Release objects are write-once at a per-release key, so they never become noncurrent versions and a noncurrent-version rule cannot reach them. Expiring them by object age instead would delete on age alone, with no notion of which release is active: a deployment that has not republished within the retention window would lose the release its stored candidates still resolve against. Lifecycle also cannot express the “at least 10 releases” floor, which counts releases rather than versions. Retiring superseded releases belongs to the publisher, which knows both the active pointer and the release order. Until that exists, releases accumulate, which preserves the retention invariant above and costs storage.
+
 ## Metrics
 
 ### Feed acquisition
