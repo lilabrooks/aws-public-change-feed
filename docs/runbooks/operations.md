@@ -15,6 +15,14 @@ Record the deployment ID, AWS account, Region, dashboard, operational SNS topic,
 5. Stop automatic actions only at the smallest safe boundary. Prefer disabling one feed, route, or event source mapping over the whole service.
 6. Use conditional state transitions and audited replay tools. Never edit delivery records by hand.
 
+## Lambda role and lifecycle audit at runtime cutover
+
+Before trusting the runtime deployment, repeat the two checks that found every defect in the Terraform data-plane audit. Each defect was valid HCL that `terraform validate` and review both passed, planned and applied cleanly, and then matched nothing at runtime.
+
+1. Simulate every role against every resource it must reach, DynamoDB global secondary indexes included. A GSI is a distinct IAM resource, so a policy naming only the table ARN implicitly denies `dynamodb:Query` on `status-next-action-index` and `dynamodb:GetItem` on the delivery table that `outbox.emit` calls before every write. Use `aws iam simulate-principal-policy --policy-source-arn <role> --action-names <actions> --resource-arns <table, index, queue, topic, bucket arns>`.
+2. Read the applied bucket lifecycle, not the source: `aws s3api get-bucket-lifecycle-configuration`. On a versioned bucket, expiration writes a delete marker and leaves the body noncurrent, which expires only when both `NoncurrentDays` and `NewerNoncurrentVersions` are exceeded, so a keep-N rule can never reach a lone version. Filters must name the exact key or prefix, not a broader tree.
+3. Make a check actually fail before recording it as passing. Simulation proves the policy allows a call, not that the runtime issues it; an allowed call the code never makes is still a first-invocation failure.
+
 ## Feed stale or fetch failing
 
 1. Identify the feed and compare last attempt, last success, newest observed publication time, ETag, Last-Modified, and error class.
@@ -154,8 +162,9 @@ Close an incident when the root cause and affected range are known, state is rec
 
 ## References
 
-References verified: 2026-07-13.
+References verified: 2026-08-07.
 
+- [AWS IAM policy simulator](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_testing-policies.html)
 - [CloudWatch alarm troubleshooting](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/troubleshooting-alarms.html)
 - [SQS DLQ redrive](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)
 - [Slack incoming webhooks](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)

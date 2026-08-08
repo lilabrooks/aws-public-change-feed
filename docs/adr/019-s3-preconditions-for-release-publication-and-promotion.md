@@ -96,8 +96,9 @@ Two limits of this evidence. Moto agreeing with this ADR shows the mock and the 
 
 ### Revision: concurrent promotion is verifiable against a real bucket
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-06
+- Accepted: 2026-08-07
 - Revises: the "No real-bucket suite gates milestone 2" paragraph above
 
 That paragraph rests on a claim that is wrong, and the error is worth stating plainly rather than reversing the conclusion quietly. It reads: "The properties a real bucket would add over moto are concurrent serialization and `409`, and neither is reliably reproducible in a test."
