@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:aws-alerting:schema:config:4",
+  "title": "AWS public change alerting runtime policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "message_policy",
+    "state_retention",
+    "feeds",
+    "services",
+    "service_profiles",
+    "environment_policies",
+    "risk_rules"
+  ],
+  "properties": {
+    "version": {"const": 4},
+    "message_policy": {"$ref": "#/$defs/message_policy"},
+    "state_retention": {"$ref": "#/$defs/state_retention"},
+    "feeds": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 25,
+      "items": {"$ref": "#/$defs/feed"}
+    },
+    "services": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 100,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/service"}
+    },
+    "service_profiles": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 100,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/service_profile"}
+    },
+    "environment_policies": {
+      "type": "object",
+      "minProperties": 1,
+      "maxProperties": 500,
+      "propertyNames": {"$ref": "#/$defs/id"},
+      "additionalProperties": {"$ref": "#/$defs/environment_policy"}
+    },
+    "risk_rules": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 50,
+      "items": {"$ref": "#/$defs/risk_rule"}
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "priority": {"enum": ["low", "medium", "high"]},
+    "nonempty_string": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500,
+      "pattern": ".*\\S.*"
+    },
+    "message_policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_potentially_relevant_environments_in_slack",
+        "max_message_characters",
+        "max_blocks",
+        "max_title_characters",
+        "max_summary_characters",
+        "max_explanation_characters",
+        "max_recommended_action_characters",
+        "max_candidate_bytes",
+        "max_delivery_request_bytes",
+        "oversize_behavior"
+      ],
+      "properties": {
+        "max_potentially_relevant_environments_in_slack": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "max_message_characters": {"type": "integer", "minimum": 1000, "maximum": 4000},
+        "max_blocks": {"type": "integer", "minimum": 1, "maximum": 50},
+        "max_title_characters": {"type": "integer", "minimum": 50, "maximum": 300},
+        "max_summary_characters": {"type": "integer", "minimum": 100, "maximum": 2000},
+        "max_explanation_characters": {"type": "integer", "minimum": 100, "maximum": 2000},
+        "max_recommended_action_characters": {"type": "integer", "minimum": 100, "maximum": 2000},
+        "max_candidate_bytes": {"const": 196608},
+        "max_delivery_request_bytes": {"const": 245760},
+        "oversize_behavior": {"const": "failed_terminal"}
+      }
+    },
+    "state_retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["feed_state_ttl_days", "announcement_state_ttl_days", "delivery_state_ttl_days"],
+      "properties": {
+        "feed_state_ttl_days": {"type": "integer", "minimum": 1, "maximum": 3650},
+        "announcement_state_ttl_days": {"type": "integer", "minimum": 1, "maximum": 3650},
+        "delivery_state_ttl_days": {"type": "integer", "minimum": 1, "maximum": 3650}
+      }
+    },
+    "feed": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "url", "source_type"],
+      "properties": {
+        "name": {"$ref": "#/$defs/id"},
+        "url": {"type": "string", "format": "uri", "pattern": "^https://"},
+        "source_type": {"enum": ["public_rss", "public_atom"]}
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["display_name", "aliases", "recommended_action"],
+      "properties": {
+        "display_name": {"$ref": "#/$defs/nonempty_string"},
+        "aliases": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 50,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/nonempty_string"}
+        },
+        "recommended_action": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000,
+          "pattern": ".*\\S.*"
+        }
+      }
+    },
+    "service_profile": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["service_ids"],
+      "properties": {
+        "service_ids": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 100,
+          "uniqueItems": true,
+          "items": {"$ref": "#/$defs/id"}
+        }
+      }
+    },
+    "environment_policy": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["feed_monitoring", "profile"],
+          "properties": {
+            "feed_monitoring": {"const": "enabled"},
+            "profile": {"$ref": "#/$defs/id"}
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["feed_monitoring", "reason"],
+          "properties": {
+            "feed_monitoring": {"const": "disabled"},
+            "reason": {"type": "string", "minLength": 1, "maxLength": 500, "pattern": ".*\\S.*"}
+          }
+        }
+      ]
+    },
+    "risk_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "risk_type", "priority", "fields", "match"],
+      "properties": {
+        "id": {"$ref": "#/$defs/id"},
+        "risk_type": {"$ref": "#/$defs/id"},
+        "priority": {"$ref": "#/$defs/priority"},
+        "fields": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "uniqueItems": true,
+          "items": {"enum": ["title", "summary"]}
+        },
+        "match": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["any", "all", "none"],
+          "properties": {
+            "any": {"$ref": "#/$defs/terms"},
+            "all": {"$ref": "#/$defs/terms"},
+            "none": {"$ref": "#/$defs/terms"}
+          }
+        }
+      }
+    },
+    "terms": {
+      "type": "array",
+      "maxItems": 50,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/nonempty_string"}
+    }
+  }
+}

@@ -377,10 +377,10 @@
               <li>Live feed screening that flags any production match the corpus does not represent</li>
               <li>S3 release preconditions measured against the mock the publisher is tested on, including where that mock cannot stand in for S3</li>
               <li>Release publication and promotion reproducing the committed release from the contract bundle's own bytes</li>
-              <li>Release loading that reads the exact pinned versions, verifies their hashes, and refuses a release this build cannot evaluate</li>
+              <li>Release loading that reads exact pinned versions, verifies hashes, validates the fetched bodies against their owned schemas, and binds internal versions to the pointer</li>
               <li>Rollback that verifies a retained release before restoring it, with promotion times required to move forward so no later write can reproduce a retained version</li>
               <li>A recorded decision on where the release contract is measured, including the one property the mock contradicts and the suite that will cover it</li>
-              <li>Terraform bootstrap and central roots provisioned with least-privilege IAM, encryption, manifest and snapshot lifecycle rules, DynamoDB TTL, FIFO redrive, alarms, and a dashboard</li>
+              <li>Terraform bootstrap and central roots provisioned with scoped backend access, least-privilege IAM, encryption, manifest and snapshot lifecycle rules, DynamoDB TTL, FIFO redrive, alarm publishing, and aggregate plus per-feed freshness views</li>
               <li>Least-privilege policies checked against the deployed account with the IAM policy simulator, rather than by reading the Terraform</li>
               <li>Semantic validation, deterministic identity vectors, and mutation tests</li>
               <li>Repository quality, page drift, link, Mermaid, and HTML checks</li>

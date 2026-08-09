@@ -53,16 +53,17 @@ The fresh `promoted_at` is load-bearing, not bookkeeping. Republishing identical
 
 ### Promotion times move forward
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-06
+- Accepted: 2026-08-09
 
-A promotion must record a `promoted_at` strictly later than the pointer version it replaces. Publication and rollback both go through this rule, and a pointer that records no parseable promotion time is not promotable.
+A proposed pointer document must record a parseable `promoted_at` strictly later than the pointer version it replaces. Publication and rollback both go through this rule. The pointer being replaced may lack a parseable promotion time and remains replaceable, so malformed historical state cannot make the key impossible to repair.
 
 The rollback clause above states the property this enforces, and implementation showed the clause alone is not enough to reach it. Refusing to reuse the timestamp of the version being restored looks sufficient and is not: restoring a release, promoting away, and restoring it again with the same timestamp reproduces the bytes of the *first rollback*, which that comparison never examines. The resulting object carries a retained version's ETag, which is the outcome this decision exists to prevent. Re-promoting an unchanged release reaches the same place by a shorter route.
 
 Comparing against every retained version would close it and costs an unbounded number of reads. A strictly forward promotion time makes the whole family unreachable using the pointer the publisher has already read, because the recorded time alone distinguishes each version from every earlier one.
 
-Two consequences worth stating. Two publishers promoting within the same clock tick will see one refused; that is the intended reading of a compare-and-swap, and the loser re-reads and decides again. And a pointer whose own `promoted_at` cannot be parsed is still replaceable, or a malformed pointer could never be corrected.
+Two consequences are load-bearing. Two publishers promoting within the same clock tick will see one refused; that is the intended reading of a compare-and-swap, and the loser re-reads and decides again. The asymmetric malformed-time rule is also deliberate: a malformed proposed document is refused, while an observed malformed pointer remains replaceable.
 
 ### Integrity stays separate from concurrency
 

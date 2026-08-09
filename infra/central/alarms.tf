@@ -340,9 +340,9 @@ resource "aws_cloudwatch_metric_alarm" "terminal_failures" {
 
 # One alarm across all feeds, not one alarm per feed. The feed list lives in
 # config.yaml, which is a release artifact this root never reads, so Terraform
-# cannot enumerate feeds at plan time. MaxFeedStalenessSeconds is the watcher's
-# max across sources; per-feed attribution comes from the metric's own
-# per-feed dimensions in the dashboard, not from separate alarms.
+# cannot enumerate feeds at plan time. The watcher emits a dimensionless
+# MaxFeedStalenessSeconds aggregate for this alarm and FeedStalenessSeconds
+# with a FeedName dimension for per-feed attribution in the dashboard.
 resource "aws_cloudwatch_metric_alarm" "feed_staleness" {
   alarm_name          = "apcf-${local.deployment_id}-feed-staleness"
   comparison_operator = "GreaterThanThreshold"

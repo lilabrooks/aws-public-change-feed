@@ -371,9 +371,17 @@ class ReferenceValidatorTests(unittest.TestCase):
 
         constraint = (ROOT / "infra/central/versions.tf").read_text(encoding="utf-8")
         self.assertIn(">= 1.10.0, < 2.0.0", constraint)
-        major, minor, _ = (int(part) for part in str(setup["with"]["terraform_version"]).split("."))
-        self.assertEqual(major, 1, "pinned terraform must satisfy the roots' required_version")
-        self.assertGreaterEqual(minor, 10, "pinned terraform must satisfy the roots' required_version")
+        self.assertEqual(setup["with"]["terraform_version"], "1.15.8")
+
+        minimum_steps = workflow["jobs"]["terraform-minimum"]["steps"]
+        minimum_setup = next(step for step in minimum_steps if step.get("name") == "Set up minimum Terraform")
+        minimum_check = next(
+            step for step in minimum_steps if step.get("name") == "Validate Terraform roots at the minimum version"
+        )
+        workflow_pins.assert_pinned(minimum_setup["uses"], "hashicorp/setup-terraform")
+        self.assertEqual(minimum_setup["with"]["terraform_version"], "1.10.5")
+        self.assertFalse(minimum_setup["with"]["terraform_wrapper"])
+        self.assertEqual(minimum_check["run"], "make terraform-check")
 
     def test_provider_lockfiles_cover_the_ci_and_local_platforms(self):
         """A lockfile locked only on the author's platform fails init on the runner."""

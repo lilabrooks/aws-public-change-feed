@@ -36,7 +36,7 @@ Use on-demand capacity for the baseline. A single-table layout may use `PK` and 
 
 ## Delivery table
 
-Use on-demand capacity for the baseline. The table needs a GSI named `status-next-action-index` whose partition key is `status` and sort key is `next_action_at`. Only work that needs scheduling has those attributes. GSI reads are eventually consistent, so the dispatcher can observe a short delay. The scheduled reconciler scans bounded overdue state through a separate recovery path and prevents an index delay from becoming permanent loss.
+Use on-demand capacity for the baseline. The table needs a GSI named `status-next-action-index` whose partition key is `status` and sort key is `next_action_at`. Both attributes are present on work the dispatcher must discover. `next_action_at` is a DynamoDB Number containing whole Unix epoch seconds; a new `pending_queue` record sets it to its creation time so the initial dispatch is immediately due. GSI reads are eventually consistent, so the dispatcher can observe a short delay. The scheduled reconciler scans bounded overdue state through a separate recovery path and prevents an index delay from becoming permanent loss.
 
 ### Candidate item
 
@@ -47,7 +47,7 @@ Use on-demand capacity for the baseline. The table needs a GSI named `status-nex
 ### Delivery item
 
 - Key: `PK = CANDIDATE#<candidate_id>`, `SK = DELIVERY`.
-- Contains the exact request, destination key, state, state version, creation time, next action, dispatch generation and ID, queue message ID, attempt count, network-attempt count, lease, Slack response metadata, manual replay history, and TTL when safe.
+- Contains the exact request, destination key, state, state version, creation time, numeric next action, dispatch generation and ID, queue message ID, attempt count, network-attempt count, lease, Slack response metadata, manual replay history, and TTL when safe.
 - State transitions use conditions on current state, version, and lease.
 
 The states are `pending_queue`, `queued`, `sending`, `posted`, `failed_retryable`, `failed_terminal`, and `delivery_unknown`. `posted` and `failed_terminal` may expire after the configured terminal retention. Unresolved states have no TTL or receive a retention extension. A new put over a terminal expired item must prove `expires_at < now` in its condition; DynamoDB TTL deletion is asynchronous.
