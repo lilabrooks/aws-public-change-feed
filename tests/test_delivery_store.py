@@ -105,17 +105,27 @@ class DynamoDeliveryStoreTests(unittest.TestCase):
         self.store.put_delivery_if_absent(self.record())
         dispatch_id = queue_dispatch_id(self.request["request_id"], 1)
 
-        self.assertTrue(self.store.claim_dispatch(self.key, generation=1, dispatch_id=dispatch_id, due_before=2000))
+        self.assertEqual(
+            self.store.claim_dispatch(
+                self.key,
+                expected_state_version=1,
+                expected_generation=None,
+                request_id=self.request["request_id"],
+                due_before=2000,
+            ),
+            (1, dispatch_id),
+        )
         record = delivery(self.store, self.key)
         self.assertEqual(record.dispatch_generation, 1)
         self.assertEqual(record.dispatch_id, dispatch_id)
         self.assertEqual(record.state_version, 2)
 
-        self.assertFalse(
+        self.assertIsNone(
             self.store.claim_dispatch(
                 self.key,
-                generation=2,
-                dispatch_id=queue_dispatch_id(self.request["request_id"], 2),
+                expected_state_version=record.state_version,
+                expected_generation=record.dispatch_generation,
+                request_id=self.request["request_id"],
                 due_before=2000,
             ),
             msg="an active claim refuses a second concurrent generation",
@@ -123,25 +133,63 @@ class DynamoDeliveryStoreTests(unittest.TestCase):
 
     def test_claim_refuses_work_that_is_not_due(self):
         self.store.put_delivery_if_absent(self.record(next_action_at=5000))
-        self.assertFalse(
+        self.assertIsNone(
             self.store.claim_dispatch(
                 self.key,
-                generation=1,
-                dispatch_id=queue_dispatch_id(self.request["request_id"], 1),
+                expected_state_version=1,
+                expected_generation=None,
+                request_id=self.request["request_id"],
                 due_before=2000,
             )
         )
 
     def test_claim_refuses_a_resolved_record(self):
         self.store.put_delivery_if_absent(self.record(status="queued"))
-        self.assertFalse(
+        self.assertIsNone(
             self.store.claim_dispatch(
                 self.key,
-                generation=1,
-                dispatch_id=queue_dispatch_id(self.request["request_id"], 1),
+                expected_state_version=1,
+                expected_generation=None,
+                request_id=self.request["request_id"],
                 due_before=2000,
             )
         )
+
+    def test_claim_refuses_a_stale_state_version_when_the_generation_matches(self):
+        self.store.put_delivery_if_absent(
+            self.record(status="failed_retryable", dispatch_generation=1, state_version=7)
+        )
+
+        stale = self.store.claim_dispatch(
+            self.key,
+            expected_state_version=4,
+            expected_generation=1,
+            request_id=self.request["request_id"],
+            due_before=2000,
+        )
+
+        self.assertIsNone(stale)
+        record = delivery(self.store, self.key)
+        self.assertEqual(record.dispatch_generation, 1)
+        self.assertEqual(record.state_version, 7)
+
+    def test_claim_refuses_a_stale_generation_when_the_state_version_matches(self):
+        self.store.put_delivery_if_absent(
+            self.record(status="failed_retryable", dispatch_generation=2, state_version=7)
+        )
+
+        stale = self.store.claim_dispatch(
+            self.key,
+            expected_state_version=7,
+            expected_generation=1,
+            request_id=self.request["request_id"],
+            due_before=2000,
+        )
+
+        self.assertIsNone(stale)
+        record = delivery(self.store, self.key)
+        self.assertEqual(record.dispatch_generation, 2)
+        self.assertEqual(record.state_version, 7)
 
     def test_mark_queued_is_bound_to_the_claimed_dispatch_id(self):
         self.store.put_delivery_if_absent(self.record(next_action_at=1000))
@@ -149,7 +197,16 @@ class DynamoDeliveryStoreTests(unittest.TestCase):
         self.assertFalse(self.store.mark_queued(self.key, dispatch_id=wrong, message_id="m", at=2000))
 
         claimed = queue_dispatch_id(self.request["request_id"], 1)
-        self.assertTrue(self.store.claim_dispatch(self.key, generation=1, dispatch_id=claimed, due_before=2000))
+        self.assertEqual(
+            self.store.claim_dispatch(
+                self.key,
+                expected_state_version=1,
+                expected_generation=None,
+                request_id=self.request["request_id"],
+                due_before=2000,
+            ),
+            (1, claimed),
+        )
         self.assertTrue(self.store.mark_queued(self.key, dispatch_id=claimed, message_id="m", at=2000))
 
         record = delivery(self.store, self.key)

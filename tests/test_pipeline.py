@@ -176,7 +176,13 @@ class PipelineTests(unittest.TestCase):
         self.assertIsNone(checkpoint(self.state, FEED_NAME).etag)
         self.assertFalse(verify_durable(self.store, [item["candidate_id"] for item in candidates]))
 
-        emission = emit(self.store, candidates, inventory=self.inventory, created_at=CREATED)
+        emission = emit(
+            self.store,
+            candidates,
+            inventory=self.inventory,
+            message_policy=self.config["message_policy"],
+            created_at=CREATED,
+        )
         self.assertTrue(verify_durable(self.store, emission.candidate_ids))
 
         self.assertEqual(self.watcher.commit(result), (FEED_NAME,))
@@ -185,7 +191,13 @@ class PipelineTests(unittest.TestCase):
     def test_a_lost_outbox_record_leaves_the_checkpoint_unadvanced(self):
         result = self.run_feed()
         candidates = self.candidates_for(result)
-        emission = emit(self.store, candidates, inventory=self.inventory, created_at=CREATED)
+        emission = emit(
+            self.store,
+            candidates,
+            inventory=self.inventory,
+            message_policy=self.config["message_policy"],
+            created_at=CREATED,
+        )
 
         # A crash between the candidate and delivery writes.
         del self.store._deliveries[emission.candidate_ids[0]]
@@ -197,7 +209,13 @@ class PipelineTests(unittest.TestCase):
 
     def test_replay_reconstructs_the_same_candidates_and_repairs_the_outbox(self):
         first = self.candidates_for(self.run_feed())
-        emission = emit(self.store, first, inventory=self.inventory, created_at=CREATED)
+        emission = emit(
+            self.store,
+            first,
+            inventory=self.inventory,
+            message_policy=self.config["message_policy"],
+            created_at=CREATED,
+        )
         del self.store._deliveries[emission.candidate_ids[0]]
 
         # A second invocation over the same unadvanced feed response.
@@ -208,7 +226,13 @@ class PipelineTests(unittest.TestCase):
             msg="chapter 02: partial completion cannot create new logical work",
         )
 
-        repaired = emit(self.store, replay, inventory=self.inventory, created_at=CREATED)
+        repaired = emit(
+            self.store,
+            replay,
+            inventory=self.inventory,
+            message_policy=self.config["message_policy"],
+            created_at=CREATED,
+        )
         self.assertEqual(repaired.created_candidates, ())
         self.assertEqual(repaired.repaired_deliveries, emission.candidate_ids)
         self.assertTrue(verify_durable(self.store, repaired.candidate_ids))
@@ -225,7 +249,13 @@ class PipelineTests(unittest.TestCase):
 
     def test_the_same_announcement_on_a_second_feed_adds_no_delivery_work(self):
         first = self.candidates_for(self.run_feed())
-        emit(self.store, first, inventory=self.inventory, created_at=CREATED)
+        emit(
+            self.store,
+            first,
+            inventory=self.inventory,
+            message_policy=self.config["message_policy"],
+            created_at=CREATED,
+        )
 
         # ADR-013: the same canonical URL seen through another configured feed.
         second_feed = self.watcher.run(
@@ -245,7 +275,13 @@ class PipelineTests(unittest.TestCase):
             msg="ADR-002: an overlapping feed enriches provenance without a second candidate",
         )
 
-        emission = emit(self.store, second, inventory=self.inventory, created_at=CREATED)
+        emission = emit(
+            self.store,
+            second,
+            inventory=self.inventory,
+            message_policy=self.config["message_policy"],
+            created_at=CREATED,
+        )
         self.assertEqual(emission.created_deliveries, ())
         self.assertEqual(emission.repaired_deliveries, ())
 
@@ -260,7 +296,13 @@ class PipelineTests(unittest.TestCase):
 
     def test_an_edited_title_emits_a_new_candidate_marked_as_an_update(self):
         first = self.candidates_for(self.run_feed())
-        emit(self.store, first, inventory=self.inventory, created_at=CREATED)
+        emit(
+            self.store,
+            first,
+            inventory=self.inventory,
+            message_policy=self.config["message_policy"],
+            created_at=CREATED,
+        )
         self.assertFalse(first[0]["announcement"]["is_update"])
 
         self.serve(RSS.replace(b"version 1.34 available", b"version 1.35 available"))
@@ -272,7 +314,13 @@ class PipelineTests(unittest.TestCase):
         )
         self.assertNotEqual(second[0]["candidate_id"], first[0]["candidate_id"])
 
-        emission = emit(self.store, second, inventory=self.inventory, created_at=CREATED)
+        emission = emit(
+            self.store,
+            second,
+            inventory=self.inventory,
+            message_policy=self.config["message_policy"],
+            created_at=CREATED,
+        )
         self.assertEqual(emission.created_candidates, (second[0]["candidate_id"],))
 
         record = self.announcements.load(self.expected["announcement"]["announcement_id"])
@@ -354,7 +402,13 @@ class PipelineTests(unittest.TestCase):
 
     def test_the_delivery_request_targets_the_route_destination(self):
         candidates = self.candidates_for(self.run_feed())
-        emit(self.store, candidates, inventory=self.inventory, created_at=CREATED)
+        emit(
+            self.store,
+            candidates,
+            inventory=self.inventory,
+            message_policy=self.config["message_policy"],
+            created_at=CREATED,
+        )
         record = delivery(self.store, candidates[0]["candidate_id"])
         expected_destination = self.inventory["slack"]["routes"][candidates[0]["route_id"]]["destination_key"]
         self.assertEqual(record.destination_key, expected_destination)

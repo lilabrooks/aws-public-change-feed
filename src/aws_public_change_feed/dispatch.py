@@ -38,8 +38,8 @@ from typing import Any, Protocol
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
-from .identity import delivery_request_id, queue_dispatch_id
-from .outbox import SCHEDULED_STATES, SCHEDULED_STATES_ORDERED, DeliveryRecord, OutboxStore
+from .identity import delivery_request_id
+from .outbox import SCHEDULED_STATES, SCHEDULED_STATES_ORDERED, DeliveryRecord, OutboxStore, serialized_size
 
 __all__ = [
     "DispatchResult",
@@ -100,8 +100,9 @@ class QueueSender(Protocol):
 
     `request` is the exact validated `DeliveryRequest`; `dispatch_id` is the
     claimed ID, sent as `MessageDeduplicationId`. ACCEPTED results carry the
-    returned message ID, REJECTED results are raised as `DispatchSendRejected`,
-    and UNKNOWN results mean the message may or may not have been enqueued.
+    returned message ID, REJECTED results mean the queue definitely refused the
+    message and are raised by the dispatcher, and UNKNOWN results mean the
+    message may or may not have been enqueued.
     """
 
     def send(self, request: Mapping[str, Any], *, queue_url: str, dispatch_id: str) -> SendResult: ...
@@ -209,17 +210,21 @@ _request_validator = _build_request_validator()
 def validate_delivery_request(
     request: Mapping[str, Any],
     *,
+    max_bytes: int,
     candidate_id: str | None = None,
     destination_key: str | None = None,
 ) -> None:
     """Refuse a request that is not the exact contract its record claims.
 
-    Schema first, then identity. A request that passes the schema but whose
-    `request_id` does not derive from its embedded candidate would let a
-    dispatcher construct a different payload than the one the outbox persisted,
-    which is exactly what chapter 04 embeds the candidate to prevent.
+    Schema first, then identity and the reviewed byte ceiling. A request that
+    passes the schema but whose `request_id` does not derive from its embedded
+    candidate would let a dispatcher construct a different payload than the one
+    the outbox persisted, which is exactly what chapter 04 embeds the candidate
+    to prevent.
     """
 
+    if isinstance(max_bytes, bool) or not isinstance(max_bytes, int) or max_bytes < 1:
+        raise ValueError("max_bytes must be a positive integer")
     violation = next(_request_validator.iter_errors(request), None)
     if violation is not None:
         location = ".".join(str(part) for part in violation.absolute_path) or "<root>"
@@ -239,12 +244,16 @@ def validate_delivery_request(
         raise InvalidDeliveryRequest(
             f"request names destination {request['destination_key']}, not the record's {destination_key}"
         )
+    actual_bytes = serialized_size(request)
+    if actual_bytes > max_bytes:
+        raise InvalidDeliveryRequest(f"delivery request is {actual_bytes} UTF-8 JSON bytes; maximum is {max_bytes}")
 
 
 def _resolve_claim(
     store: OutboxStore,
     record: DeliveryRecord,
     due_before: int,
+    max_delivery_request_bytes: int,
 ) -> tuple[int, str, bool] | None:
     """Return `(generation, dispatch_id, reused)` or `None` to skip this run.
 
@@ -257,20 +266,22 @@ def _resolve_claim(
     if record.dispatch_id is not None:
         assert record.dispatch_generation is not None
         return record.dispatch_generation, record.dispatch_id, True
-    generation = (record.dispatch_generation or 0) + 1
-    dispatch_id = queue_dispatch_id(record.request["request_id"], generation)
-    if store.claim_dispatch(
+    claim = store.claim_dispatch(
         record.candidate_id,
-        generation=generation,
-        dispatch_id=dispatch_id,
+        expected_state_version=record.state_version,
+        expected_generation=record.dispatch_generation,
+        request_id=record.request["request_id"],
         due_before=due_before,
-    ):
+    )
+    if claim is not None:
+        generation, dispatch_id = claim
         return generation, dispatch_id, False
     fresh = store.get_delivery(record.candidate_id)
     if fresh is not None and fresh.status in SCHEDULED_STATES and fresh.dispatch_id is not None:
         assert fresh.dispatch_generation is not None
         validate_delivery_request(
             fresh.request,
+            max_bytes=max_delivery_request_bytes,
             candidate_id=fresh.candidate_id,
             destination_key=fresh.destination_key,
         )
@@ -284,6 +295,7 @@ def dispatch_due_work(
     *,
     queue_url: str,
     now: datetime,
+    max_delivery_request_bytes: int,
     limit: int = 100,
     metrics: DispatcherMetrics | None = None,
 ) -> DispatchResult:
@@ -299,9 +311,18 @@ def dispatch_due_work(
     place so the next run reuses the same dispatch ID, and neither stops other
     destinations' records in the same run. A definite SQS rejection raises
     `DispatchSendRejected` so the failure is visible. `now` is the invocation
-    clock; work due at or before it is dispatched.
+    clock; work due at or before it is dispatched. `limit` caps the merged batch
+    across both scheduled states.
     """
 
+    if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+        raise ValueError("limit must be a positive integer")
+    if (
+        isinstance(max_delivery_request_bytes, bool)
+        or not isinstance(max_delivery_request_bytes, int)
+        or max_delivery_request_bytes < 1
+    ):
+        raise ValueError("max_delivery_request_bytes must be a positive integer")
     metrics = metrics if metrics is not None else NullDispatcherMetrics()
     due_before = int(now.timestamp())
     result = DispatchResult()
@@ -314,6 +335,7 @@ def dispatch_due_work(
     for status in SCHEDULED_STATES_ORDERED:
         due.extend(store.query_due(status, due_before=due_before, limit=limit))
     due.sort(key=lambda entry: entry[0])
+    due = due[:limit]
 
     for _, candidate in due:
         result = replace(result, considered=result.considered + 1)
@@ -324,10 +346,11 @@ def dispatch_due_work(
             continue
         validate_delivery_request(
             record.request,
+            max_bytes=max_delivery_request_bytes,
             candidate_id=candidate,
             destination_key=record.destination_key,
         )
-        claim = _resolve_claim(store, record, due_before)
+        claim = _resolve_claim(store, record, due_before, max_delivery_request_bytes)
         if claim is None:
             continue
         generation, dispatch_id, reused = claim
@@ -357,4 +380,6 @@ def dispatch_due_work(
         elif outcome.status is SendStatus.UNKNOWN:
             metrics.dispatch_unknown()
             result = replace(result, unknown=result.unknown + 1)
+        elif outcome.status is SendStatus.REJECTED:
+            raise DispatchSendRejected(f"dispatch of delivery {candidate} rejected without queue acceptance")
     return result
