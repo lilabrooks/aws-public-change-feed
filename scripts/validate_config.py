@@ -30,6 +30,7 @@ from aws_public_change_feed.identity import (  # noqa: E402
     release_id,
     revision_id,
 )
+from aws_public_change_feed.parsing import load_unique_json, load_unique_yaml  # noqa: E402
 from aws_public_change_feed.profiles import route_audiences  # noqa: E402
 
 MINIMUM_PYTHON = (3, 12)
@@ -48,40 +49,12 @@ RUNTIME_FORBIDDEN_KEYS = {
 INVENTORY_ENVIRONMENT_KEYS = {"id", "customer", "account_id", "regions", "route_id"}
 
 
-class UniqueKeyLoader(yaml.SafeLoader):
-    pass
-
-
-def construct_unique_mapping(loader, node, deep=False):
-    mapping = {}
-    for key_node, value_node in node.value:
-        key = loader.construct_object(key_node, deep=deep)
-        if key in mapping:
-            raise ValueError(f"duplicate YAML key: {key}")
-        mapping[key] = loader.construct_object(value_node, deep=deep)
-    return mapping
-
-
-UniqueKeyLoader.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, construct_unique_mapping)
-
-
-def construct_unique_json_object(pairs):
-    result = {}
-    for key, value in pairs:
-        if key in result:
-            raise ValueError(f"duplicate JSON key: {key}")
-        result[key] = value
-    return result
-
-
 def load_yaml(path: Path):
-    with path.open(encoding="utf-8") as handle:
-        return yaml.load(handle, Loader=UniqueKeyLoader)
+    return load_unique_yaml(path.read_bytes())
 
 
 def load_json(path: Path):
-    with path.open(encoding="utf-8") as handle:
-        return json.load(handle, object_pairs_hook=construct_unique_json_object)
+    return load_unique_json(path.read_bytes())
 
 
 def require_supported_python(version_info=sys.version_info):

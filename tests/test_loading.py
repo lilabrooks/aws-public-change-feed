@@ -12,6 +12,7 @@ mismatch is bytes that are not what was published. Collapsing them would make
 an operator read "release failed" and learn nothing about which.
 """
 
+import importlib.resources
 import json
 import sys
 import unittest
@@ -154,6 +155,54 @@ class ReleaseLoadingTests(ReleaseFixture):
         with self.assertRaisesRegex(IncompatibleRelease, "config schema_version"):
             self.load()
 
+    def test_a_config_body_cannot_disagree_with_the_pointer_version(self):
+        mutated = yaml.safe_load(self.config_body)
+        mutated["version"] = 999
+        body = yaml.safe_dump(mutated, sort_keys=False).encode()
+        self.publish_and_promote(config_body=body)
+
+        with self.assertRaisesRegex(IncompatibleRelease, "does not match the pointer's schema_version"):
+            self.load()
+
+    def test_an_inventory_body_cannot_disagree_with_the_pointer_version(self):
+        mutated = json.loads(self.inventory_body)
+        mutated["schema_version"] = 999
+        self.publish_and_promote(inventory_body=json.dumps(mutated).encode())
+
+        with self.assertRaisesRegex(IncompatibleRelease, "does not match the pointer's schema_version"):
+            self.load()
+
+    def test_unknown_fields_in_fetched_documents_are_refused(self):
+        mutated = yaml.safe_load(self.config_body)
+        mutated["message_policy"]["unreviewed_behavior"] = True
+        body = yaml.safe_dump(mutated, sort_keys=False).encode()
+        self.publish_and_promote(config_body=body)
+
+        with self.assertRaisesRegex(IncompatibleRelease, "violates its owned schema at message_policy"):
+            self.load()
+
+    def test_unknown_fields_in_the_pointer_are_refused_before_object_reads(self):
+        def extend(document):
+            return {**document, "unreviewed_behavior": True}
+
+        artifacts = self.publish_and_promote(pointer_edit=extend)
+        self.client.delete_object(
+            Bucket=BUCKET,
+            Key=artifacts.config.key,
+            VersionId=artifacts.config.version_id,
+        )
+
+        with self.assertRaisesRegex(IncompatibleRelease, "active pointer violates its owned schema"):
+            self.load()
+
+    def test_packaged_release_schemas_match_the_authoritative_contracts(self):
+        resources = importlib.resources.files("aws_public_change_feed.schemas")
+        for name in ("active-versions.schema.json", "config.schema.json", "inventory.schema.json"):
+            with self.subTest(schema=name):
+                packaged = json.loads(resources.joinpath(name).read_text(encoding="utf-8"))
+                authoritative = json.loads((ROOT / "schemas" / name).read_text(encoding="utf-8"))
+                self.assertEqual(packaged, authoritative)
+
     def test_an_unsupported_pointer_schema_version_is_refused(self):
         def bump(document):
             return {**document, "schema_version": 99}
@@ -258,6 +307,39 @@ class ReleaseLoadingTests(ReleaseFixture):
         self.publish_and_promote(config_body=b"key: [unclosed\n")
 
         with self.assertRaisesRegex(IncompatibleRelease, "config at the pinned version does not parse"):
+            self.load()
+
+    def test_duplicate_config_keys_are_refused_by_the_runtime_parser(self):
+        body = b"version: 4\n" + self.config_body
+        self.publish_and_promote(config_body=body)
+
+        with self.assertRaisesRegex(IncompatibleRelease, "duplicate YAML key: version"):
+            self.load()
+
+    def test_duplicate_inventory_keys_are_refused_by_the_runtime_parser(self):
+        body = self.inventory_body.replace(
+            b'"schema_version": 3,',
+            b'"schema_version": 3, "schema_version": 3,',
+            1,
+        )
+        self.assertNotEqual(body, self.inventory_body)
+        self.publish_and_promote(inventory_body=body)
+
+        with self.assertRaisesRegex(IncompatibleRelease, "duplicate JSON key: schema_version"):
+            self.load()
+
+    def test_duplicate_pointer_keys_are_refused_by_the_runtime_parser(self):
+        self.publish_and_promote()
+        current = self.store.read(POINTER)
+        body = current.body.replace(
+            b'"schema_version": 2,',
+            b'"schema_version": 2, "schema_version": 2,',
+            1,
+        )
+        self.assertNotEqual(body, current.body)
+        self.client.put_object(Bucket=BUCKET, Key=POINTER, Body=body)
+
+        with self.assertRaisesRegex(IncompatibleRelease, "duplicate JSON key: schema_version"):
             self.load()
 
     def test_a_missing_pointer_is_refused(self):

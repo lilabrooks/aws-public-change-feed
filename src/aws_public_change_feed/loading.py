@@ -10,9 +10,10 @@ different places. `IncompatibleRelease` means the bytes are intact and this
 build cannot evaluate them:
 
 - A pointer whose `schema_version` this build does not implement, or whose
-  shape is missing a field this module reads.
-- A configuration or inventory schema version outside the supported set. The
-  runtime would misread them, which is worse than failing.
+  shape violates the owned pointer schema.
+- A configuration or inventory whose internal version disagrees with the
+  pointer, whose version is outside the supported set, or whose body violates
+  its owned schema. The runtime would misread it, which is worse than failing.
 - A pinned document that hashed correctly and does not parse. Publication never
   parses what it writes, so this is reachable.
 
@@ -42,12 +43,14 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
+from importlib.resources import files
 from typing import Any
 
-import yaml
+from jsonschema import Draft202012Validator, FormatChecker
 
 from .candidates import utc_timestamp
 from .identity import release_id
+from .parsing import load_unique_json, load_unique_yaml
 from .releases import POINTER_SCHEMA_VERSION, ObjectMissing, ObjectStore, StoredObject
 
 __all__ = [
@@ -67,6 +70,29 @@ __all__ = [
 # a silently wrong candidate gets emitted.
 SUPPORTED_CONFIG_SCHEMA_VERSIONS = frozenset({4})
 SUPPORTED_INVENTORY_SCHEMA_VERSIONS = frozenset({3})
+
+_SCHEMA_RESOURCES = {
+    "pointer": "active-versions.schema.json",
+    "config": "config.schema.json",
+    "inventory": "inventory.schema.json",
+}
+
+
+def _schema_validator(name: str) -> Draft202012Validator:
+    """Load one packaged copy of an owned schema and compile it once.
+
+    The package copies are checked against the authoritative top-level schema
+    files by the test suite. Keeping them as resources lets an installed wheel
+    enforce the same boundary without depending on a source checkout.
+    """
+
+    resource = files("aws_public_change_feed.schemas").joinpath(_SCHEMA_RESOURCES[name])
+    schema = json.loads(resource.read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema, format_checker=FormatChecker())
+
+
+_SCHEMA_VALIDATORS = {name: _schema_validator(name) for name in _SCHEMA_RESOURCES}
 
 
 class IncompatibleRelease(Exception):
@@ -162,6 +188,36 @@ def _require_usable_pointer(pointer: Mapping[str, Any]) -> None:
                 f"{name} schema_version {version!r} is outside the supported set {sorted(allowed)}"
             )
 
+    _require_schema("active pointer", pointer, "pointer")
+
+
+def _require_schema(label: str, document: Mapping[str, Any], schema_name: str) -> None:
+    """Refuse the first owned-schema violation with a useful document path."""
+
+    violation = next(_SCHEMA_VALIDATORS[schema_name].iter_errors(document), None)
+    if violation is None:
+        return
+    path = ".".join(str(part) for part in violation.absolute_path)
+    location = f" at {path}" if path else ""
+    raise IncompatibleRelease(f"{label} violates its owned schema{location}: {violation.message}")
+
+
+def _require_document_version(
+    name: str,
+    document: Mapping[str, Any],
+    reference: Mapping[str, Any],
+) -> None:
+    """Bind the fetched document's version to the version the pointer claims."""
+
+    field = "version" if name == "config" else "schema_version"
+    actual = document.get(field)
+    claimed = reference["schema_version"]
+    if actual != claimed:
+        raise IncompatibleRelease(
+            f"{name} document {field} {actual!r} does not match the pointer's schema_version {claimed!r}"
+        )
+    _require_schema(name, document, name)
+
 
 def _load_pinned(store: ObjectStore, reference: Mapping[str, Any], name: str) -> bytes:
     """Read one pinned object version and verify it against the pointer's hash."""
@@ -213,9 +269,9 @@ def _load_from_pointer(
     """
 
     try:
-        pointer = json.loads(current.body)
+        pointer = load_unique_json(current.body)
     except ValueError as error:
-        raise IncompatibleRelease(f"{label} is not JSON") from error
+        raise IncompatibleRelease(f"{label} is not JSON: {error}") from error
     if not isinstance(pointer, Mapping):
         raise IncompatibleRelease(f"{label} is not an object")
 
@@ -237,10 +293,15 @@ def _load_from_pointer(
             f"{label} names release {pointer['release_id']}, but the objects it pins derive {derived}"
         )
 
+    config = _parse(load_unique_yaml, config_body, "config")
+    inventory = _parse(load_unique_json, inventory_body, "inventory")
+    _require_document_version("config", config, pointer["config"])
+    _require_document_version("inventory", inventory, pointer["inventory"])
+
     return LoadedRelease(
         release_id=pointer["release_id"],
-        config=_parse(yaml.safe_load, config_body, "config"),
-        inventory=_parse(json.loads, inventory_body, "inventory"),
+        config=config,
+        inventory=inventory,
         reference={
             "release_id": pointer["release_id"],
             "config": dict(pointer["config"]),

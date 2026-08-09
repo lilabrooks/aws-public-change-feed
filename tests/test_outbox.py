@@ -105,10 +105,12 @@ class EmissionTests(OutboxTestCase):
         self.assertEqual(record.status, "pending_queue")
         self.assertEqual(record.destination_key, self.request["destination_key"])
         self.assertEqual(record.request, self.request)
-        self.assertIsNone(
+        self.assertEqual(
             record.next_action_at,
-            msg="chapter 02 gives scheduling attributes only to work that needs them",
+            int(self.created_at.timestamp()),
+            msg="new pending work must be immediately queryable through the numeric due-work index",
         )
+        self.assertIsInstance(record.next_action_at, int)
 
     def test_repeated_emission_writes_nothing_new(self):
         self.emit_once()
@@ -241,7 +243,37 @@ class StoreTests(OutboxTestCase):
                 candidate_id=self.key,
                 destination_key="shared-aws-change-alerts",
                 request=self.request,
+                next_action_at=None,
                 status="invented",
+            )
+
+    def test_non_numeric_next_action_is_rejected(self):
+        with self.assertRaisesRegex(ValueError, "non-negative integer Unix timestamp"):
+            DeliveryRecord(
+                candidate_id=self.key,
+                destination_key="shared-aws-change-alerts",
+                request=self.request,
+                next_action_at=cast(int, "2026-07-13T16:30:00Z"),
+            )
+
+    def test_dispatchable_state_requires_next_action(self):
+        for status in ("pending_queue", "failed_retryable"):
+            with self.subTest(status=status), self.assertRaisesRegex(ValueError, "require next_action_at"):
+                DeliveryRecord(
+                    candidate_id=self.key,
+                    destination_key="shared-aws-change-alerts",
+                    request=self.request,
+                    next_action_at=None,
+                    status=status,
+                )
+
+    def test_next_action_is_an_explicit_constructor_argument(self):
+        with self.assertRaisesRegex(TypeError, "next_action_at"):
+            # Deliberately bypass the static guard to exercise the runtime API.
+            DeliveryRecord(  # type: ignore[call-arg]
+                candidate_id=self.key,
+                destination_key="shared-aws-change-alerts",
+                request=self.request,
             )
 
     def test_every_documented_state_is_accepted(self):
@@ -252,6 +284,7 @@ class StoreTests(OutboxTestCase):
                     destination_key="shared-aws-change-alerts",
                     request=self.request,
                     status=status,
+                    next_action_at=0 if status in ("pending_queue", "failed_retryable") else None,
                 )
                 self.assertEqual(record.status, status)
 

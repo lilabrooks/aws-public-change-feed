@@ -1,6 +1,8 @@
 locals {
-  bucket_name = "apcf-state-${var.deployment_id}"
-  state_key   = "apcf/terraform.tfstate"
+  bucket_name         = "apcf-state-${var.deployment_id}"
+  bootstrap_state_key = "apcf/terraform.tfstate"
+  central_state_key   = "apcf/central/terraform.tfstate"
+  backend_state_keys  = [local.bootstrap_state_key, local.central_state_key]
 }
 
 resource "aws_s3_bucket" "state" {
@@ -67,12 +69,24 @@ data "aws_iam_policy_document" "backend_principal" {
     actions = [
       "s3:GetObject",
       "s3:PutObject",
+    ]
+
+    resources = [
+      for key in local.backend_state_keys : "${aws_s3_bucket.state.arn}/${key}"
+    ]
+  }
+
+  statement {
+    sid = "LockfileObjectActions"
+
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject",
       "s3:DeleteObject",
     ]
 
     resources = [
-      "${aws_s3_bucket.state.arn}/${local.state_key}",
-      "${aws_s3_bucket.state.arn}/${local.state_key}.tflock",
+      for key in local.backend_state_keys : "${aws_s3_bucket.state.arn}/${key}.tflock"
     ]
   }
 
@@ -90,7 +104,7 @@ data "aws_iam_policy_document" "backend_principal" {
     condition {
       test     = "StringLike"
       variable = "s3:prefix"
-      values   = ["apcf/*"]
+      values   = local.backend_state_keys
     }
   }
 }

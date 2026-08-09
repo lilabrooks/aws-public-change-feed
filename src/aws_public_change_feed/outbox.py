@@ -52,6 +52,7 @@ DELIVERY_STATES = (
 )
 
 INITIAL_STATE = "pending_queue"
+SCHEDULED_STATES = frozenset({"pending_queue", "failed_retryable"})
 
 
 class CandidateIdentityError(Exception):
@@ -76,14 +77,26 @@ class DeliveryRecord:
     candidate_id: str
     destination_key: str
     request: Mapping[str, Any]
+    # Required even when the state omits the index key. A default of None made
+    # the default pending state construct an invalid record unless callers knew
+    # about an otherwise hidden invariant.
+    next_action_at: int | None
     status: str = INITIAL_STATE
     state_version: int = 1
     created_at: str = ""
-    next_action_at: str | None = None
+    # DynamoDB indexes this field as a Number. Whole Unix epoch seconds keep
+    # due-work comparisons numeric and avoid an item silently disappearing
+    # from status-next-action-index because its sort key is absent.
 
     def __post_init__(self) -> None:
         if self.status not in DELIVERY_STATES:
             raise ValueError(f"unknown delivery state: {self.status}")
+        if self.status in SCHEDULED_STATES and self.next_action_at is None:
+            raise ValueError(f"{self.status} delivery records require next_action_at")
+        if self.next_action_at is not None and (
+            isinstance(self.next_action_at, bool) or not isinstance(self.next_action_at, int) or self.next_action_at < 0
+        ):
+            raise ValueError("next_action_at must be a non-negative integer Unix timestamp")
 
 
 @dataclass(frozen=True, slots=True)
@@ -219,6 +232,9 @@ def emit(
     which chapter 04 requires to block checkpoint advancement.
     """
 
+    created_timestamp = utc_timestamp(created_at)
+    initial_action_at = int(created_at.timestamp())
+
     candidate_ids: list[str] = []
     created_candidates: list[str] = []
     reused_candidates: list[str] = []
@@ -254,7 +270,8 @@ def emit(
             candidate_id=key,
             destination_key=destination_key,
             request=build_delivery_request(durable, destination_key, created_at),
-            created_at=utc_timestamp(created_at),
+            created_at=created_timestamp,
+            next_action_at=initial_action_at,
         )
         if store.put_delivery_if_absent(record):
             if key in reused_candidates:

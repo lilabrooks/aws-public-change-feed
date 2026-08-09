@@ -19,3 +19,7 @@ boto3==1.43.65
 # imported botocore lazily; this one is a module-level import in `loading.py`
 # and is declared with the code that needs it.
 PyYAML==6.0.3
+# Runtime release loading validates the fetched document bodies against the
+# same owned schemas used before publication. Pointer metadata alone cannot
+# make incompatible or extended document bytes safe to evaluate.
+jsonschema==4.26.0

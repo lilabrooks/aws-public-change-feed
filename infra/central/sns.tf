@@ -15,6 +15,32 @@ resource "aws_sns_topic" "operations" {
 }
 
 data "aws_iam_policy_document" "operations_topic" {
+  # CloudWatch alarms publish as the CloudWatch service principal. An
+  # account-root grant does not authorize that service call, so keep the
+  # principal and its source conditions explicit.
+  statement {
+    sid       = "AllowCloudWatchAlarmPublish"
+    actions   = ["sns:Publish"]
+    resources = [aws_sns_topic.operations.arn]
+
+    principals {
+      type        = "Service"
+      identifiers = ["cloudwatch.amazonaws.com"]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:cloudwatch:${local.region}:${data.aws_caller_identity.current.account_id}:alarm:apcf-${local.deployment_id}-*"]
+    }
+  }
+
   statement {
     sid       = "AllowAccountPublish"
     actions   = ["sns:Publish"]

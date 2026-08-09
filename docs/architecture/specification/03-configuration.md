@@ -99,6 +99,8 @@ The initial risk types are configuration data, not an open plugin system. Adding
 7. Promote the active pointer with `If-Match` against that observed ETag. A first promotion into a new deployment uses `If-None-Match: *` instead. `active-versions.json` is the release manifest; promoting it is what records the release, and its prior versions are the retained history.
 8. Run a runtime compatibility probe before announcing success.
 
+The compatibility probe validates the pointer and both fetched document bodies against their owned schemas after exact-version hash verification. It also requires the configuration's `version` and inventory's `schema_version` to equal the corresponding version recorded in the pointer. A pointer claim cannot make incompatible bytes usable, and runtime loading rejects unknown fields just as publication validation does.
+
 S3 has no version-ID write precondition. The ETag is the concurrency token for promotion; version IDs identify exact stored versions for reads, audit, and rollback. A failed promotion is not one condition: 412 means a competing publisher promoted first and publication stops for a fresh decision, 409 leaves the outcome indeterminate and requires re-reading the pointer, and 404 means the pointer is missing or deleted and raises an operational alarm.
 
 Rollback reads an earlier retained pointer version by ID and writes its release references forward through the same `If-Match` path, with a fresh `promoted_at`. It never overwrites a release, and never republishes historical bytes unchanged.

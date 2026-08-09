@@ -101,6 +101,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
           annotations = {}
           metrics = [
             [local.metrics_namespace, "MaxFeedStalenessSeconds", { "stat" : "Maximum", "id" : "fs", "label" : "max feed staleness (s)" }],
+            [{ "expression" : "SEARCH('{${local.metrics_namespace},FeedName} MetricName=\"FeedStalenessSeconds\"', 'Maximum', 900)", "id" : "feeds", "label" : "", "region" : local.region }],
           ]
         }
       },

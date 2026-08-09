@@ -99,7 +99,8 @@ S3 lifecycle enforces the manifest history, the log groups, and the raw-snapshot
 ### Feed acquisition
 
 - Attempts, successes, `304` responses, and failures by feed.
-- Time since last success by feed.
+- `FeedStalenessSeconds` (Maximum) with the bounded `FeedName` dimension for time since last success by feed.
+- Dimensionless `MaxFeedStalenessSeconds` (Maximum) across the configured feeds for the aggregate alarm.
 - Age of newest observed publication by feed.
 - DNS, TLS, redirect, response-limit, content-type, and parser rejections.
 - Response bytes, item counts, and raw-snapshot failures.
