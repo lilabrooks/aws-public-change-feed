@@ -21,7 +21,7 @@ from typing import cast
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from aws_public_change_feed.identity import audience_fingerprint, candidate_id  # noqa: E402
+from aws_public_change_feed.identity import audience_fingerprint, candidate_id, queue_dispatch_id  # noqa: E402
 from aws_public_change_feed.outbox import (  # noqa: E402
     DELIVERY_STATES,
     CandidateIdentityError,
@@ -287,6 +287,192 @@ class StoreTests(OutboxTestCase):
                     next_action_at=0 if status in ("pending_queue", "failed_retryable") else None,
                 )
                 self.assertEqual(record.status, status)
+
+
+class DispatchFieldTests(OutboxTestCase):
+    """The delivery item's claim fields, validated the way chapter 02 reads them."""
+
+    def base(self, **fields):
+        return dict(
+            candidate_id=self.key,
+            destination_key="shared-aws-change-alerts",
+            request=self.request,
+            next_action_at=0,
+            **fields,
+        )
+
+    def test_a_claim_carries_both_generation_and_dispatch_id(self):
+        dispatch_id = queue_dispatch_id(self.request["request_id"], 1)
+        record = DeliveryRecord(**self.base(dispatch_generation=1, dispatch_id=dispatch_id))
+        self.assertEqual(record.dispatch_generation, 1)
+        self.assertEqual(record.dispatch_id, dispatch_id)
+
+    def test_a_dispatch_id_requires_its_generation(self):
+        with self.assertRaisesRegex(ValueError, "dispatch_id requires a dispatch_generation"):
+            DeliveryRecord(**self.base(dispatch_id=queue_dispatch_id(self.request["request_id"], 1)))
+
+    def test_a_generation_is_a_positive_integer(self):
+        for bad in (0, -1, True, "1"):
+            with self.subTest(generation=bad):
+                with self.assertRaisesRegex(ValueError, "dispatch_generation must be a positive integer"):
+                    DeliveryRecord(**self.base(dispatch_generation=cast(int, bad)))
+
+    def test_a_dispatch_id_is_a_digest(self):
+        with self.assertRaisesRegex(ValueError, "dispatch_id must be a lowercase SHA-256 digest"):
+            DeliveryRecord(**self.base(dispatch_generation=1, dispatch_id="not-a-digest"))
+
+
+class DispatchStoreTests(OutboxTestCase):
+    """The conditional claim and transition operations the dispatcher drives."""
+
+    def seed(self, status="pending_queue", next_action_at=1000, **fields):
+        record = DeliveryRecord(
+            candidate_id=self.key,
+            destination_key="shared-aws-change-alerts",
+            request=self.request,
+            next_action_at=next_action_at,
+            status=status,
+            **fields,
+        )
+        self.store.put_delivery_if_absent(record)
+        return record
+
+    def test_query_due_returns_only_due_work_oldest_first(self):
+        pending_key = self.key
+        due_key = "due-key"
+        retry_key = "retry-key"
+        posted_key = "posted-key"
+        self.seed(next_action_at=2000)
+        self.store.put_delivery_if_absent(
+            DeliveryRecord(
+                candidate_id=due_key,
+                destination_key="shared-aws-change-alerts",
+                request=self.request,
+                next_action_at=500,
+            )
+        )
+        self.store.put_delivery_if_absent(
+            DeliveryRecord(
+                candidate_id=retry_key,
+                destination_key="shared-aws-change-alerts",
+                request=self.request,
+                status="failed_retryable",
+                next_action_at=1500,
+            )
+        )
+        self.store.put_delivery_if_absent(
+            DeliveryRecord(
+                candidate_id=posted_key,
+                destination_key="shared-aws-change-alerts",
+                request=self.request,
+                status="posted",
+                next_action_at=3000,
+            )
+        )
+
+        self.assertEqual(
+            self.store.query_due("pending_queue", due_before=2500, limit=10),
+            ((500, due_key), (2000, pending_key)),
+            msg="oldest first, matching the GSI range key",
+        )
+        self.assertEqual(self.store.query_due("failed_retryable", due_before=2500, limit=10), ((1500, retry_key),))
+        self.assertEqual(self.store.query_due("posted", due_before=2500, limit=10), ())
+        self.assertEqual(
+            self.store.query_due("pending_queue", due_before=900, limit=10),
+            ((500, due_key),),
+            msg="future pending work is not due",
+        )
+
+    def test_query_due_respects_the_limit(self):
+        self.seed(next_action_at=100)
+        self.store.put_delivery_if_absent(
+            DeliveryRecord(
+                candidate_id="other",
+                destination_key="shared-aws-change-alerts",
+                request=self.request,
+                next_action_at=200,
+            )
+        )
+        self.assertEqual(self.store.query_due("pending_queue", due_before=300, limit=1), ((100, self.key),))
+
+    def test_claim_succeeds_once_and_refuses_a_second_claim(self):
+        self.seed()
+        claimed = self.store.claim_dispatch(
+            self.key,
+            generation=1,
+            dispatch_id=queue_dispatch_id(self.request["request_id"], 1),
+            due_before=2000,
+        )
+        self.assertTrue(claimed)
+        record = delivery(self.store, self.key)
+        self.assertEqual(record.dispatch_generation, 1)
+        self.assertEqual(record.state_version, 2)
+
+        again = self.store.claim_dispatch(
+            self.key,
+            generation=2,
+            dispatch_id=queue_dispatch_id(self.request["request_id"], 2),
+            due_before=2000,
+        )
+        self.assertFalse(again, msg="an active claim prevents a second concurrent generation")
+        self.assertEqual(delivery(self.store, self.key).dispatch_generation, 1)
+
+    def test_claim_refuses_work_that_is_not_yet_due(self):
+        self.seed(next_action_at=5000)
+        self.assertFalse(
+            self.store.claim_dispatch(
+                self.key,
+                generation=1,
+                dispatch_id=queue_dispatch_id(self.request["request_id"], 1),
+                due_before=2000,
+            )
+        )
+
+    def test_claim_refuses_a_resolved_record(self):
+        self.seed(status="queued", next_action_at=1000)
+        self.assertFalse(
+            self.store.claim_dispatch(
+                self.key,
+                generation=1,
+                dispatch_id=queue_dispatch_id(self.request["request_id"], 1),
+                due_before=2000,
+            )
+        )
+
+    def test_mark_queued_requires_the_claimed_dispatch_id(self):
+        self.seed(dispatch_generation=1, dispatch_id=queue_dispatch_id(self.request["request_id"], 1))
+        self.assertFalse(
+            self.store.mark_queued(
+                self.key, dispatch_id=queue_dispatch_id(self.request["request_id"], 9), message_id="m", at=2000
+            )
+        )
+        self.assertTrue(
+            self.store.mark_queued(
+                self.key,
+                dispatch_id=queue_dispatch_id(self.request["request_id"], 1),
+                message_id="m",
+                at=2000,
+            )
+        )
+        record = delivery(self.store, self.key)
+        self.assertEqual(record.status, "queued")
+        self.assertEqual(record.queue_message_id, "m")
+        self.assertEqual(record.state_version, 2, msg="the queued transition bumps the version once")
+        self.assertEqual(record.next_action_at, 2000, msg="queued work records its queue-entry time")
+
+    def test_mark_queued_refuses_an_already_queued_record(self):
+        self.seed(
+            status="queued",
+            dispatch_generation=1,
+            dispatch_id=queue_dispatch_id(self.request["request_id"], 1),
+            queue_message_id="m",
+            next_action_at=1000,
+        )
+        self.assertFalse(
+            self.store.mark_queued(
+                self.key, dispatch_id=queue_dispatch_id(self.request["request_id"], 1), message_id="m2", at=2000
+            )
+        )
 
 
 if __name__ == "__main__":

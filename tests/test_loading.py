@@ -197,11 +197,24 @@ class ReleaseLoadingTests(ReleaseFixture):
 
     def test_packaged_release_schemas_match_the_authoritative_contracts(self):
         resources = importlib.resources.files("aws_public_change_feed.schemas")
-        for name in ("active-versions.schema.json", "config.schema.json", "inventory.schema.json"):
+        packaged = {
+            path.name: json.loads(path.read_text(encoding="utf-8"))
+            for path in resources.iterdir()
+            if path.is_file() and path.name.endswith(".schema.json")
+        }
+        authoritative = {
+            name: json.loads((ROOT / "schemas" / name).read_text(encoding="utf-8"))
+            for name in packaged
+            if (ROOT / "schemas" / name).exists()
+        }
+        self.assertEqual(
+            set(packaged),
+            set(authoritative),
+            msg="every packaged schema must have an authoritative copy under schemas/",
+        )
+        for name in sorted(packaged):
             with self.subTest(schema=name):
-                packaged = json.loads(resources.joinpath(name).read_text(encoding="utf-8"))
-                authoritative = json.loads((ROOT / "schemas" / name).read_text(encoding="utf-8"))
-                self.assertEqual(packaged, authoritative)
+                self.assertEqual(packaged[name], authoritative[name])
 
     def test_an_unsupported_pointer_schema_version_is_refused(self):
         def bump(document):
