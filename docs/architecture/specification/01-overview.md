@@ -85,4 +85,4 @@ The canonical deployment declares 100 accounts as metadata, 500 environments, 25
 
 ## Current status
 
-The architecture, contracts, examples, validators, and tests are present. The Terraform data plane is provisioned; the Lambda functions, schedules, runtime adapters, and dispatch and Slack packages are the remaining implementation milestones. Acceptance language distinguishes design validation from deployed evidence.
+The architecture, contracts, examples, validators, and tests are present. The Terraform data plane is provisioned. Feed processing and queue dispatch run behind local ports, with DynamoDB delivery and SQS FIFO adapters covered by service mocks. The Lambda handlers, schedules, remaining runtime adapters, Slack worker, and recovery reconciler are the remaining implementation milestones. Acceptance language distinguishes design validation from deployed evidence.

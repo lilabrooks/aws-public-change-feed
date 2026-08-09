@@ -17,8 +17,14 @@ import json
 import sys
 import unittest
 from collections import Counter
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+
+import boto3
+import yaml
+from botocore.exceptions import ClientError, EndpointConnectionError
+from moto import mock_aws
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -28,6 +34,7 @@ from aws_public_change_feed.dispatch import (  # noqa: E402
     InvalidDeliveryRequest,
     SendResult,
     SendStatus,
+    SQSQueueSender,
     dispatch_due_work,
     serialize_request,
 )
@@ -47,6 +54,14 @@ QUEUE_URL = "https://sqs.us-east-1.amazonaws.com/667653114001/apcf-delivery-dev.
 def load_json(name):
     with (ROOT / "examples" / name).open(encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def load_yaml(name):
+    with (ROOT / "examples" / name).open(encoding="utf-8") as handle:
+        return yaml.safe_load(handle)
+
+
+MAX_REQUEST_BYTES = load_yaml("config.yaml")["message_policy"]["max_delivery_request_bytes"]
 
 
 def record(store, key, request, destination_key, status="pending_queue", next_action_at=DUE, **fields):
@@ -124,6 +139,7 @@ class DispatchTestCase(unittest.TestCase):
             self.sender,
             queue_url=QUEUE_URL,
             now=kwargs.pop("now", CLOCK),
+            max_delivery_request_bytes=kwargs.pop("max_delivery_request_bytes", MAX_REQUEST_BYTES),
             metrics=self.metrics,
             **kwargs,
         )
@@ -242,6 +258,7 @@ class DispatchAcceptanceTests(DispatchTestCase):
             self.sender,
             queue_url=QUEUE_URL,
             now=CLOCK,
+            max_delivery_request_bytes=MAX_REQUEST_BYTES,
             metrics=self.metrics,
         )
         self.assertEqual(first.failed_transitions, 1)
@@ -256,6 +273,7 @@ class DispatchAcceptanceTests(DispatchTestCase):
             self.sender,
             queue_url=QUEUE_URL,
             now=CLOCK,
+            max_delivery_request_bytes=MAX_REQUEST_BYTES,
             metrics=self.metrics,
         )
         self.assertEqual(second.reused_claims, 1)
@@ -329,6 +347,26 @@ class DispatchAcceptanceTests(DispatchTestCase):
             [older["destination_key"], self.destination],
             msg="chapter 02 orders due work by next_action_at so the oldest dispatches first",
         )
+
+    def test_limit_caps_the_combined_cross_status_batch(self):
+        older = self.second_request()
+        older_key = older["candidate"]["candidate_id"]
+        record(
+            self.store,
+            older_key,
+            older,
+            older["destination_key"],
+            status="failed_retryable",
+            next_action_at=DUE - 300,
+        )
+        self.seed()
+
+        result = self.dispatch(limit=1)
+
+        self.assertEqual(result.considered, 1)
+        self.assertEqual(len(self.sender.calls), 1)
+        self.assertEqual(self.sender.last["destination_key"], older["destination_key"])
+        self.assertEqual(stored(self.store, self.key).status, "pending_queue")
 
     def test_not_yet_due_work_is_not_dispatched(self):
         self.seed(next_action_at=int(CLOCK.timestamp()) + 60)
@@ -407,6 +445,66 @@ class DispatchValidationTests(DispatchTestCase):
             self.dispatch()
         self.assertEqual(self.sender.calls, [])
 
+    def test_an_oversize_request_is_rejected_before_any_claim(self):
+        self.seed()
+        maximum = len(serialize_request(self.request).encode("utf-8")) - 1
+
+        with self.assertRaisesRegex(InvalidDeliveryRequest, rf"maximum is {maximum}"):
+            self.dispatch(max_delivery_request_bytes=maximum)
+
+        self.assertEqual(self.sender.calls, [])
+        self.assertIsNone(stored(self.store, self.key).dispatch_id)
+
+
+class SQSQueueSenderTests(unittest.TestCase):
+    @mock_aws
+    def test_moto_queue_receives_the_exact_body_group_and_dedupe_id(self):
+        request = load_json("delivery-request.json")
+        client = boto3.client("sqs", region_name="us-west-2")
+        queue_url = client.create_queue(
+            QueueName="dispatcher-test.fifo",
+            Attributes={"FifoQueue": "true", "ContentBasedDeduplication": "false"},
+        )["QueueUrl"]
+        dispatch_id = queue_dispatch_id(request["request_id"], 1)
+
+        result = SQSQueueSender(client).send(request, queue_url=queue_url, dispatch_id=dispatch_id)
+
+        self.assertEqual(result.status, SendStatus.ACCEPTED)
+        self.assertIsNotNone(result.message_id)
+        received = client.receive_message(QueueUrl=queue_url, AttributeNames=["All"])["Messages"][0]
+        self.assertEqual(json.loads(received["Body"]), request)
+        self.assertEqual(received["Attributes"]["MessageGroupId"], request["destination_key"])
+        self.assertEqual(received["Attributes"]["MessageDeduplicationId"], dispatch_id)
+
+    def test_a_service_error_is_a_definitive_rejection(self):
+        class ServiceErrorClient:
+            def send_message(self, **kwargs):
+                raise ClientError(
+                    {"Error": {"Code": "AWS.SimpleQueueService.NonExistentQueue", "Message": "missing"}},
+                    "SendMessage",
+                )
+
+        request = load_json("delivery-request.json")
+        with self.assertRaisesRegex(DispatchSendRejected, "NonExistentQueue"):
+            SQSQueueSender(ServiceErrorClient()).send(
+                request,
+                queue_url=QUEUE_URL,
+                dispatch_id=queue_dispatch_id(request["request_id"], 1),
+            )
+
+    def test_a_transport_error_is_unknown(self):
+        class TransportErrorClient:
+            def send_message(self, **kwargs):
+                raise EndpointConnectionError(endpoint_url=QUEUE_URL)
+
+        request = load_json("delivery-request.json")
+        result = SQSQueueSender(TransportErrorClient()).send(
+            request,
+            queue_url=QUEUE_URL,
+            dispatch_id=queue_dispatch_id(request["request_id"], 1),
+        )
+        self.assertEqual(result, SendResult(SendStatus.UNKNOWN))
+
 
 class DispatchRejectionTests(DispatchTestCase):
     def test_a_definitive_sqs_rejection_raises_and_keeps_the_claim(self):
@@ -414,6 +512,18 @@ class DispatchRejectionTests(DispatchTestCase):
         self.sender = RejectingSender()
 
         with self.assertRaisesRegex(DispatchSendRejected, "rejected"):
+            self.dispatch()
+
+        delivery = stored(self.store, self.key)
+        self.assertEqual(delivery.status, "pending_queue")
+        self.assertEqual(delivery.dispatch_generation, 1)
+        self.assertIsNotNone(delivery.dispatch_id)
+
+    def test_a_returned_rejected_status_raises_and_keeps_the_claim(self):
+        self.seed()
+        self.sender = RecordingSender(SendResult(SendStatus.REJECTED))
+
+        with self.assertRaisesRegex(DispatchSendRejected, "without queue acceptance"):
             self.dispatch()
 
         delivery = stored(self.store, self.key)
@@ -439,6 +549,24 @@ class DispatchClaimRaceTests(DispatchTestCase):
         delivery = stored(self.store, self.key)
         self.assertEqual(delivery.status, "queued")
         self.assertEqual(delivery.dispatch_id, queue_dispatch_id(self.request["request_id"], 1))
+
+    def test_an_aba_race_skips_the_stale_claim_then_uses_the_next_generation(self):
+        self.seed(status="failed_retryable", dispatch_generation=1, state_version=4)
+        race = AbaClaimRaceStore(self.store)
+        self.store = race
+
+        first = self.dispatch()
+
+        self.assertEqual(first.new_claims, 0)
+        self.assertEqual(self.sender.calls, [])
+        advanced = stored(self.store, self.key)
+        self.assertEqual(advanced.dispatch_generation, 2)
+        self.assertIsNone(advanced.dispatch_id)
+
+        self.store = race._wrapped
+        second = self.dispatch()
+        self.assertEqual(second.new_claims, 1)
+        self.assertEqual(self.sender.last["dispatch_id"], queue_dispatch_id(self.request["request_id"], 3))
 
     def test_cross_status_due_work_is_oldest_first(self):
         # A failed_retryable record at DUE-500 is older than a pending_queue
@@ -497,6 +625,46 @@ class RejectingSender(RecordingSender):
         raise DispatchSendRejected(f"queue does not exist: {queue_url}")
 
 
+class AbaClaimRaceStore(InMemoryOutboxStore):
+    """Advance a claimed record through one queue cycle before the stale write."""
+
+    def __init__(self, wrapped):
+        super().__init__()
+        self._wrapped = wrapped
+
+    def get_delivery(self, candidate):
+        return self._wrapped.get_delivery(candidate)
+
+    def query_due(self, status, *, due_before, limit):
+        return self._wrapped.query_due(status, due_before=due_before, limit=limit)
+
+    def claim_dispatch(self, candidate, *, expected_state_version, expected_generation, request_id, due_before):
+        claim = self._wrapped.claim_dispatch(
+            candidate,
+            expected_state_version=expected_state_version,
+            expected_generation=expected_generation,
+            request_id=request_id,
+            due_before=due_before,
+        )
+        assert claim is not None
+        _, dispatch_id = claim
+        self._wrapped.mark_queued(candidate, dispatch_id=dispatch_id, message_id="winner", at=due_before)
+        queued = self._wrapped.get_delivery(candidate)
+        assert queued is not None
+        self._wrapped._deliveries[candidate] = replace(
+            queued,
+            status="failed_retryable",
+            dispatch_id=None,
+            queue_message_id=None,
+            next_action_at=due_before,
+            state_version=queued.state_version + 1,
+        )
+        return None
+
+    def mark_queued(self, candidate, *, dispatch_id, message_id, at):
+        return self._wrapped.mark_queued(candidate, dispatch_id=dispatch_id, message_id=message_id, at=at)
+
+
 class LostClaimRaceStore(InMemoryOutboxStore):
     """A store whose `claim_dispatch` fails after writing the winner's claim.
 
@@ -522,14 +690,15 @@ class LostClaimRaceStore(InMemoryOutboxStore):
     def query_due(self, status, *, due_before, limit):
         return self._wrapped.query_due(status, due_before=due_before, limit=limit)
 
-    def claim_dispatch(self, candidate, *, generation, dispatch_id, due_before):
+    def claim_dispatch(self, candidate, *, expected_state_version, expected_generation, request_id, due_before):
         self._wrapped.claim_dispatch(
             candidate,
-            generation=generation,
-            dispatch_id=dispatch_id,
+            expected_state_version=expected_state_version,
+            expected_generation=expected_generation,
+            request_id=request_id,
             due_before=due_before,
         )
-        return False
+        return None
 
     def mark_queued(self, candidate, *, dispatch_id, message_id, at):
         return self._wrapped.mark_queued(candidate, dispatch_id=dispatch_id, message_id=message_id, at=at)
@@ -554,10 +723,18 @@ class LostClaimRaceToResolvedStore(InMemoryOutboxStore):
     def query_due(self, status, *, due_before, limit):
         return self._wrapped.query_due(status, due_before=due_before, limit=limit)
 
-    def claim_dispatch(self, candidate, *, generation, dispatch_id, due_before):
-        self._wrapped.claim_dispatch(candidate, generation=generation, dispatch_id=dispatch_id, due_before=due_before)
+    def claim_dispatch(self, candidate, *, expected_state_version, expected_generation, request_id, due_before):
+        claim = self._wrapped.claim_dispatch(
+            candidate,
+            expected_state_version=expected_state_version,
+            expected_generation=expected_generation,
+            request_id=request_id,
+            due_before=due_before,
+        )
+        assert claim is not None
+        _, dispatch_id = claim
         self._wrapped.mark_queued(candidate, dispatch_id=dispatch_id, message_id="fast-msg", at=due_before)
-        return False
+        return None
 
     def mark_queued(self, candidate, *, dispatch_id, message_id, at):
         return self._wrapped.mark_queued(candidate, dispatch_id=dispatch_id, message_id=message_id, at=at)
@@ -585,10 +762,16 @@ class LostClaimRaceToNothingStore(InMemoryOutboxStore):
     def query_due(self, status, *, due_before, limit):
         return self._wrapped.query_due(status, due_before=due_before, limit=limit)
 
-    def claim_dispatch(self, candidate, *, generation, dispatch_id, due_before):
-        self._wrapped.claim_dispatch(candidate, generation=generation, dispatch_id=dispatch_id, due_before=due_before)
+    def claim_dispatch(self, candidate, *, expected_state_version, expected_generation, request_id, due_before):
+        self._wrapped.claim_dispatch(
+            candidate,
+            expected_state_version=expected_state_version,
+            expected_generation=expected_generation,
+            request_id=request_id,
+            due_before=due_before,
+        )
         self._vanished.add(candidate)
-        return False
+        return None
 
     def mark_queued(self, candidate, *, dispatch_id, message_id, at):
         return self._wrapped.mark_queued(candidate, dispatch_id=dispatch_id, message_id=message_id, at=at)

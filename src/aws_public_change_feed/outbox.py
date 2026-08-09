@@ -30,7 +30,7 @@ from datetime import datetime
 from typing import Any, Protocol
 
 from .candidates import CONTRACT_VERSION, utc_timestamp
-from .identity import audience_fingerprint, candidate_id, delivery_request_id
+from .identity import audience_fingerprint, candidate_id, delivery_request_id, queue_dispatch_id
 
 __all__ = [
     "CANDIDATE_KEY_PREFIX",
@@ -41,10 +41,12 @@ __all__ = [
     "EmissionResult",
     "InMemoryOutboxStore",
     "OutboxStore",
+    "OversizeDeliveryError",
     "SCHEDULED_STATES",
     "SCHEDULED_STATES_ORDERED",
     "build_delivery_request",
     "emit",
+    "serialized_size",
     "verify_durable",
 ]
 
@@ -80,6 +82,10 @@ class CandidateIdentityError(Exception):
     handle alongside ordinary validation. Nothing recovers from it
     automatically.
     """
+
+
+class OversizeDeliveryError(ValueError):
+    """A candidate or request exceeded its reviewed UTF-8 JSON byte limit."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,6 +125,8 @@ class DeliveryRecord:
     def __post_init__(self) -> None:
         if self.status not in DELIVERY_STATES:
             raise ValueError(f"unknown delivery state: {self.status}")
+        if isinstance(self.state_version, bool) or not isinstance(self.state_version, int) or self.state_version < 1:
+            raise ValueError("state_version must be a positive integer")
         if self.status in SCHEDULED_STATES and self.next_action_at is None:
             raise ValueError(f"{self.status} delivery records require next_action_at")
         if self.next_action_at is not None and (
@@ -135,6 +143,17 @@ class DeliveryRecord:
             raise ValueError("dispatch_id must be a lowercase SHA-256 digest")
         if self.dispatch_id is not None and self.dispatch_generation is None:
             raise ValueError("dispatch_id requires a dispatch_generation")
+        if self.dispatch_id is not None:
+            assert self.dispatch_generation is not None
+            request_id = self.request.get("request_id")
+            if not isinstance(request_id, str):
+                raise ValueError("dispatch_id requires a valid request_id")
+            try:
+                expected_dispatch_id = queue_dispatch_id(request_id, self.dispatch_generation)
+            except ValueError:
+                raise ValueError("dispatch_id requires a valid request_id") from None
+            if self.dispatch_id != expected_dispatch_id:
+                raise ValueError("dispatch_id does not derive from request_id and dispatch_generation")
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,13 +198,21 @@ class OutboxStore(Protocol):
         """
         ...
 
-    def claim_dispatch(self, candidate: str, *, generation: int, dispatch_id: str, due_before: int) -> bool:
-        """Claim `generation` and its dispatch ID for a due, unclaimed record.
+    def claim_dispatch(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_generation: int | None,
+        request_id: str,
+        due_before: int,
+    ) -> tuple[int, str] | None:
+        """Claim the next generation for the exact due record the caller read.
 
         Succeeds only when the record is still dispatchable, still due, and has
-        no active claim, and writes the claim plus a state-version bump. This is
-        what keeps two concurrent dispatchers from claiming different
-        generations for one queue attempt.
+        no active claim, and its state version and prior generation still equal
+        the caller's observation. The store derives the next generation and ID,
+        writes the claim plus a state-version bump, and returns both values.
         """
         ...
 
@@ -240,19 +267,33 @@ class InMemoryOutboxStore:
         due.sort(key=lambda entry: entry[0])
         return tuple(due[:limit])
 
-    def claim_dispatch(self, candidate: str, *, generation: int, dispatch_id: str, due_before: int) -> bool:
+    def claim_dispatch(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_generation: int | None,
+        request_id: str,
+        due_before: int,
+    ) -> tuple[int, str] | None:
         record = self._deliveries.get(candidate)
         if record is None or record.status not in SCHEDULED_STATES or record.dispatch_id is not None:
-            return False
+            return None
         if record.next_action_at is None or record.next_action_at > due_before:
-            return False
+            return None
+        if record.state_version != expected_state_version or record.dispatch_generation != expected_generation:
+            return None
+        if record.request.get("request_id") != request_id:
+            return None
+        generation = (expected_generation or 0) + 1
+        dispatch_id = queue_dispatch_id(request_id, generation)
         self._deliveries[candidate] = replace(
             record,
             dispatch_generation=generation,
             dispatch_id=dispatch_id,
             state_version=record.state_version + 1,
         )
-        return True
+        return generation, dispatch_id
 
     def mark_queued(self, candidate: str, *, dispatch_id: str, message_id: str, at: int) -> bool:
         record = self._deliveries.get(candidate)
@@ -395,8 +436,37 @@ class DynamoDBDeliveryStore:
         prefix = len(CANDIDATE_KEY_PREFIX)
         return tuple((int(item["next_action_at"]["N"]), item["PK"]["S"][prefix:]) for item in response["Items"])
 
-    def claim_dispatch(self, candidate: str, *, generation: int, dispatch_id: str, due_before: int) -> bool:
+    def claim_dispatch(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_generation: int | None,
+        request_id: str,
+        due_before: int,
+    ) -> tuple[int, str] | None:
         from botocore.exceptions import ClientError
+
+        generation = (expected_generation or 0) + 1
+        dispatch_id = queue_dispatch_id(request_id, generation)
+        condition = (
+            "#status IN (:pending, :retryable) AND next_action_at <= :due "
+            "AND attribute_not_exists(dispatch_id) AND state_version = :expected_state_version"
+        )
+        values: dict[str, dict[str, str]] = {
+            ":pending": {"S": "pending_queue"},
+            ":retryable": {"S": "failed_retryable"},
+            ":due": {"N": str(due_before)},
+            ":generation": {"N": str(generation)},
+            ":dispatch_id": {"S": dispatch_id},
+            ":expected_state_version": {"N": str(expected_state_version)},
+            ":one": {"N": "1"},
+        }
+        if expected_generation is None:
+            condition += " AND attribute_not_exists(dispatch_generation)"
+        else:
+            condition += " AND dispatch_generation = :expected_generation"
+            values[":expected_generation"] = {"N": str(expected_generation)}
 
         try:
             self._client.update_item(
@@ -406,24 +476,15 @@ class DynamoDBDeliveryStore:
                     "SET dispatch_generation = :generation, dispatch_id = :dispatch_id, "
                     "state_version = state_version + :one"
                 ),
-                ConditionExpression=(
-                    "#status IN (:pending, :retryable) AND next_action_at <= :due AND attribute_not_exists(dispatch_id)"
-                ),
+                ConditionExpression=condition,
                 ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues={
-                    ":pending": {"S": "pending_queue"},
-                    ":retryable": {"S": "failed_retryable"},
-                    ":due": {"N": str(due_before)},
-                    ":generation": {"N": str(generation)},
-                    ":dispatch_id": {"S": dispatch_id},
-                    ":one": {"N": "1"},
-                },
+                ExpressionAttributeValues=values,
             )
         except ClientError as error:
             if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
-                return False
+                return None
             raise
-        return True
+        return generation, dispatch_id
 
     def mark_queued(self, candidate: str, *, dispatch_id: str, message_id: str, at: int) -> bool:
         from botocore.exceptions import ClientError
@@ -483,6 +544,25 @@ def _assert_identity(candidate: Mapping[str, Any]) -> None:
         raise CandidateIdentityError(f"stored candidate {candidate['candidate_id']} does not match its identity fields")
 
 
+def serialized_size(value: Mapping[str, Any]) -> int:
+    """Return the contract's compact UTF-8 JSON byte count."""
+
+    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def _byte_limit(message_policy: Mapping[str, Any], field: str) -> int:
+    value = message_policy.get(field)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise ValueError(f"message policy {field} must be a positive integer")
+    return value
+
+
+def _require_within_limit(label: str, value: Mapping[str, Any], maximum: int) -> None:
+    actual = serialized_size(value)
+    if actual > maximum:
+        raise OversizeDeliveryError(f"{label} is {actual} UTF-8 JSON bytes; maximum is {maximum}")
+
+
 def build_delivery_request(
     candidate: Mapping[str, Any],
     destination_key: str,
@@ -517,11 +597,13 @@ def emit(
     candidates: Sequence[Mapping[str, Any]],
     *,
     inventory: Mapping[str, Any],
+    message_policy: Mapping[str, Any],
     created_at: datetime,
 ) -> EmissionResult:
     """Make each candidate and its `pending_queue` delivery record durable.
 
-    Safe to repeat. A candidate that already exists is loaded and validated
+    Safe to repeat. Candidate and request byte ceilings are checked before a
+    new candidate write. A candidate that already exists is loaded and validated
     rather than replaced, and a missing delivery record is repaired from the
     stored candidate's request rather than from the current release.
 
@@ -529,6 +611,8 @@ def emit(
     which chapter 04 requires to block checkpoint advancement.
     """
 
+    max_candidate_bytes = _byte_limit(message_policy, "max_candidate_bytes")
+    max_delivery_request_bytes = _byte_limit(message_policy, "max_delivery_request_bytes")
     created_timestamp = utc_timestamp(created_at)
     initial_action_at = int(created_at.timestamp())
 
@@ -542,18 +626,39 @@ def emit(
         key = candidate["candidate_id"]
         _assert_identity(candidate)
         candidate_ids.append(key)
+        created_new = False
+        destination_key: str | None = None
+        request: Mapping[str, Any] | None = None
 
-        if store.put_candidate_if_absent(candidate):
-            created_candidates.append(key)
-            durable = candidate
+        stored = store.get_candidate(key)
+        if stored is None:
+            # A request is inseparable from a newly durable candidate. Check
+            # both limits before the conditional candidate write so an item
+            # that can never be queued is not left behind for repair.
+            _require_within_limit("alert candidate", candidate, max_candidate_bytes)
+            destination_key = _destination_key(inventory, candidate["route_id"])
+            request = build_delivery_request(candidate, destination_key, created_at)
+            _require_within_limit("delivery request", request, max_delivery_request_bytes)
+            if store.put_candidate_if_absent(candidate):
+                created_candidates.append(key)
+                durable = candidate
+                created_new = True
+            else:
+                # Another writer won after the read. Load its immutable value
+                # and follow the same replay path as an item found initially.
+                stored = store.get_candidate(key)
+                if stored is None:
+                    raise CandidateIdentityError(f"candidate {key} reported present but could not be loaded")
+                _assert_identity(stored)
+                _require_within_limit("stored alert candidate", stored, max_candidate_bytes)
+                reused_candidates.append(key)
+                durable = stored
         else:
             # Chapter 04: load and validate the stored candidate rather than
             # replacing it. Its evidence, release, and creation time are
             # immutable once written.
-            stored = store.get_candidate(key)
-            if stored is None:
-                raise CandidateIdentityError(f"candidate {key} reported present but could not be loaded")
             _assert_identity(stored)
+            _require_within_limit("stored alert candidate", stored, max_candidate_bytes)
             reused_candidates.append(key)
             durable = stored
 
@@ -562,11 +667,16 @@ def emit(
 
         # Repairing a missing record reuses the durable candidate, so a replay
         # under a newer release cannot change the payload already committed.
-        destination_key = _destination_key(inventory, durable["route_id"])
+        if not created_new:
+            destination_key = _destination_key(inventory, durable["route_id"])
+            request = build_delivery_request(durable, destination_key, created_at)
+            _require_within_limit("stored delivery request", request, max_delivery_request_bytes)
+        assert destination_key is not None
+        assert request is not None
         record = DeliveryRecord(
             candidate_id=key,
             destination_key=destination_key,
-            request=build_delivery_request(durable, destination_key, created_at),
+            request=request,
             created_at=created_timestamp,
             next_action_at=initial_action_at,
         )

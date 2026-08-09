@@ -374,6 +374,8 @@
               <li>Feed acquisition with host allowlisting, address validation, and DOCTYPE-refusing parsing</li>
               <li>Route-scoped candidate construction rebuilt from the committed contract bundle</li>
               <li>Durable outbox holding the feed checkpoint until candidate and delivery records exist</li>
+              <li>Due-work dispatch with state-version claims, FIFO dedupe reuse, cross-state batch limits, and explicit unknown-send evidence</li>
+              <li>DynamoDB delivery and SQS FIFO producer adapters exercised against service mocks</li>
               <li>Live feed screening that flags any production match the corpus does not represent</li>
               <li>S3 release preconditions measured against the mock the publisher is tested on, including where that mock cannot stand in for S3</li>
               <li>Release publication and promotion reproducing the committed release from the contract bundle's own bytes</li>
@@ -390,10 +392,10 @@
             <h3>Required implementation evidence</h3>
             <ul class="site-list">
               <li>Corpus coverage of end-of-support announcements from real feeds</li>
-              <li>DynamoDB, SQS, S3, and Secrets Manager adapters behind the ports the runtime already uses</li>
+              <li>DynamoDB source and destination operations, S3 snapshot storage, and Slack credential access behind the remaining ports</li>
               <li>Lambda packaging, schedules, and event source mappings for the four functions</li>
               <li>Publisher-side retirement of superseded releases, which S3 lifecycle cannot express safely</li>
-              <li>Dispatch, SQS transport, Slack delivery, and reconciliation</li>
+              <li>Deployed dispatcher handling, Slack delivery, and reconciliation</li>
               <li>Feed, delivery, recovery, load, and security tests</li>
               <li>Production preflight and confirmed Slack destination checks</li>
               <li>A rendered Slack message sample on this page, produced by the delivery renderer</li>
