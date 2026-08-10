@@ -167,13 +167,51 @@ starts from a fresh time read immediately before its conditional claim. Retry
 schedules, destination pacing, and terminal TTLs start from a fresh time after
 the Slack call returns or raises.
 
+## Worker-to-transport handoff
+
+The worker derives a typed destination from the exact inventory release and
+passes it to the Slack transport with the credential and the rendered payload. It
+carries the delivery mode, the route's channel ID in bot mode, and the approved
+webhook hosts in webhook mode, and nothing else. Mode-specific invariants hold
+when it is constructed, so an unusable route is a terminal delivery with no
+network call rather than a request Slack rejects.
+
+Routing authority stays with the release. The rendered payload, the delivery
+record, and the credential cannot select a destination.
+
+The transport reports observed facts: a status code, a bounded transport-failure
+class, whether request bytes may have been sent, a latency, a body-level Slack
+error code, an integer `Retry-After`, and a message timestamp. It never reports a
+delivery state. Bounding `Retry-After` and mapping facts to `posted`,
+`failed_retryable`, `failed_terminal`, or `delivery_unknown` belong to the worker,
+because those limits are release policy and those states are ADR-004's.
+
+A transport may report that no request byte was sent only when it can prove it:
+before the request is constructed, when a resolved address set is refused, and
+when connecting or completing the TLS handshake fails. Every failure after that
+reports that bytes may have been sent, including one that probably occurred
+before the first byte.
+
 ## Incoming-webhook controls
 
 The secret value is parsed at runtime. Require HTTPS, port 443, an approved host, the expected Slack service path, no fragment or user info, and no redirects. Resolve and connect using the same anti-rebinding controls as feed acquisition. Never log the URL.
 
+"The same controls" means one shared implementation rather than an equivalent
+one. Address validation and the pinned connection are the code feed acquisition
+uses: the socket targets a validated address while the approved hostname supplies
+TLS SNI, certificate verification, and the `Host` header, so no name is resolved
+during connection setup. The URL policy is applied again immediately before the
+socket, because the credential is mutable state read on every attempt.
+
 ## Bot-token controls
 
 The route uses a configured channel ID and deployment-wide workspace ID. `destination_key` is the normalized workspace/channel pair. The worker calls only the required Slack posting method and stores a returned message timestamp when present.
+
+The posting endpoint is fixed and the channel comes from the destination, so
+neither is configurable at delivery time. The token appears only as the request's
+authorization value. The Web API answers HTTP 200 with `ok: false` for token,
+channel, and payload faults, so a 200 whose body cannot be read as that
+documented shape is an unknown outcome rather than a success.
 
 ## References
 

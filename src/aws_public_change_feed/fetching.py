@@ -6,22 +6,30 @@ certificate verification, send conditional headers, and reject redirects,
 unsupported content types, oversized responses, and slow responses. The HTTP
 client must not silently re-resolve to an unchecked address.
 
-The standard library is used deliberately. Connecting to a pinned address while
-verifying the certificate against the configured hostname needs control over
-socket creation and the TLS handshake, and every layer that hides those makes
-the pinning harder to prove.
+The DNS validation and address pinning live in `pinned_https`, which Slack
+delivery shares, because chapter 04's webhook controls require "the same
+anti-rebinding controls as feed acquisition" and that is only true of one
+implementation. `Resolver` and `system_resolver` are re-exported here so
+existing callers and tests keep their import site.
 """
 
 from __future__ import annotations
 
 import http.client
-import socket
 import ssl
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from .urls import ValidatedUrl, validate_addresses
+from .pinned_https import (
+    ConnectionFactory,
+    PinnedHTTPSConnection,
+    Resolver,
+    select_validated_address,
+    system_resolver,
+    verified_tls_context,
+)
+from .urls import UnsafeAddress, ValidatedUrl
 
 __all__ = [
     "ACCEPTED_CONTENT_TYPES",
@@ -45,8 +53,6 @@ ACCEPTED_CONTENT_TYPES = frozenset(
         "text/xml",
     }
 )
-
-Resolver = Callable[[str, int], Sequence[str]]
 
 
 class FetchRejected(Exception):
@@ -86,41 +92,6 @@ class FeedFetching(Protocol):
     ) -> FetchOutcome: ...
 
 
-def system_resolver(hostname: str, port: int) -> Sequence[str]:
-    """Resolve every A and AAAA record for the hostname."""
-
-    infos = socket.getaddrinfo(hostname, port, proto=socket.IPPROTO_TCP)
-    ordered: list[str] = []
-    for info in infos:
-        address = str(info[4][0])
-        if address not in ordered:
-            ordered.append(address)
-    return ordered
-
-
-class _PinnedConnection(http.client.HTTPSConnection):
-    """Connect to a validated address, verify the certificate against the name.
-
-    ``http.client`` would use the connection host for SNI, which would be the
-    pinned IP literal. Overriding ``connect`` keeps the approved hostname in
-    both the handshake and the certificate check while the socket goes to the
-    address DNS validation already approved.
-    """
-
-    def __init__(self, hostname: str, address: str, port: int, timeout: float, context: ssl.SSLContext) -> None:
-        super().__init__(address, port=port, timeout=timeout, context=context)
-        self._sni_hostname = hostname
-        self._tls_context = context
-
-    def connect(self) -> None:
-        raw_socket = socket.create_connection((self.host, self.port), self.timeout)
-        try:
-            self.sock = self._tls_context.wrap_socket(raw_socket, server_hostname=self._sni_hostname)
-        except Exception:
-            raw_socket.close()
-            raise
-
-
 @dataclass
 class FeedFetcher:
     """Fetches one feed under the chapter 04 network policy."""
@@ -129,9 +100,7 @@ class FeedFetcher:
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
     max_response_bytes: int = MAX_RESPONSE_BYTES
     ssl_context_factory: Callable[[], ssl.SSLContext] = ssl.create_default_context
-    connection_factory: Callable[[str, str, int, float, ssl.SSLContext], http.client.HTTPSConnection] = field(
-        default=_PinnedConnection
-    )
+    connection_factory: ConnectionFactory = field(default=PinnedHTTPSConnection)
 
     def fetch(
         self,
@@ -141,11 +110,7 @@ class FeedFetcher:
         last_modified: str | None = None,
     ) -> FetchOutcome:
         address = self._select_address(target)
-        context = self.ssl_context_factory()
-        # Both are default-on; asserting them keeps a misconfigured context
-        # from silently disabling verification.
-        context.check_hostname = True
-        context.verify_mode = ssl.CERT_REQUIRED
+        context = verified_tls_context(self.ssl_context_factory)
 
         connection = self.connection_factory(target.hostname, address, target.port, self.timeout_seconds, context)
         try:
@@ -156,14 +121,11 @@ class FeedFetcher:
 
     def _select_address(self, target: ValidatedUrl) -> str:
         try:
-            candidates = self.resolver(target.hostname, target.port)
+            return select_validated_address(target.hostname, target.port, self.resolver)
+        except UnsafeAddress as error:
+            raise FetchRejected("dns", str(error)) from error
         except OSError as error:
             raise FetchRejected("dns", f"{target.hostname}: {error}") from error
-        try:
-            validated = validate_addresses(list(candidates))
-        except ValueError as error:
-            raise FetchRejected("dns", str(error)) from error
-        return validated[0]
 
     def _headers(self, target: ValidatedUrl, etag: str | None, last_modified: str | None) -> dict[str, str]:
         headers = {

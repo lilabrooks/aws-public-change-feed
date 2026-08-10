@@ -38,6 +38,27 @@ Application controls remain mandatory even with network controls:
 
 Customer-managed keys require exact grants for each service and role. Key policies and IAM policies are both validated.
 
+## Stored credential representation
+
+Both `secret_store` values are supported, and the runtime reads the exact
+identifier the release names with no prefix, version, or stage selection. An SSM
+read always requests decryption, because a ciphertext returned without it would
+reach the webhook policy or an authorization header as an opaque wrong value
+rather than as a read failure.
+
+The stored content is the whole credential. No structured stored-secret format
+exists, so no reader may extract a field from one; surrounding whitespace is
+removed and the remainder is opaque. The credential's kind is configured from the
+release's delivery mode and never inferred from the value, so a value placed in
+the wrong container is caught by the worker's kind check instead of being
+described by it.
+
+A credential value never appears in a log, a durable record, a fixture, an
+exception message, or an object's `repr`. A read failure carries the store, the
+condition, and at most a bounded provider error code — never the value, the
+identifier, the provider message, or a response body, and with no provider
+exception attached for a chain walker to reach.
+
 ## IAM roles
 
 ### Release publisher

@@ -33,7 +33,7 @@ import copy
 import json
 import sys
 import unittest
-from dataclasses import replace
+from dataclasses import fields, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -46,6 +46,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from aws_public_change_feed.credentials import (  # noqa: E402
+    BOT_TOKEN,
     WEBHOOK,
     CredentialNotFound,
     SlackCredential,
@@ -69,11 +70,13 @@ from aws_public_change_feed.worker import (  # noqa: E402
     POSTED,
     InvalidSlackWebhook,
     MessageTooLarge,
+    SlackDestination,
     SlackResponse,
     TransportError,
     UnsafeSourceUrl,
     WorkerResult,
     _classify,
+    _destination_for,
     _text_objects,
     process_delivery,
     render_message,
@@ -105,6 +108,34 @@ def load_yaml(name):
         return yaml.safe_load(handle)
 
 
+BOT_WORKSPACE_ID = "T0ACME"
+BOT_CHANNEL_ID = "C0ALERTS"
+BOT_TOKEN_SECRET_ID = "aws-public-change-alerting/slack/bot-token"
+
+
+def bot_mode_inventory(inventory):
+    """Turn the committed webhook inventory into its bot-token equivalent.
+
+    Derived from the shipped release rather than hand-built, so the bot-mode
+    cases follow the fixture when the example changes. `destination_key` uses
+    the workspace/channel pair `scripts/validate_config.py` requires of a
+    bot-token route, and `route_id` is unchanged so the committed candidate's
+    audience still resolves against this inventory.
+    """
+
+    converted = copy.deepcopy(inventory)
+    slack = converted["slack"]
+    slack["delivery_mode"] = BOT_TOKEN
+    slack.pop("approved_webhook_hosts", None)
+    slack["workspace_id"] = BOT_WORKSPACE_ID
+    slack["bot_token_secret_id"] = BOT_TOKEN_SECRET_ID
+    for route in slack["routes"].values():
+        route.pop("credential_secret_id", None)
+        route["channel_id"] = BOT_CHANNEL_ID
+        route["destination_key"] = f"{BOT_WORKSPACE_ID}-{BOT_CHANNEL_ID}".casefold()
+    return converted
+
+
 class FakeSlackSender:
     """A `SlackSender` that returns a fixed response and records its calls."""
 
@@ -112,8 +143,15 @@ class FakeSlackSender:
         self._response = response
         self.calls: list[dict[str, Any]] = []
 
-    def post(self, payload, *, credential, timeout_seconds):
-        self.calls.append({"payload": payload, "credential": credential, "timeout_seconds": timeout_seconds})
+    def post(self, payload, *, credential, destination, timeout_seconds):
+        self.calls.append(
+            {
+                "payload": payload,
+                "credential": credential,
+                "destination": destination,
+                "timeout_seconds": timeout_seconds,
+            }
+        )
         return self._response
 
 
@@ -138,15 +176,20 @@ class AdvancingSlackSender(FakeSlackSender):
         self._clock = clock
         self._seconds = seconds
 
-    def post(self, payload, *, credential, timeout_seconds):
+    def post(self, payload, *, credential, destination, timeout_seconds):
         self._clock.advance(self._seconds)
-        return super().post(payload, credential=credential, timeout_seconds=timeout_seconds)
+        return super().post(
+            payload,
+            credential=credential,
+            destination=destination,
+            timeout_seconds=timeout_seconds,
+        )
 
 
 class RaisingSlackSender:
     """A `SlackSender` that raises, exercising the exception handler."""
 
-    def post(self, payload, *, credential, timeout_seconds):
+    def post(self, payload, *, credential, destination, timeout_seconds):
         raise RuntimeError("socket hangup")
 
 
@@ -190,9 +233,11 @@ class WorkerFixture(unittest.TestCase):
         )
         self.sender = FakeSlackSender(self.posted_response())
 
-    def _publish_release(self, config_body=None):
+    def _publish_release(self, config_body=None, inventory_body=None):
         config_body = (ROOT / "examples" / "config.yaml").read_bytes() if config_body is None else config_body
-        inventory_body = (ROOT / "examples" / "inventory.json").read_bytes()
+        inventory_body = (
+            (ROOT / "examples" / "inventory.json").read_bytes() if inventory_body is None else inventory_body
+        )
         artifacts = publish_objects(
             self.release_store,
             config_body=config_body,
@@ -472,6 +517,120 @@ class NonSlackPathsTests(WorkerFixture):
         record = self.record()
         self.assertEqual(record.status, DELIVERY_UNKNOWN)
         self.assertIsNone(record.expires_at)
+
+
+class SlackDestinationTests(unittest.TestCase):
+    """The worker-to-sender handoff carries release routing facts, and only those."""
+
+    def test_webhook_destination_carries_only_the_approved_hosts(self):
+        destination = SlackDestination(mode=WEBHOOK, approved_webhook_hosts=("hooks.slack.com",))
+
+        self.assertEqual(destination.mode, WEBHOOK)
+        self.assertEqual(destination.approved_webhook_hosts, ("hooks.slack.com",))
+        self.assertIsNone(destination.channel_id)
+
+    def test_bot_destination_carries_only_the_channel(self):
+        destination = SlackDestination(mode=BOT_TOKEN, channel_id="C0ALERTS")
+
+        self.assertEqual(destination.mode, BOT_TOKEN)
+        self.assertEqual(destination.channel_id, "C0ALERTS")
+        self.assertEqual(destination.approved_webhook_hosts, ())
+
+    def test_mode_specific_invariants_hold_at_construction(self):
+        cases: dict[str, dict[str, Any]] = {
+            "unknown mode": {"mode": "email"},
+            "webhook without hosts": {"mode": WEBHOOK},
+            "webhook carrying a channel": {
+                "mode": WEBHOOK,
+                "approved_webhook_hosts": ("hooks.slack.com",),
+                "channel_id": "C0ALERTS",
+            },
+            "bot without a channel": {"mode": BOT_TOKEN},
+            "bot with a malformed channel": {"mode": BOT_TOKEN, "channel_id": "not-a-channel"},
+            "bot with a lowercase channel": {"mode": BOT_TOKEN, "channel_id": "c0alerts"},
+            "bot carrying webhook hosts": {
+                "mode": BOT_TOKEN,
+                "channel_id": "C0ALERTS",
+                "approved_webhook_hosts": ("hooks.slack.com",),
+            },
+        }
+        for label, kwargs in cases.items():
+            with self.subTest(label=label):
+                with self.assertRaises(ValueError):
+                    SlackDestination(**kwargs)
+
+    def test_the_destination_carries_nothing_beyond_the_routing_facts(self):
+        """A transport that cannot see the payload cannot make a routing choice."""
+
+        self.assertEqual(
+            {field.name for field in fields(SlackDestination)},
+            {"mode", "channel_id", "approved_webhook_hosts"},
+        )
+
+
+class DestinationDerivationTests(WorkerFixture):
+    """`_destination_for` reads the verified release and nothing else."""
+
+    def test_webhook_mode_derives_hosts_from_the_release_inventory(self):
+        destination = _destination_for(self.inventory, self.route)
+
+        self.assertEqual(destination.mode, WEBHOOK)
+        self.assertEqual(
+            destination.approved_webhook_hosts,
+            tuple(self.inventory["slack"]["approved_webhook_hosts"]),
+        )
+
+    def test_bot_mode_derives_the_channel_from_the_release_route(self):
+        inventory = bot_mode_inventory(self.inventory)
+
+        destination = _destination_for(inventory, inventory["slack"]["routes"]["shared-alerts"])
+
+        self.assertEqual(destination.mode, BOT_TOKEN)
+        self.assertEqual(destination.channel_id, BOT_CHANNEL_ID)
+
+    def test_the_sender_receives_the_release_derived_destination(self):
+        self.queued_record()
+
+        self.process()
+
+        self.assertEqual(len(self.sender.calls), 1)
+        self.assertEqual(
+            self.sender.calls[0]["destination"],
+            SlackDestination(
+                mode=WEBHOOK,
+                approved_webhook_hosts=tuple(self.inventory["slack"]["approved_webhook_hosts"]),
+            ),
+        )
+
+    def test_an_inventory_missing_its_mode_fields_is_terminal_without_a_call(self):
+        """A release that cannot produce a destination never reaches a socket.
+
+        `inventory.schema.json` constrains a route to exactly one of
+        `credential_secret_id` and `channel_id`, but nothing in it ties that
+        choice to `slack.delivery_mode`. A bot-token inventory whose routes are
+        still webhook-shaped therefore passes schema validation and reaches the
+        runtime, which is why this refusal is a real path rather than a
+        defensive one. Published as an actual release so the load, hash, and
+        schema checks all run first.
+        """
+
+        mismatched = copy.deepcopy(self.inventory)
+        mismatched["slack"]["delivery_mode"] = BOT_TOKEN
+        mismatched["slack"]["workspace_id"] = BOT_WORKSPACE_ID
+        mismatched["slack"]["bot_token_secret_id"] = BOT_TOKEN_SECRET_ID
+        mismatched["slack"].pop("approved_webhook_hosts", None)
+        self._publish_release(inventory_body=json.dumps(mismatched).encode())
+        self._build_candidate_and_request()
+        self.queued_record()
+
+        result = self.process()
+
+        self.assertTrue(result.handled)
+        self.assertEqual(result.state, FAILED_TERMINAL)
+        self.assertFalse(result.performed_network_call)
+        self.assertEqual(self.sender.calls, [])
+        self.assertEqual(self.record().slack_response, {"response_class": "destination_unusable"})
+        self.assertEqual(self.record().network_attempt_count, 0)
 
 
 class SlackOutcomeTests(WorkerFixture):
@@ -1036,8 +1195,6 @@ class CredentialTests(WorkerFixture):
 
     def test_a_credential_of_the_wrong_kind_is_never_sent(self):
         """The secret container is mutable state no schema governs."""
-
-        from aws_public_change_feed.credentials import BOT_TOKEN
 
         self.credentials = RecordingCredentials(
             {self.route["credential_secret_id"]: SlackCredential(BOT_TOKEN, "xoxb-not-a-webhook")}

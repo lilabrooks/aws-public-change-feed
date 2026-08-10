@@ -27,6 +27,40 @@ The `slack-delivery-worker` is the only component that reads Slack credentials o
 
 Use SQS-managed encryption by default, partial batch responses, a DLQ, and a visibility timeout derived from Lambda timeout plus the maximum in-invocation batch work and a safety margin. Scheduled rate delays do not extend an invocation. Customer-managed KMS requires exact producer and consumer grants.
 
+## Revision: the worker hands the transport a typed destination
+
+- Status: Proposed
+- Date: 2026-08-10
+
+The worker is the only component that reads Slack credentials or performs Slack
+HTTP requests, but the port it did that through could not express bot-mode
+delivery: a token is usable against any channel in its workspace, and nothing
+carried the release route's channel to the transport. Passing the rendered
+payload as the routing source would have made a candidate able to choose its own
+channel, and reading the mode from the credential would have taken it from
+mutable deployment state rather than from the verified release.
+
+`SlackSender.post` therefore takes a typed destination derived inside the worker
+from the exact inventory release. It carries the delivery mode, the channel ID in
+bot mode, and the approved webhook hosts in webhook mode. Its mode-specific
+invariants hold at construction, and a route that cannot produce one is a
+terminal delivery with no network call.
+
+The transport reports observed facts and no delivery state. It may claim that no
+request byte was sent only where that is provable, which requires connecting
+explicitly rather than letting the handshake happen inside the first write; the
+`Retry-After` it reports is the integer received, because bounding it is release
+policy the transport never sees.
+
+Both accepted `secret_store` values get an adapter. Which one a deployment uses
+is a composition-root choice, so neither the credential port nor the worker names
+a store, and the stored content is the whole credential with its kind supplied by
+configuration.
+
+Address validation and the pinned TLS connection are shared with feed
+acquisition rather than reimplemented, so chapter 04's "the same anti-rebinding
+controls" is a property of one implementation instead of a claim about two.
+
 ## Consequences
 
 - Feed checkpoints cannot pass undurable delivery work.
