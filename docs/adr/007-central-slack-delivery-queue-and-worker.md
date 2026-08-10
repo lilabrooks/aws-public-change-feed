@@ -29,8 +29,9 @@ Use SQS-managed encryption by default, partial batch responses, a DLQ, and a vis
 
 ## Revision: the worker hands the transport a typed destination
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-10
+- Accepted: 2026-08-10
 
 The worker is the only component that reads Slack credentials or performs Slack
 HTTP requests, but the port it did that through could not express bot-mode
