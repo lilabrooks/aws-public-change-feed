@@ -49,18 +49,22 @@ from .credentials import (
     WEBHOOK,
     CredentialAccessDenied,
     CredentialEmpty,
+    CredentialError,
     CredentialNotFound,
-    CredentialReadError,
+    CredentialUnavailable,
     CredentialUnreadable,
     SlackCredential,
 )
 
 __all__ = [
     "AwsClient",
+    "MAX_ERROR_CODE_CHARACTERS",
     "SECRETS_MANAGER",
+    "SECURE_STRING",
     "SSM_PARAMETER_STORE",
     "SecretsManagerCredentialReader",
     "SsmParameterCredentialReader",
+    "UNKNOWN_ERROR_CODE",
     "credential_reader_for",
 ]
 
@@ -80,11 +84,21 @@ MAX_SECRET_ID_CHARACTERS = 512
 # a header or a URL validator.
 MAX_CREDENTIAL_CHARACTERS = 8192
 
+# An AWS error code is a short CamelCase identifier. The bound is enforced
+# rather than described: an unbounded provider string would reach a durable
+# response class and an operator's log, which is exactly what chapter 05's
+# "bounded error codes" excludes.
+MAX_ERROR_CODE_CHARACTERS = 64
+UNKNOWN_ERROR_CODE = "Unknown"
+
 # `botocore` raises one exception class and distinguishes conditions by an error
-# code in the response, so the mapping is by code. Anything unlisted becomes
-# `CredentialUnreadable`, which is the conservative answer: every condition here
-# is `failed_terminal` for the worker, so an unrecognised code costs an operator
-# a look rather than a wrong retry.
+# code in the response, so the mapping is by code.
+#
+# These two sets are the *permanent* allowlist, and being an allowlist is the
+# design. A code nobody has reviewed is transient, so an unfamiliar failure
+# preserves the delivery for a bounded retry instead of discarding it. Getting
+# that wrong in the transient direction costs a retry; getting it wrong in the
+# permanent direction destroys an alert, and only the second is unrecoverable.
 _NOT_FOUND_CODES = frozenset(
     {
         "ResourceNotFoundException",
@@ -98,8 +112,49 @@ _DENIED_CODES = frozenset(
         "AccessDenied",
         "UnauthorizedOperation",
         "UnrecognizedClientException",
+        "InvalidSignatureException",
+        "ExpiredTokenException",
+        "KMSAccessDeniedException",
+        "AccessDeniedError",
+        "DecryptionFailure",
+        "InvalidKeyId",
+        "KMSInvalidStateException",
+        "ValidationException",
+        "InvalidParameterException",
+        "InvalidRequestException",
+        "InvalidResourceException",
+        "InvalidResourceStateException",
     }
 )
+
+# Named only for the message an operator reads. Any code outside the permanent
+# allowlist takes this path whether or not it appears here.
+_UNAVAILABLE_CODES = frozenset(
+    {
+        "ThrottlingException",
+        "Throttling",
+        "ThrottledException",
+        "TooManyRequestsException",
+        "RequestLimitExceeded",
+        "ServiceUnavailable",
+        "ServiceUnavailableException",
+        "InternalServiceError",
+        "InternalServerError",
+        "InternalFailure",
+        "InternalError",
+        "RequestTimeout",
+        "RequestTimeoutException",
+        "EndpointConnectionError",
+        "ConnectTimeoutError",
+        "ReadTimeoutError",
+    }
+)
+
+# SSM stores three parameter types and only one is encrypted. Chapter 05 requires
+# a SecureString with its configured encryption, so a `String` or `StringList`
+# holding a Slack credential is a container that was never protected — a
+# permanent configuration fault, not a value to use because it happened to parse.
+SECURE_STRING = "SecureString"
 
 
 # A boto3 client is generated at runtime from a service model and has no static
@@ -110,12 +165,22 @@ AwsClient = Any
 
 
 def _error_code(error: Exception) -> str:
-    """The bounded AWS error code, or a placeholder. Never the message.
+    """The bounded AWS error code, or `Unknown`. Never the message.
 
     `botocore.exceptions.ClientError` carries `response["Error"]["Code"]`. It is
     read defensively rather than by type, so this module does not import
     `botocore` and the adapters stay unit-testable against a fake client that
     raises a stand-in.
+
+    Bounded means enforced. The returned value reaches a durable response class
+    and an operator's log, so anything that is not a short ASCII alphanumeric
+    identifier — oversized, punctuated, empty, or not a string — becomes
+    `Unknown` rather than being carried through at whatever length the provider
+    chose. `Unknown` is also the classifier's transient default, so a code this
+    rejects preserves the delivery.
+
+    `botocore` also raises connection and timeout errors that carry no response
+    at all; those reach here as `Unknown` and are transient, which is correct.
     """
 
     response = getattr(error, "response", None)
@@ -123,9 +188,14 @@ def _error_code(error: Exception) -> str:
         detail = response.get("Error")
         if isinstance(detail, dict):
             code = detail.get("Code")
-            if isinstance(code, str) and code and code.isascii() and code.isalnum():
+            if (
+                isinstance(code, str)
+                and 0 < len(code) <= MAX_ERROR_CODE_CHARACTERS
+                and code.isascii()
+                and code.isalnum()
+            ):
                 return code
-    return "Unknown"
+    return UNKNOWN_ERROR_CODE
 
 
 class _BaseReader:
@@ -187,7 +257,7 @@ class _BaseReader:
             raise CredentialUnreadable(f"{self.store}: the credential value contains a line break")
         return SlackCredential(self._kind, normalized)
 
-    def _mapped_error(self, error: Exception) -> CredentialReadError:
+    def _mapped_error(self, error: Exception) -> CredentialError:
         """Build the port's error for an SDK failure. Returns rather than raises.
 
         Returning matters. Raising inside an `except` block sets `__context__`
@@ -199,6 +269,12 @@ class _BaseReader:
         reporter, a test helper. The caller raises this outside the handler, so
         `__cause__` and `__context__` are both empty and there is nothing to
         walk.
+
+        The two permanent sets are consulted first and everything else is
+        transient. That order is the policy: only a reviewed code may destroy
+        deliverable work, and an unclassified failure — including one carrying no
+        response at all, which is what a connection error or a read timeout looks
+        like here — preserves it for a bounded retry.
         """
 
         code = _error_code(error)
@@ -206,7 +282,7 @@ class _BaseReader:
             return CredentialNotFound(f"{self.store}: no credential exists for the configured identifier")
         if code in _DENIED_CODES:
             return CredentialAccessDenied(f"{self.store}: reading the configured identifier was denied")
-        return CredentialUnreadable(f"{self.store}: read failed with error code {code}")
+        return CredentialUnavailable(f"{self.store}: read did not complete, error code {code}")
 
 
 class SecretsManagerCredentialReader(_BaseReader):
@@ -222,7 +298,7 @@ class SecretsManagerCredentialReader(_BaseReader):
 
     def read(self, secret_id: str) -> SlackCredential:
         identifier = self._require_identifier(secret_id)
-        failure: CredentialReadError | None = None
+        failure: CredentialError | None = None
         response: Any = None
         try:
             response = self._client.get_secret_value(SecretId=identifier)
@@ -242,12 +318,19 @@ class SecretsManagerCredentialReader(_BaseReader):
 
 
 class SsmParameterCredentialReader(_BaseReader):
-    """Reads a Slack credential from SSM `GetParameter` with decryption.
+    """Reads a Slack credential from an SSM `SecureString`, decrypted.
 
     `WithDecryption=True` is always sent. Chapter 05 requires a SecureString
     with its configured encryption, and without decryption the call returns the
     ciphertext, which would reach the webhook validator or an authorization
     header as an opaque wrong value rather than as a read failure.
+
+    The returned `Type` is then required to be `SecureString`. Requesting
+    decryption does not get it: SSM ignores `WithDecryption` for a plaintext
+    `String` or `StringList` and returns the value happily, so without this check
+    a Slack credential stored unencrypted reads back correctly and posts, and the
+    encryption chapter 05 requires is silently absent. The parameter's own `Type`
+    is the independent fact, so it is what decides.
     """
 
     store = SSM_PARAMETER_STORE
@@ -255,7 +338,7 @@ class SsmParameterCredentialReader(_BaseReader):
 
     def read(self, secret_id: str) -> SlackCredential:
         identifier = self._require_identifier(secret_id)
-        failure: CredentialReadError | None = None
+        failure: CredentialError | None = None
         response: Any = None
         try:
             response = self._client.get_parameter(Name=identifier, WithDecryption=True)
@@ -269,6 +352,16 @@ class SsmParameterCredentialReader(_BaseReader):
         parameter = response.get("Parameter")
         if not isinstance(parameter, dict):
             raise CredentialUnreadable(f"{self.store}: the response carried no parameter")
+        parameter_type = parameter.get("Type")
+        if parameter_type != SECURE_STRING:
+            # Permanent: an operator has to recreate the parameter as a
+            # SecureString. The observed type is named because it is deployment
+            # metadata rather than credential content, and it is the one fact
+            # that tells the operator what to change.
+            observed = parameter_type if isinstance(parameter_type, str) and parameter_type.isalnum() else "<missing>"
+            raise CredentialUnreadable(
+                f"{self.store}: the credential parameter must be a {SECURE_STRING}, not {observed}"
+            )
         return self._credential(parameter.get("Value"))
 
 

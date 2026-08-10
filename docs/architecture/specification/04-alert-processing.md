@@ -187,10 +187,20 @@ delivery state. Bounding `Retry-After` and mapping facts to `posted`,
 because those limits are release policy and those states are ADR-004's.
 
 A transport may report that no request byte was sent only when it can prove it:
-before the request is constructed, when a resolved address set is refused, and
-when connecting or completing the TLS handshake fails. Every failure after that
+before the request is constructed, when a resolved address set is refused, when a
+verified TLS context or the connection itself cannot be built, and when
+connecting or completing the TLS handshake fails. Every failure after that
 reports that bytes may have been sent, including one that probably occurred
-before the first byte.
+before the first byte. Each of those phases reports a fact rather than raising, so
+an unhandled transport exception remains reserved for a genuine surprise instead
+of covering setup that failed before a socket existed.
+
+A received status decides the outcome. The transport reads a response body only
+when the status does not decide by itself, which is a bot-mode HTTP 200, because
+the Web API signals faults as `ok: false` under a success status. A webhook 200
+and every non-200 are decided by status alone and their bodies are not read, so a
+slow or oversized body cannot replace a definite answer with a transport
+ambiguity.
 
 ## Incoming-webhook controls
 
@@ -212,6 +222,14 @@ neither is configurable at delivery time. The token appears only as the request'
 authorization value. The Web API answers HTTP 200 with `ok: false` for token,
 channel, and payload faults, so a 200 whose body cannot be read as that
 documented shape is an unknown outcome rather than a success.
+
+A stored bot token is checked for content before it is used: Slack's documented
+`xoxb-` prefix, a bounded length, and a single line of printable ASCII. The number
+and shape of the segments after the prefix are not part of the check, because they
+are not documented as stable and binding to them would reject valid tokens when
+Slack changes the format. The check runs before the network-attempt counter moves,
+so a wrong stored value is terminal without spending an attempt Slack never
+served, and again at the network boundary. A rejection names no part of the value.
 
 ## References
 

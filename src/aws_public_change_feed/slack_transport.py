@@ -16,14 +16,26 @@ here would apply a limit the release never saw.
 
 `bytes_sent` is the fact the retry-safety decision rests on, and ADR-004 permits
 an automatic retry only on proof that no request byte was sent. This adapter
-claims `False` in exactly three places, each of which happens before a request
-is written: a request that could not be constructed, a refused address set, and
-a failure raised by an explicit `connect()` call. Everything after that
-`connect()` returns claims `True`, including a timeout that may well have
-occurred before the first byte, because "probably not sent" is not proof. The
-explicit `connect()` is what makes the boundary observable: left to
-`http.client`, the handshake would happen lazily inside `request()` and a
-connect failure would be indistinguishable from a failure mid-write.
+claims `False` only where no socket has carried a request: a request that could
+not be constructed, a refused address set, a TLS context that could not be built,
+a connection that could not be constructed, and a failure raised by an explicit
+`connect()` call. Everything after that `connect()` returns claims `True`,
+including a timeout that may well have occurred before the first byte, because
+"probably not sent" is not proof. The explicit `connect()` is what makes the
+boundary observable: left to `http.client`, the handshake would happen lazily
+inside `request()` and a connect failure would be indistinguishable from a
+failure mid-write.
+
+Every failure is reported, never raised. `post` returning a fact for each of
+those phases is what keeps `process_delivery`'s blanket `except` — which means
+`delivery_unknown` — for genuine surprises rather than for setup that failed
+before a socket existed.
+
+A received status decides the outcome, and a body is read only when the status
+does not decide by itself. That is one case: a bot-mode HTTP 200, where Slack's
+Web API signals faults as `ok: false` under a success status. A webhook 200 and
+every non-200 return on their status alone, so a slow or oversized body cannot
+replace a definite answer with a transport ambiguity.
 
 Nothing here logs. That is a deliberate absence rather than an omission —
 chapter 05 excludes webhook URLs, tokens, authorization headers, response
@@ -45,7 +57,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
-from .credentials import WEBHOOK, SlackCredential
+from .credentials import WEBHOOK, SlackCredential, validate_bot_token
 from .pinned_https import (
     ConnectionFactory,
     PinnedHTTPSConnection,
@@ -84,11 +96,6 @@ _SLACK_ERROR_CODE = re.compile(r"[a-z0-9_]{1,64}")
 # A Slack message timestamp is `<seconds>.<microseconds>`. Bounded so an
 # arbitrary string cannot reach the durable delivery record through `message_ts`.
 _SLACK_TS = re.compile(r"\d{1,20}\.\d{1,20}")
-
-# A bot token belongs in an Authorization header, so it must be a single line of
-# printable ASCII. `credentials` already refuses line breaks; this refuses the
-# rest of what would corrupt a header, before one is built.
-_HEADER_SAFE_VALUE = re.compile(r"[\x20-\x7e]+")
 
 _HTTP_OK = 200
 _REDIRECT_RANGE = range(300, 400)
@@ -140,6 +147,14 @@ class SlackHttpSender:
     `connection.connect()`, `connection.request()`, and
     `connection.getresponse()` rather than against a client library: those three
     calls are the boundary the truth table is written about.
+
+    `timeout_seconds` bounds the individual blocking socket operations, which is
+    what `http.client` accepts. It is deliberately not described as a request
+    deadline: DNS resolution happens before it applies, and connect, write, and
+    read each get the full value, so the wall-clock worst case exceeds it. ADR-007
+    records the end-to-end deadline as a named prerequisite for the FIFO handler
+    and the timeout-derived capacity figures, and nothing here should be read as
+    already providing one.
     """
 
     resolver: Resolver = system_resolver
@@ -185,8 +200,29 @@ class SlackHttpSender:
                 latency_ms=_elapsed_ms(started),
             )
 
-        context = verified_tls_context(self.ssl_context_factory)
-        connection = self.connection_factory(target.hostname, address, target.port, timeout_seconds, context)
+        # Both of these run before any socket exists, and both can fail: building
+        # a verified context loads the trust store, and a substituted factory or
+        # a connection class can raise on construction. Left uncaught they
+        # escaped `post` entirely, and `process_delivery`'s blanket handler then
+        # recorded `sender_raised` and `delivery_unknown` — an operator sent to
+        # inspect Slack for a request that never reached a socket.
+        try:
+            context = verified_tls_context(self.ssl_context_factory)
+        except Exception:  # noqa: BLE001 - reported as a fact, details dropped
+            return SlackResponse(
+                error_class=TransportError.TLS_FAILED,
+                bytes_sent=False,
+                latency_ms=_elapsed_ms(started),
+            )
+        try:
+            connection = self.connection_factory(target.hostname, address, target.port, timeout_seconds, context)
+        except Exception:  # noqa: BLE001 - reported as a fact, details dropped
+            return SlackResponse(
+                error_class=TransportError.CONNECT_FAILED,
+                bytes_sent=False,
+                latency_ms=_elapsed_ms(started),
+            )
+
         try:
             return self._exchange(connection, target, body, headers, started, destination)
         finally:
@@ -218,9 +254,13 @@ class SlackHttpSender:
             headers = self._headers(target, len(body))
             return target, body, headers
 
-        token = credential.value
-        if _HEADER_SAFE_VALUE.fullmatch(token) is None:
-            raise ValueError("bot token is not usable as a header value")
+        # The same validator `process_delivery` already ran, on purpose. That call
+        # is where a wrong stored value becomes a clean `failed_terminal` before
+        # the network-attempt counter moves; this one is defence at the boundary,
+        # standing between a credential and a real socket for any future caller
+        # that reaches the transport by another path. `InvalidBotToken` is a
+        # `ValueError`, so `post` maps it to `MALFORMED_URL` with no socket.
+        token = validate_bot_token(credential.value)
         target = validate_feed_url(f"https://{SLACK_API_HOST}{SLACK_POST_MESSAGE_PATH}", [SLACK_API_HOST])
         # `channel` is written after the payload, so a rendered payload that
         # carries one cannot choose the destination. The release route is the
@@ -286,19 +326,40 @@ class SlackHttpSender:
         return self._read_response(response, started, destination)
 
     def _read_response(self, response: Any, started: float, destination: SlackDestination) -> SlackResponse:
+        """Decide from the status first, and read a body only when it decides.
+
+        The order is load-bearing. A received status is a definite answer from
+        Slack, and it is the strongest fact this adapter ever holds. Reading a
+        body before deciding meant a slow or oversized body threw that fact away:
+        a webhook 200 became `delivery_unknown` and sent an operator to inspect a
+        message Slack had accepted, and a 429 lost its `Retry-After` and its
+        retryable classification to the same ambiguity.
+
+        Exactly one case needs a body. Slack's Web API answers bot-mode requests
+        with HTTP 200 and `ok: false` for token, channel, and payload faults, so a
+        bot-mode 200 is the only status that does not decide by itself. A webhook
+        answers `ok` as plain text and any non-200 decides on its status, so
+        neither body is read at all — which also means neither can fail.
+        """
+
         status = int(response.status)
         retry_after = _retry_after_seconds(response.headers)
+        status_only = SlackResponse(
+            status_code=status,
+            bytes_sent=True,
+            latency_ms=_elapsed_ms(started),
+            retry_after_seconds=retry_after,
+        )
 
         if status in _REDIRECT_RANGE:
             # Refused by not following it. The status is still the fact, and the
             # worker makes a redirect terminal; a followed redirect would reach
             # a host that passed neither the allowlist nor address validation.
-            return SlackResponse(
-                status_code=status,
-                bytes_sent=True,
-                latency_ms=_elapsed_ms(started),
-                retry_after_seconds=retry_after,
-            )
+            return status_only
+        if destination.mode == WEBHOOK:
+            return status_only
+        if status != _HTTP_OK:
+            return status_only
 
         try:
             # One byte past the limit, so a body that exactly fills it is read
@@ -316,23 +377,14 @@ class SlackHttpSender:
             )
 
         if len(raw) > self.max_response_bytes:
-            # A status arrived, so the request reached Slack, but the answer is
-            # unusable. Reporting the status alone would classify an unread
-            # `ok:false` as success, so this is reported as a read failure with
-            # bytes sent, which the worker makes `delivery_unknown` for review.
+            # Slack answered 200, so the message may well have posted, but an
+            # unread body could have carried `ok: false`. Reporting the status
+            # alone would classify that as success, so this is a read failure
+            # with bytes sent, which the worker makes `delivery_unknown` for
+            # review. Only reachable in bot mode now, which is the only mode
+            # whose outcome the body decides.
             return SlackResponse(
                 error_class=TransportError.READ_FAILED, bytes_sent=True, latency_ms=_elapsed_ms(started)
-            )
-
-        if status != _HTTP_OK or destination.mode == WEBHOOK:
-            # A webhook answers `ok` as plain text, so the status is the whole
-            # outcome. Any non-200 is likewise decided by its status, and its
-            # body is neither needed nor parsed.
-            return SlackResponse(
-                status_code=status,
-                bytes_sent=True,
-                latency_ms=_elapsed_ms(started),
-                retry_after_seconds=retry_after,
             )
 
         return self._bot_outcome(raw, status, retry_after, started)

@@ -49,9 +49,11 @@ from aws_public_change_feed.credentials import (  # noqa: E402
     BOT_TOKEN,
     WEBHOOK,
     CredentialNotFound,
+    CredentialUnavailable,
     SlackCredential,
     StaticCredentialReader,
 )
+from aws_public_change_feed.identity import queue_dispatch_id  # noqa: E402
 from aws_public_change_feed.loading import load_active_release  # noqa: E402
 from aws_public_change_feed.outbox import (  # noqa: E402
     DeliveryRecord,
@@ -1218,6 +1220,231 @@ class CredentialTests(WorkerFixture):
 
         self.assertEqual(result.state, POSTED)
         self.assertEqual(len(self.sender.calls), 1)
+
+
+class TransientCredentialTests(WorkerFixture):
+    """A store that could not answer must not destroy deliverable work.
+
+    Nothing about the candidate, the release, or the credential is known to be
+    wrong when Secrets Manager throttles, so the record is rescheduled rather
+    than resolved. Every assertion below follows from no Slack call having
+    happened: the network-attempt budget is untouched because chapter 06 reserves
+    it for attempts that reach Slack, and destination pacing is untouched because
+    this destination was never called and one store's outage must not throttle
+    unrelated work.
+    """
+
+    class UnavailableCredentials:
+        def __init__(self, error=None):
+            self.calls = []
+            self._error = error or CredentialUnavailable(
+                "secrets_manager: read did not complete, error code Throttling"
+            )
+
+        def read(self, secret_id):
+            self.calls.append(secret_id)
+            raise self._error
+
+    def test_a_transient_read_records_failed_retryable_without_a_slack_call(self):
+        self.queued_record()
+        credentials = self.UnavailableCredentials()
+
+        result = self.process(credentials=credentials)
+
+        self.assertTrue(result.handled)
+        self.assertEqual(result.state, FAILED_RETRYABLE)
+        self.assertFalse(result.performed_network_call)
+        self.assertEqual(self.sender.calls, [])
+        self.assertEqual(credentials.calls, [self.route["credential_secret_id"]])
+
+    def test_the_network_attempt_budget_is_untouched(self):
+        self.queued_record(network_attempt_count=3)
+
+        self.process(credentials=self.UnavailableCredentials())
+
+        self.assertEqual(self.record().network_attempt_count, 3)
+
+    def test_destination_pacing_is_not_advanced(self):
+        self.queued_record()
+
+        self.process(credentials=self.UnavailableCredentials())
+
+        self.assertIsNone(self.store.get_pace(self.destination_key))
+
+    def test_the_record_is_rescheduled_with_a_bounded_future_delay(self):
+        self.queued_record()
+
+        self.process(credentials=self.UnavailableCredentials())
+
+        record = self.record()
+        self.assertEqual(record.status, FAILED_RETRYABLE)
+        assert record.next_action_at is not None
+        delay = record.next_action_at - NOW_TS
+        self.assertGreater(delay, 0)
+        self.assertLessEqual(delay, self.inventory["slack"]["rate_control"]["max_retry_after_seconds"])
+
+    def test_the_delay_is_deterministic_for_the_same_record(self):
+        first = self.retry_delay_for(generation=1)
+        again = self.retry_delay_for(generation=1)
+
+        self.assertEqual(first, again)
+
+    def test_a_later_dispatch_generation_backs_off_further(self):
+        """`dispatch_generation` is the ordinal, so successive retries grow."""
+
+        early = self.retry_delay_for(generation=1)
+        later = self.retry_delay_for(generation=6)
+
+        self.assertGreater(later, early)
+
+    def retry_delay_for(self, *, generation):
+        self.store = InMemoryOutboxStore()
+        self.queued_record(dispatch_generation=generation)
+        self.process(credentials=self.UnavailableCredentials())
+        record = self.record()
+        assert record.next_action_at is not None
+        return record.next_action_at - NOW_TS
+
+    def test_a_record_without_a_generation_still_reschedules(self):
+        self.queued_record(dispatch_generation=None)
+
+        result = self.process(credentials=self.UnavailableCredentials())
+
+        self.assertEqual(result.state, FAILED_RETRYABLE)
+        assert self.record().next_action_at is not None
+
+    def test_the_active_dispatch_claim_is_cleared_for_the_next_generation(self):
+        """Otherwise SQS deduplication would suppress the retry."""
+
+        generation = 2
+        self.queued_record(
+            dispatch_generation=generation,
+            dispatch_id=queue_dispatch_id(self.request["request_id"], generation),
+        )
+
+        self.process(credentials=self.UnavailableCredentials())
+
+        self.assertIsNone(self.record().dispatch_id)
+
+    def test_the_record_receives_no_ttl(self):
+        """Outstanding work the dispatcher still needs must not expire."""
+
+        self.queued_record()
+
+        self.process(credentials=self.UnavailableCredentials())
+
+        self.assertIsNone(self.record().expires_at)
+
+    def test_a_bounded_response_class_is_stored_without_provider_detail(self):
+        self.queued_record()
+        credentials = self.UnavailableCredentials(
+            CredentialUnavailable("secrets_manager: read did not complete, error code ThrottlingException")
+        )
+
+        self.process(credentials=credentials)
+
+        self.assertEqual(self.record().slack_response, {"response_class": "credential_unavailable"})
+
+    def test_a_permanent_read_is_still_terminal(self):
+        """The split must not turn every credential failure into a retry."""
+
+        self.queued_record()
+
+        result = self.process(credentials=RecordingCredentials({}, fail_on=self.route["credential_secret_id"]))
+
+        self.assertEqual(result.state, FAILED_TERMINAL)
+        self.assertEqual(self.record().slack_response, {"response_class": "credential_read_error"})
+
+    def test_a_lost_outcome_write_reports_no_network_call(self):
+        self.queued_record()
+        store = self.store
+
+        class LosingStore:
+            def __getattr__(self, name):
+                return getattr(store, name)
+
+            def record_outcome(self, *args, **kwargs):
+                return False
+
+        result = self.process(store=LosingStore(), credentials=self.UnavailableCredentials())
+
+        self.assertFalse(result.performed_network_call)
+
+
+class BotTokenContentTests(WorkerFixture):
+    """The stored value's kind is proved by content, not by configuration."""
+
+    def setUp(self):
+        super().setUp()
+        # Published once. Republishing per case would need a later promotion
+        # stamp, and the forward-time rule refuses two at the same instant.
+        self._publish_release(inventory_body=json.dumps(bot_mode_inventory(self.inventory)).encode())
+        self._build_candidate_and_request()
+
+    def bot_credentials(self, value):
+        return RecordingCredentials({BOT_TOKEN_SECRET_ID: SlackCredential(BOT_TOKEN, value)})
+
+    def test_a_valid_bot_token_reaches_the_sender(self):
+        credentials = self.bot_credentials("xoxb-PLACEHOLDER-NOT-A-REAL-TOKEN-0123456789")
+        self.queued_record()
+
+        result = self.process(credentials=credentials)
+
+        self.assertEqual(result.state, POSTED)
+        self.assertEqual(len(self.sender.calls), 1)
+
+    def test_a_webhook_url_stored_as_a_bot_token_is_terminal(self):
+        """The configured kind agrees with the release here, so only content catches it."""
+
+        credentials = self.bot_credentials("https://hooks.slack.com/services/TPLACEHOLDER/BPLACEHOLDER/NotReal000")
+        self.queued_record()
+
+        result = self.process(credentials=credentials)
+
+        self.assertTrue(result.handled)
+        self.assertEqual(result.state, FAILED_TERMINAL)
+        self.assertFalse(result.performed_network_call)
+        self.assertEqual(self.sender.calls, [])
+        self.assertEqual(self.record().slack_response, {"response_class": "bot_token_rejected"})
+
+    def test_the_network_attempt_budget_is_preserved(self):
+        credentials = self.bot_credentials("not-a-slack-token-at-all-but-long")
+        self.queued_record(network_attempt_count=2)
+
+        self.process(credentials=credentials)
+
+        self.assertEqual(self.record().network_attempt_count, 2)
+
+    def test_no_part_of_the_token_appears_in_the_reason_or_the_record(self):
+        secret = "xoxp-PLACEHOLDER-WRONG-TOKEN-CLASS-987654321"
+        credentials = self.bot_credentials(secret)
+        self.queued_record()
+
+        result = self.process(credentials=credentials)
+
+        self.assertNotIn(secret, result.reason or "")
+        self.assertNotIn(secret[:20], result.reason or "")
+        self.assertNotIn(secret, json.dumps(self.record().slack_response))
+
+    def test_every_rejected_shape_is_terminal_without_a_call(self):
+        for label, value in {
+            "wrong class": "xoxp-123456789012-abcdefghijkl",
+            "too short": "xoxb-short",
+            "line break": "xoxb-1234567890-abc\nX-Injected: 1",
+            "arbitrary text": "some arbitrary printable value that is long",
+            "empty": "",
+        }.items():
+            with self.subTest(label=label):
+                self.store = InMemoryOutboxStore()
+                self.sender = FakeSlackSender(self.posted_response())
+                credentials = self.bot_credentials(value)
+                self.queued_record()
+
+                result = self.process(credentials=credentials)
+
+                self.assertEqual(result.state, FAILED_TERMINAL)
+                self.assertEqual(self.sender.calls, [])
+                self.assertEqual(self.record().network_attempt_count, 0)
 
 
 class NetworkAttemptBudgetTests(WorkerFixture):

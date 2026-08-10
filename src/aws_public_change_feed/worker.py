@@ -15,15 +15,24 @@ one Slack network call, and records `posted`, `failed_retryable`,
 by another lease is returned unprocessed, and a future retry returns to the
 durable outbox instead of sleeping in Lambda.
 
-Three things are revalidated at delivery time rather than trusted from
+Several things are revalidated at delivery time rather than trusted from
 upstream, because each arrives as mutable state that no earlier check governs.
 The stored source URL is re-checked against the canonical HTTPS policy inside
 the renderer, since candidate identity does not cover the URL and an edited
 record keeps a valid ID. The credential's kind is checked against the release's
-delivery mode, and in webhook mode its value — the secret is the URL, so
-publication-time validation can never have seen it. A failure in any of them is
-`failed_terminal` with no network call and no charge against the Slack
-attempt budget, which chapter 06 reserves for calls that actually happen.
+delivery mode — which detects a release-versus-wiring mismatch and nothing more —
+and then its *value* is checked against the policy for that mode, because the kind
+is metadata this process chose and cannot establish what an operator stored. A
+failure in any of them is `failed_terminal` with no network call and no charge
+against the Slack attempt budget, which chapter 06 reserves for calls that
+actually happen.
+
+One credential failure is not terminal. When the store itself could not answer —
+throttling, an outage, a read timeout — nothing about the candidate, the release,
+or the credential is known to be wrong, so `retryable_without_call` reschedules
+the record on a bounded delay instead of destroying deliverable work over a
+provider hiccup. It makes no Slack call, leaves the attempt budget untouched, and
+does not advance destination pacing, since this destination was never contacted.
 
 Where a message goes is derived here, not passed through. `_destination_for`
 builds a `SlackDestination` from the verified inventory release, so the channel a
@@ -54,7 +63,16 @@ from enum import StrEnum
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
-from .credentials import BOT_TOKEN, WEBHOOK, CredentialReader, CredentialReadError, SlackCredential
+from .credentials import (
+    BOT_TOKEN,
+    WEBHOOK,
+    CredentialReader,
+    CredentialReadError,
+    CredentialUnavailable,
+    InvalidBotToken,
+    SlackCredential,
+    validate_bot_token,
+)
 from .dispatch import InvalidDeliveryRequest, validate_delivery_request
 from .identity import application_artifact_id
 from .loading import (
@@ -1171,6 +1189,55 @@ def process_delivery(
         metrics.terminal()
         return WorkerResult(handled=True, state=FAILED_TERMINAL, reason=reason)
 
+    def retryable_without_call(response_class: str, reason: str) -> WorkerResult:
+        """Reschedule work whose failure proves nothing is wrong with it.
+
+        The mirror of `terminal_without_call`, for a condition another attempt
+        can resolve: the credential store throttled, timed out, or was briefly
+        unavailable. Nothing about the candidate, the release, or the credential
+        is known to be wrong, so resolving it terminally would discard a
+        deliverable alert over a provider hiccup.
+
+        Every field follows from no Slack call having happened.
+        `network_attempt_count` is written back unchanged, because chapter 06
+        reserves that budget for attempts that reach Slack, and a transient read
+        must not be able to exhaust it. Destination pacing is not advanced,
+        because this destination was never called and holding back the next
+        message would spread one provider's outage across unrelated work. The
+        delay comes from the same bounded backoff a retryable Slack response
+        uses, with `dispatch_generation` as the ordinal — it is the count of
+        intentional queue deliveries for this record, so it grows across
+        successive transient failures where `network_attempt_count`, correctly,
+        does not.
+
+        `record_outcome` clears the active dispatch claim, so the dispatcher
+        issues a fresh generation and dispatch ID when the record comes due and
+        SQS deduplication cannot suppress the retry.
+        """
+
+        completed_ts = int(clock().timestamp())
+        ordinal = record.dispatch_generation if record.dispatch_generation is not None else 1
+        delay = _retry_delay(
+            ordinal,
+            min_interval_seconds=min_interval_seconds,
+            max_retry_after_seconds=max_retry_after_seconds,
+            candidate_id=candidate,
+        )
+        if not store.record_outcome(
+            candidate,
+            expected_state_version=claimed_version,
+            attempt_id=attempt_id,
+            status=FAILED_RETRYABLE,
+            network_attempt_count=record.network_attempt_count,
+            next_action_at=completed_ts + delay,
+            slack_response={"response_class": response_class},
+            expires_at=None,
+        ):
+            # No Slack call was made, so the reread must not report one.
+            return _lost_outcome_write(store, candidate, metrics, performed_network_call=False)
+        metrics.retryable()
+        return WorkerResult(handled=True, state=FAILED_RETRYABLE, reason=reason)
+
     # Chapter 04's candidate rules, against the release just verified. The
     # schema check above proves shape and the identity check proves the digests
     # are self-consistent, but neither covers the fields a reader actually
@@ -1221,34 +1288,56 @@ def process_delivery(
         secret = credentials.read(
             route["credential_secret_id"] if delivery_mode == WEBHOOK else inventory["slack"]["bot_token_secret_id"]
         )
+    except CredentialUnavailable as error:
+        # The store could not answer. Nothing proves the credential is wrong, so
+        # resolving this terminally would discard a deliverable alert because
+        # Secrets Manager throttled. Retried on a bounded delay with no Slack
+        # call and no charge against the network-attempt budget.
+        return retryable_without_call("credential_unavailable", f"credential store unavailable: {error}")
     except CredentialReadError as error:
-        # ADR-004: a missing or unreadable credential is a configuration
-        # correction, so the record becomes failed_terminal and an operator
-        # fixes the secret container and replays.
+        # ADR-004: a permanently missing or unreadable credential is a
+        # configuration correction, so the record becomes failed_terminal and an
+        # operator fixes the secret container and replays.
         return terminal_without_call("credential_read_error", f"credential read failed: {error}")
 
-    # The secret container is mutable deployment state that no schema governs,
-    # so what came back is checked against what the release says this route
-    # delivers with. A bot token posted to a webhook endpoint, or a webhook URL
-    # sent as a bearer token, is a credential mix-up that must not reach Slack.
+    # Two different checks, and the first cannot do the second's job.
+    #
+    # `secret.kind` records the delivery mode the adapter was constructed for, so
+    # comparing it to the release detects a mode mismatch between the release and
+    # the deployment's wiring — a bot-token container consulted while the release
+    # says webhook. It is metadata this process chose. It proves nothing about
+    # what an operator actually stored, so a webhook URL pasted into the
+    # bot-token container passes it.
     if secret.kind != delivery_mode:
         return terminal_without_call(
             "credential_kind_mismatch",
             f"credential kind {secret.kind} does not match the inventory delivery mode {delivery_mode}",
         )
 
+    # The content check is what proves the stored value's kind, and it runs
+    # before `network_attempt_count` moves so a wrong secret never spends an
+    # attempt Slack was never asked to serve. Both modes have one, and both drop
+    # the detail: in webhook mode it embeds the URL, and in bot mode any part of
+    # the message could quote the token.
     if delivery_mode == WEBHOOK:
         # Chapter 04's incoming-webhook controls apply to the secret value
         # itself, and runtime is the only place they can apply: the URL is the
         # credential, so it exists in no release artifact to be validated at
-        # publication. The rejection detail is deliberately dropped — it
-        # embeds the URL, and chapter 04 says never log it.
+        # publication.
         try:
             validate_webhook_url(secret.value, approved_hosts=inventory["slack"]["approved_webhook_hosts"])
         except InvalidSlackWebhook:
             return terminal_without_call(
                 "webhook_url_rejected",
                 "the stored webhook secret failed chapter 04's incoming-webhook controls",
+            )
+    else:
+        try:
+            validate_bot_token(secret.value)
+        except InvalidBotToken:
+            return terminal_without_call(
+                "bot_token_rejected",
+                "the stored bot-token secret is not a Slack bot token",
             )
 
     network_attempt_count = record.network_attempt_count + 1
