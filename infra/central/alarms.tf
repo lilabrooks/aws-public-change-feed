@@ -97,10 +97,11 @@ resource "aws_cloudwatch_metric_alarm" "runtime_failure_queue_depth" {
 resource "aws_cloudwatch_metric_alarm" "feed_watcher_errors" {
   alarm_name          = "apcf-${local.deployment_id}-feed-watcher-errors"
   comparison_operator = "GreaterThanThreshold"
-  evaluation_periods  = 1
+  evaluation_periods  = 2
+  datapoints_to_alarm = 2
   metric_name         = "Errors"
   namespace           = "AWS/Lambda"
-  period              = 300
+  period              = 900
   statistic           = "Sum"
   threshold           = 0
   treat_missing_data  = "notBreaching"
@@ -109,7 +110,57 @@ resource "aws_cloudwatch_metric_alarm" "feed_watcher_errors" {
     FunctionName = local.function_names.watcher
   }
 
-  alarm_description         = "Feed watcher function reported errors. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Feed stale or fetch failing'."
+  alarm_description         = "Feed watcher errors breached for two consecutive 15-minute periods. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Feed stale or fetch failing'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "watcher_incomplete_runs" {
+  count = local.watcher_runtime_enabled ? 1 : 0
+
+  alarm_name          = "apcf-${local.deployment_id}-watcher-incomplete-runs"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  datapoints_to_alarm = 2
+  metric_name         = "IncompleteRuns"
+  namespace           = local.metrics_namespace
+  period              = 900
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    Function = local.function_names.watcher
+  }
+
+  alarm_description         = "Feed watcher incompletion breached for two consecutive 15-minute periods. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Feed stale or fetch failing'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "watcher_fault" {
+  count = local.watcher_runtime_enabled ? 1 : 0
+
+  alarm_name          = "apcf-${local.deployment_id}-watcher-fault"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  datapoints_to_alarm = 1
+  metric_name         = "WatcherFaults"
+  namespace           = local.metrics_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    Function = local.function_names.watcher
+  }
+
+  alarm_description         = "The feed watcher stopped on an unexpected internal fault. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Feed stale or fetch failing'."
   alarm_actions             = [aws_sns_topic.operations.arn]
   ok_actions                = [aws_sns_topic.operations.arn]
   insufficient_data_actions = [aws_sns_topic.operations.arn]
@@ -251,6 +302,8 @@ resource "aws_cloudwatch_metric_alarm" "feed_watcher_heartbeat" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "reconciler_heartbeat" {
+  count = local.reconciler_runtime_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-recovery-reconciler-heartbeat"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 3

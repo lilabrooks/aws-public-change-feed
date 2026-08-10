@@ -8,6 +8,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class TerraformContractTests(unittest.TestCase):
     @staticmethod
+    def resource_block(source, resource_type, resource_name):
+        marker = f'resource "{resource_type}" "{resource_name}"'
+        start = source.index(marker)
+        end = source.find("\nresource ", start + 1)
+        return source[start:] if end == -1 else source[start:end]
+
+    @staticmethod
     def policy_statement(source, sid):
         marker = f'sid = "{sid}"'
         start = source.index(marker)
@@ -206,6 +213,79 @@ class TerraformContractTests(unittest.TestCase):
         self.assertNotIn(
             "var.worker_artifact_version_id\n\n  timeout                        = local.reconciler", lambda_source
         )
+
+    def test_reconciler_heartbeat_uses_the_exact_runtime_enablement_condition(self):
+        alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        heartbeat = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "reconciler_heartbeat")
+        reconciler = self.resource_block(lambda_source, "aws_lambda_function", "reconciler")
+
+        condition = "count = local.reconciler_runtime_enabled ? 1 : 0"
+        self.assertIn(condition, reconciler)
+        self.assertIn(condition, heartbeat)
+
+    def test_watcher_failure_alarms_match_the_accepted_paging_policy(self):
+        alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
+        errors = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "feed_watcher_errors")
+        incomplete = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "watcher_incomplete_runs")
+        fault = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "watcher_fault")
+
+        for block in (errors, incomplete):
+            with self.subTest(alarm="sustained"):
+                self.assertIn("evaluation_periods  = 2", block)
+                self.assertIn("datapoints_to_alarm = 2", block)
+                self.assertIn("period              = 900", block)
+                self.assertIn('statistic           = "Sum"', block)
+                self.assertIn("threshold           = 0", block)
+                self.assertIn('treat_missing_data  = "notBreaching"', block)
+                self.assertIn("alarm_actions             = [aws_sns_topic.operations.arn]", block)
+        self.assertIn('namespace           = "AWS/Lambda"', errors)
+        self.assertIn("FunctionName = local.function_names.watcher", errors)
+        self.assertIn('metric_name         = "IncompleteRuns"', incomplete)
+        self.assertIn("namespace           = local.metrics_namespace", incomplete)
+        self.assertIn("Function = local.function_names.watcher", incomplete)
+        self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", incomplete)
+
+        self.assertIn("evaluation_periods  = 1", fault)
+        self.assertIn("datapoints_to_alarm = 1", fault)
+        self.assertIn("period              = 300", fault)
+        self.assertIn('metric_name         = "WatcherFaults"', fault)
+        self.assertIn("namespace           = local.metrics_namespace", fault)
+        self.assertIn("Function = local.function_names.watcher", fault)
+        self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", fault)
+        self.assertIn('treat_missing_data  = "notBreaching"', fault)
+        self.assertIn("alarm_actions             = [aws_sns_topic.operations.arn]", fault)
+
+    def test_changed_watcher_custom_alarms_are_owned_by_the_watcher_runtime(self):
+        watcher = (ROOT / "src/aws_public_change_feed/watcher_runtime.py").read_text(encoding="utf-8")
+        other_runtimes = "\n".join(
+            (ROOT / path).read_text(encoding="utf-8")
+            for path in (
+                "src/aws_public_change_feed/slack_worker_runtime.py",
+                "src/aws_public_change_feed/recovery_runtime.py",
+            )
+        )
+        for metric in ("IncompleteRuns", "WatcherFaults"):
+            with self.subTest(metric=metric):
+                self.assertIn(f'"{metric}"', watcher)
+                self.assertNotIn(f'"{metric}"', other_runtimes)
+
+    def test_watcher_fault_runbook_preserves_the_diagnostic_chain(self):
+        runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
+        start = runbook.index("## Feed stale or fetch failing")
+        section = runbook[start : runbook.index("\n## Feed appears quiet", start)]
+
+        for evidence in (
+            "WatcherFaults",
+            "IncompleteRuns",
+            "AWS/Lambda `Errors`",
+            "MaxFeedStalenessSeconds",
+            "absence is unknown",
+            "last success",
+            "lease owner",
+        ):
+            with self.subTest(evidence=evidence):
+                self.assertIn(evidence, section)
 
     def test_reconciler_failure_queue_is_standard_encrypted_and_source_scoped(self):
         queue = (ROOT / "infra/central/sqs.tf").read_text(encoding="utf-8")

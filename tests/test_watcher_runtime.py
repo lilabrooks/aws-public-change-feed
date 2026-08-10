@@ -29,6 +29,7 @@ from aws_public_change_feed.source_store import (  # noqa: E402
     DynamoDBFeedStateStore,
     S3SnapshotStore,
 )
+from aws_public_change_feed.state import ConditionalStateConflict  # noqa: E402
 from aws_public_change_feed.watcher import (  # noqa: E402
     NullWatcherMetrics,
     WatcherOrchestrator,
@@ -181,6 +182,7 @@ class MetricsTests(unittest.TestCase):
         metrics.newest_publication_age("aws-whats-new", 60)
         metrics.max_feed_staleness(120)
         metrics.incomplete_run()
+        metrics.incomplete_run()
         metrics.flush()
 
         expected = {
@@ -211,6 +213,7 @@ class MetricsTests(unittest.TestCase):
             "WatcherFaults": "Count",
         }
         observed = {}
+        observed_dimensions = {}
         allowed_dimensions = {
             (),
             ("FeedName",),
@@ -222,7 +225,12 @@ class MetricsTests(unittest.TestCase):
             self.assertIn(tuple(metadata["Dimensions"][0]), allowed_dimensions)
             for definition in metadata["Metrics"]:
                 observed[definition["Name"]] = definition["Unit"]
+                observed_dimensions[definition["Name"]] = tuple(metadata["Dimensions"][0])
         self.assertEqual(observed, expected)
+        self.assertEqual(observed_dimensions["IncompleteRuns"], ("Function",))
+        self.assertEqual(observed_dimensions["WatcherFaults"], ("Function",))
+        incomplete_document = next(document for document in map(json.loads, output) if "IncompleteRuns" in document)
+        self.assertEqual(incomplete_document["IncompleteRuns"], 1)
 
 
 class MotoCompositionTests(unittest.TestCase):
@@ -372,6 +380,16 @@ class HandlerTests(unittest.TestCase):
             del invocation_id, remaining_time_ms, metrics
             raise ValueError("https://evil.example/private-source")
 
+    class IncompleteRunner:
+        def run(self, *, invocation_id, remaining_time_ms, metrics):
+            del invocation_id, remaining_time_ms, metrics
+            return WatcherResult(outcomes=(), candidate_ids=(), advanced_feeds=(), incomplete=True)
+
+    class ConditionalConflictRunner:
+        def run(self, *, invocation_id, remaining_time_ms, metrics):
+            del invocation_id, remaining_time_ms, metrics
+            raise ConditionalStateConflict("bounded conditional retry exhausted")
+
     def event(self):
         return {
             "version": "0",
@@ -418,7 +436,10 @@ class HandlerTests(unittest.TestCase):
             result = lambda_handler(self.event(), self.Context())
         self.assertEqual(result, {"feeds": 0, "advanced": 0, "candidates": 0})
         self.assertEqual(runner.invocation_id, "request-1")
-        self.assertIn("Heartbeat", output.getvalue())
+        rendered = output.getvalue()
+        self.assertIn("Heartbeat", rendered)
+        self.assertNotIn("IncompleteRuns", rendered)
+        self.assertNotIn("WatcherFaults", rendered)
 
     def test_malformed_event_and_missing_environment_emit_no_heartbeat(self):
         for event, environment in (({}, self.environment()), (self.event(), {})):
@@ -458,8 +479,29 @@ class HandlerTests(unittest.TestCase):
                 lambda_handler(self.event(), self.Context())
         rendered = output.getvalue()
         self.assertIn("WatcherFaults", rendered)
+        self.assertNotIn("IncompleteRuns", rendered)
         self.assertNotIn("evil.example", rendered)
         self.assertNotIn("evil.example", str(caught.exception))
+
+    def test_remaining_time_incompletion_fails_for_retry_without_a_fault_metric(self):
+        runtime_module._runtime = self.IncompleteRunner()
+        output = io.StringIO()
+        with patch.dict(os.environ, self.environment(), clear=True), contextlib.redirect_stdout(output):
+            with self.assertRaisesRegex(RuntimeError, "watcher invocation failed"):
+                lambda_handler(self.event(), self.Context())
+        rendered = output.getvalue()
+        self.assertIn("IncompleteRuns", rendered)
+        self.assertNotIn("WatcherFaults", rendered)
+
+    def test_exhausted_conditional_state_conflict_is_incomplete_not_a_fault(self):
+        runtime_module._runtime = self.ConditionalConflictRunner()
+        output = io.StringIO()
+        with patch.dict(os.environ, self.environment(), clear=True), contextlib.redirect_stdout(output):
+            with self.assertRaisesRegex(RuntimeError, "watcher invocation failed"):
+                lambda_handler(self.event(), self.Context())
+        rendered = output.getvalue()
+        self.assertIn("IncompleteRuns", rendered)
+        self.assertNotIn("WatcherFaults", rendered)
 
 
 if __name__ == "__main__":

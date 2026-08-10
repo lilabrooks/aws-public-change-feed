@@ -27,11 +27,23 @@ Before trusting the runtime deployment, repeat the two checks that found every d
 
 1. Identify the feed and compare first attempt, last attempt, last success, newest observed publication time, ETag, Last-Modified, state version, lease owner and expiry, and error class. Before the first success, freshness age starts at the durable first attempt and must not reset on each failure.
 2. Check the scheduler and watcher heartbeat. If all feeds are stale, inspect the shared runtime, DNS, egress, release load, and source-table errors first.
-3. For one feed, verify the configured URL and approved host against the publisher's official feed page.
-4. Inspect safe diagnostics for DNS classification, TLS, content type, redirect rejection, response size, timeout, parser limit, and raw-snapshot status.
-5. Do not relax the host allowlist, address checks, TLS, redirect, or parser limits during incident response. Add a reviewed configuration or code change with a regression fixture.
-6. Run a shadow fetch using the deployed network path. It must not update validators or create candidates.
-7. Restore service, confirm last success advances, and inspect the next normalized item count. Keep the prior ETag and Last-Modified until processing is durable.
+3. Classify failed watcher invocations from the function-scoped custom metrics.
+   `WatcherFaults` means an unexpected internal fault and pages on one
+   occurrence. `IncompleteRuns` means the remaining-time reserve or a bounded
+   conditional-state retry stopped the pass; it pages only after two
+   consecutive 15-minute periods. The AWS/Lambda `Errors` alarm is a matching
+   two-period backstop. EventBridge retries can contribute samples, so two
+   breaching periods do not prove that two distinct scheduled events failed.
+4. A faulting invocation may stop before it emits the dimensionless
+   `MaxFeedStalenessSeconds` aggregate. Its absence is unknown, not evidence
+   that feeds are fresh. Use the invocation error and custom metric, then check
+   durable first and last attempt, last success, pending validators, state
+   version, lease owner and expiry, and error class for each configured feed.
+5. For one feed, verify the configured URL and approved host against the publisher's official feed page.
+6. Inspect safe diagnostics for DNS classification, TLS, content type, redirect rejection, response size, timeout, parser limit, and raw-snapshot status.
+7. Do not relax the host allowlist, address checks, TLS, redirect, or parser limits during incident response. Add a reviewed configuration or code change with a regression fixture.
+8. Run a shadow fetch using the deployed network path. It must not update validators or create candidates.
+9. Restore service, confirm last success advances, and inspect the next normalized item count. Keep the prior ETag and Last-Modified until processing is durable.
 
 ## Feed appears quiet
 
@@ -124,11 +136,14 @@ The standard runtime-failure queue contains exhausted EventBridge target events,
 not delivery requests. Never redrive it into the delivery FIFO queue.
 
 1. Identify the exact schedule rule, target Lambda, event ID, and event time.
-2. Check the reconciler Lambda error, `ReconcilerFault`, observation saturation,
+2. For a watcher event, use `WatcherFaults`, `IncompleteRuns`, AWS/Lambda
+   `Errors`, durable feed state, and snapshot evidence. For a reconciler event,
+   use the reconciler Lambda error, `ReconcilerFault`, observation saturation,
    repair limit, DynamoDB throttling, and SQS send evidence for that invocation.
-3. Confirm whether later five-minute runs completed the durable work. Conditional
-   transitions make a repeated schedule event safe, but a failed invocation may
-   already have repaired part of its bounded set.
+3. Confirm whether later scheduled runs completed the durable work. The watcher
+   runs every 15 minutes and the reconciler every five minutes. Conditional
+   operations make a repeated schedule event safe, but a failed invocation may
+   already have made part of its bounded durable progress.
 4. Fix the source-level or permission failure and invoke one reviewed schedule
    event against the same deployed package before deleting the failure message.
 5. Preserve messages whose durable outcome is still unexplained.
