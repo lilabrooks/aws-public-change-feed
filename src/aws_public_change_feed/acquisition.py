@@ -19,7 +19,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from .announcements import NormalizedAnnouncement, coalesce, normalize_item
-from .feedparse import FeedParseRejected, parse_feed
+from .feedparse import MAX_ITEM_CHARACTERS, MAX_ITEMS, FeedParseRejected, parse_feed
 from .fetching import FeedFetcher, FeedFetching, FetchRejected
 from .state import FeedCheckpoint, FeedStateStore, SnapshotStore
 from .urls import FeedUrlRejected, validate_feed_url
@@ -78,6 +78,8 @@ class FeedWatcher:
     state: FeedStateStore
     fetcher: FeedFetching = field(default_factory=FeedFetcher)
     snapshots: SnapshotStore | None = None
+    max_items: int = MAX_ITEMS
+    max_item_characters: int = MAX_ITEM_CHARACTERS
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 
     def run(self, feeds: Sequence[FeedDefinition]) -> AcquisitionResult:
@@ -125,7 +127,11 @@ class FeedWatcher:
             return FeedOutcome(feed_name=feed.name, status="not_modified", pending_checkpoint=None), ()
 
         try:
-            items = parse_feed(response.body)
+            items = parse_feed(
+                response.body,
+                max_items=self.max_items,
+                max_item_characters=self.max_item_characters,
+            )
         except FeedParseRejected as error:
             return self._failure(feed, attempted, error.reason_class, error.detail), ()
 

@@ -1,3 +1,90 @@
+resource "aws_lambda_function" "watcher" {
+  count = local.watcher_runtime_enabled ? 1 : 0
+
+  function_name = local.function_names.watcher
+  role          = aws_iam_role.feed_watcher.arn
+  runtime       = "python3.12"
+  architectures = ["x86_64"]
+  handler       = "aws_public_change_feed.watcher_runtime.lambda_handler"
+
+  s3_bucket         = aws_s3_bucket.config.id
+  s3_key            = local.watcher_artifact_key
+  s3_object_version = var.watcher_artifact_version_id
+
+  timeout                        = local.watcher_timeout_seconds
+  reserved_concurrent_executions = local.watcher_reserved_concurrency
+  memory_size                    = 256
+
+  environment {
+    variables = {
+      ACTIVE_VERSIONS_OBJECT_KEY    = local.active_versions_key
+      APPLICATION_VERSION           = local.watcher_application_version
+      APPROVED_FEED_HOSTS_JSON      = jsonencode(local.feed_fetch_policy.allowed_feed_hosts)
+      CONFIG_BUCKET                 = aws_s3_bucket.config.id
+      DELIVERY_INDEX_NAME           = local.delivery_index_name
+      DELIVERY_TABLE_NAME           = aws_dynamodb_table.delivery.name
+      FEED_CONNECT_TIMEOUT_SECONDS  = tostring(local.feed_fetch_policy.connect_timeout_seconds)
+      FEED_LEASE_SECONDS            = tostring(local.watcher_lease_seconds)
+      FEED_RESPONSE_TIMEOUT_SECONDS = tostring(local.feed_fetch_policy.response_timeout_seconds)
+      MAX_CONCURRENT_FETCHES        = tostring(local.feed_fetch_policy.max_concurrent_fetches)
+      MAX_FEED_ITEM_CHARACTERS      = tostring(local.feed_fetch_policy.max_item_characters)
+      MAX_FEED_ITEMS                = tostring(local.feed_fetch_policy.max_items_per_feed)
+      MAX_FEED_REDIRECTS            = tostring(local.feed_fetch_policy.max_redirects)
+      MAX_FEED_RESPONSE_BYTES       = tostring(local.feed_fetch_policy.max_response_bytes)
+      METRICS_NAMESPACE             = local.metrics_namespace
+      RAW_SNAPSHOT_PREFIX           = local.raw_snapshot_prefix
+      SOURCE_STATE_TABLE_NAME       = aws_dynamodb_table.source_state.name
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.watcher,
+    aws_iam_role_policy.feed_watcher,
+    aws_iam_role_policy.watcher_logs,
+  ]
+
+  tags = local.tags
+}
+
+resource "aws_cloudwatch_event_rule" "watcher" {
+  count = local.watcher_runtime_enabled ? 1 : 0
+
+  name                = local.function_names.watcher
+  description         = "Run the durable public-feed watcher every 15 minutes."
+  schedule_expression = local.watcher_schedule_expression
+  state               = "ENABLED"
+
+  tags = local.tags
+}
+
+resource "aws_cloudwatch_event_target" "watcher" {
+  count = local.watcher_runtime_enabled ? 1 : 0
+
+  rule = aws_cloudwatch_event_rule.watcher[0].name
+  arn  = aws_lambda_function.watcher[0].arn
+
+  retry_policy {
+    maximum_event_age_in_seconds = local.watcher_maximum_event_age
+    maximum_retry_attempts       = local.watcher_maximum_retry_attempts
+  }
+
+  dead_letter_config {
+    arn = aws_sqs_queue.runtime_failures.arn
+  }
+
+  depends_on = [aws_sqs_queue_policy.runtime_failures]
+}
+
+resource "aws_lambda_permission" "watcher_schedule" {
+  count = local.watcher_runtime_enabled ? 1 : 0
+
+  statement_id  = "AllowExactWatcherSchedule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.watcher[0].function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.watcher[0].arn
+}
+
 resource "aws_lambda_function" "slack_worker" {
   count = local.worker_runtime_enabled ? 1 : 0
 

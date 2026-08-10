@@ -16,7 +16,6 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import yaml
 
@@ -24,6 +23,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from aws_public_change_feed.acquisition import FeedWatcher, load_feeds  # noqa: E402
+from aws_public_change_feed.fetching import FeedFetcher  # noqa: E402
 from aws_public_change_feed.matching import (  # noqa: E402
     Announcement,
     load_risk_rules,
@@ -33,6 +33,7 @@ from aws_public_change_feed.matching import (  # noqa: E402
 from aws_public_change_feed.state import InMemoryFeedStateStore  # noqa: E402
 
 CONFIG_PATH = Path("examples/config.yaml")
+DEPLOYMENT_PATH = Path("infra/central/deployment.yaml")
 CORPUS_PATH = Path("corpus/announcements.json")
 
 
@@ -53,21 +54,30 @@ def main() -> int:
 
     with (root / CONFIG_PATH).open(encoding="utf-8") as handle:
         configuration = yaml.safe_load(handle)
+    with (root / DEPLOYMENT_PATH).open(encoding="utf-8") as handle:
+        deployment = yaml.safe_load(handle)
     with (root / CORPUS_PATH).open(encoding="utf-8") as handle:
         corpus = json.load(handle)
 
     services = load_services(configuration)
     rules = load_risk_rules(configuration)
-    # Derived from the same hostname extraction `validate_feed_url` uses
-    # (hostname, casefolded), not from string slicing: `split("/")[2]` kept the
-    # port when one was present and preserved case, both of which reject items
-    # that the URL policy accepts.
-    approved = tuple(
-        sorted({(urlsplit(str(feed["url"])).hostname or "").casefold() for feed in configuration.get("feeds", ())})
-    )
+    # Screening reads the deployment allowlist directly, matching the Lambda
+    # environment rather than deriving a second policy from the release feeds.
+    policy = deployment["feed_fetch_policy"]
+    approved = tuple(sorted(str(host).casefold() for host in policy["allowed_feed_hosts"]))
     known = {entry["canonical_url"].rstrip("/") for entry in corpus["items"]}
 
-    watcher = FeedWatcher(approved_hosts=approved, state=InMemoryFeedStateStore())
+    watcher = FeedWatcher(
+        approved_hosts=approved,
+        state=InMemoryFeedStateStore(),
+        fetcher=FeedFetcher(
+            connect_timeout_seconds=policy["connect_timeout_seconds"],
+            response_timeout_seconds=policy["response_timeout_seconds"],
+            max_response_bytes=policy["max_response_bytes"],
+        ),
+        max_items=policy["max_items_per_feed"],
+        max_item_characters=policy["max_item_characters"],
+    )
     result = watcher.run(list(load_feeds(configuration)))
 
     for outcome in result.outcomes:

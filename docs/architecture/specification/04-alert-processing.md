@@ -4,13 +4,14 @@
 
 For every configured feed, the watcher:
 
-1. Parses the URL and requires HTTPS, the default port, an approved lowercase hostname, an empty user-info component, and a bounded path and query.
-2. Resolves all A and AAAA records and rejects loopback, link-local, private, multicast, reserved, unspecified, or otherwise non-global addresses.
-3. Connects to one validated address while preserving the approved hostname for TLS SNI and certificate verification.
-4. Sends conditional `If-None-Match` and `If-Modified-Since` headers when available.
-5. Rejects redirects, unsupported content types, oversized compressed or decoded responses, slow responses, and excessive items or item characters.
-6. Parses XML with external entities, DTD processing, and network resolution disabled.
-7. Stores a bounded raw response snapshot for replay and incident diagnosis.
+1. Loads the immutable release and requires its enabled feed-host set to equal the deployment allowlist before it claims any feed.
+2. Parses the URL and requires HTTPS, the default port, an approved lowercase hostname, an empty user-info component, and a bounded path and query.
+3. Resolves all A and AAAA records and rejects loopback, link-local, private, multicast, reserved, unspecified, or otherwise non-global addresses.
+4. Connects to one validated address while preserving the approved hostname for TLS SNI and certificate verification.
+5. Sends conditional `If-None-Match` and `If-Modified-Since` headers when available.
+6. Rejects redirects, unsupported content types, oversized compressed or decoded responses, slow responses, and excessive items or item characters. Connection timeout, response timeout, response bytes, item count, and item-character limits come from the same validated deployment input used by feed screening.
+7. Writes the exact bounded response bytes to the raw-snapshot prefix before parsing or using them. A snapshot failure leaves that feed's prior validators unchanged and blocks only that response.
+8. Parses XML with external entities, DTD processing, and network resolution disabled.
 
 DNS validation occurs for every connection. The HTTP client cannot silently re-resolve to an unchecked address.
 
@@ -38,6 +39,11 @@ URL. Preserve an accepted raw value in provenance. Every acquisition-reachable
 candidate must pass the worker's source-link policy after canonicalization.
 
 Fetch all enabled feeds before emission. Group items by canonical URL, merge sorted provenance entries, and choose title, summary, and timestamps using a deterministic precedence rule recorded in code and fixtures. Conflicting content remains observable in metrics and snapshot evidence.
+
+Concurrent or replayed observations merge with compare-and-swap. The later
+`observed_at` owns the current title and summary while older revisions remain in
+history; equal observation times choose the lexically smaller revision ID. A
+provenance-only replay may extend history but cannot rewind current content.
 
 ## Announcement revisions
 

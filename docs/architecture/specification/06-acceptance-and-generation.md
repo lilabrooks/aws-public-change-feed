@@ -26,12 +26,18 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 
 ## Feed acquisition acceptance
 
+- Given a live feed lease, another owner cannot claim it; after expiry, one new owner may take it with a higher state version.
 - Given an unapproved scheme, host, port, credential-bearing URL, private or special IP, DNS rebind, redirect, invalid certificate, oversized body, unsupported content type, entity expansion, excessive items, excessive characters, or timeout, the fetch fails closed and does not advance validators.
+- Given fetched bytes, an exact bounded snapshot becomes durable before parsing; a snapshot failure creates no announcement or candidate work and does not advance validators.
 - Given a valid `304`, last success advances and no announcement work is created.
 - Given one failed feed and three successful feeds, successful items continue and the failed feed keeps its prior checkpoint.
 - Given overlapping feeds containing one canonical URL, one announcement is evaluated with merged sorted provenance.
+- Given concurrent announcement updates, compare-and-swap preserves both revision and provenance histories; later observation time owns current content and equal times choose the lexically smaller revision ID.
 - Given a feed response that creates candidates, ETag and Last-Modified advance only after all candidate and outbox records are durable.
+- Given more than 25 candidate IDs, deterministic immutable response pages cover all sorted IDs; a zero-candidate response has one empty page, and a changed cross-feed coalescing result creates a distinct page-set identity without conflicting with an earlier replay marker.
+- Given several fetched feeds in one invocation, the final checkpoint transaction advances all exact owned versions or none of them.
 - Given a crash after partial durable writes, replay fills missing records without changing logical IDs or duplicating posted work.
+- Given less than the invocation reserve, the watcher claims no additional feed and leaves it for a later schedule.
 
 ## Matching acceptance
 
@@ -110,6 +116,8 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - Queue visibility, receive threshold, retry delay, network attempts, and reserved concurrency satisfy the tested timing model.
 - Shadow mode evaluates live snapshots without candidate or delivery writes.
 - Release rollback and application rollback exercises preserve historical replay.
+- The watcher and worker package inputs carry one identical digest and exact S3 object version; a mismatch cannot enable either runtime.
+- Every custom alarm metric either has a runtime producer or is explicitly recorded as planned, and changing or removing a producer fails the reverse alarm-contract test.
 
 ## Implementation order
 

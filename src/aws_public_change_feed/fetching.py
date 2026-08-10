@@ -43,7 +43,8 @@ __all__ = [
 ]
 
 MAX_RESPONSE_BYTES = 5 * 1024 * 1024
-DEFAULT_TIMEOUT_SECONDS = 15.0
+DEFAULT_CONNECT_TIMEOUT_SECONDS = 5.0
+DEFAULT_RESPONSE_TIMEOUT_SECONDS = 15.0
 
 ACCEPTED_CONTENT_TYPES = frozenset(
     {
@@ -97,7 +98,8 @@ class FeedFetcher:
     """Fetches one feed under the chapter 04 network policy."""
 
     resolver: Resolver = system_resolver
-    timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS
+    connect_timeout_seconds: float = DEFAULT_CONNECT_TIMEOUT_SECONDS
+    response_timeout_seconds: float = DEFAULT_RESPONSE_TIMEOUT_SECONDS
     max_response_bytes: int = MAX_RESPONSE_BYTES
     ssl_context_factory: Callable[[], ssl.SSLContext] = ssl.create_default_context
     connection_factory: ConnectionFactory = field(default=PinnedHTTPSConnection)
@@ -112,7 +114,13 @@ class FeedFetcher:
         address = self._select_address(target)
         context = verified_tls_context(self.ssl_context_factory)
 
-        connection = self.connection_factory(target.hostname, address, target.port, self.timeout_seconds, context)
+        connection = self.connection_factory(
+            target.hostname,
+            address,
+            target.port,
+            self.connect_timeout_seconds,
+            context,
+        )
         try:
             response = self._request(connection, target, address, etag, last_modified)
         finally:
@@ -155,6 +163,12 @@ class FeedFetcher:
         headers = self._headers(target, etag, last_modified)
         try:
             connection.request("GET", target.path_with_query, headers=headers)
+            setter = getattr(connection, "set_response_timeout", None)
+            if setter is None:
+                if self.connect_timeout_seconds != self.response_timeout_seconds:
+                    raise RuntimeError("connection does not support a distinct response timeout")
+            else:
+                setter(self.response_timeout_seconds)
             response = connection.getresponse()
         except ssl.SSLError as error:
             raise FetchRejected("tls", f"{target.hostname}: {error}") from error

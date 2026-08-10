@@ -102,6 +102,14 @@ exception attached for a chain walker to reach.
 - Write bounded raw snapshots under the designated prefix.
 - No Slack secrets, queue consumption, customer-account calls, or role assumption.
 
+The watcher uses the same content-addressed package digest and exact S3 object
+version as the delivery worker. It runs every 15 minutes with a 300-second
+timeout, reserved concurrency one, a 360-second feed lease, and a 60-second
+remaining-time reserve before another claim. EventBridge retries a failed target
+at most twice while the event is no more than 900 seconds old; exhausted events
+enter the encrypted runtime-failure queue under a policy scoped to the exact
+watcher schedule ARN.
+
 ### Outbox dispatcher
 
 - Query the delivery status index.
@@ -155,6 +163,7 @@ S3 lifecycle enforces the manifest history, the log groups, and the raw-snapshot
 - Attempts, successes, `304` responses, and failures by feed.
 - `FeedStalenessSeconds` (Maximum) with the bounded `FeedName` dimension for time since last success by feed.
 - Dimensionless `MaxFeedStalenessSeconds` (Maximum) across the configured feeds for the aggregate alarm.
+- Before a feed has any success, staleness is measured from its durable first attempt rather than reset by later failures.
 - Age of newest observed publication by feed.
 - DNS, TLS, redirect, response-limit, content-type, and parser rejections.
 - Response bytes, item counts, and raw-snapshot failures.
@@ -166,6 +175,13 @@ S3 lifecycle enforces the manifest history, the log groups, and the raw-snapshot
 - Candidates by service, risk, priority, and route.
 - No-match counts and rule-exclusion counts.
 - Candidate validation and size failures.
+
+The scheduled handler emits `Heartbeat` after validating the event, environment,
+and Lambda context and before loading a release. It emits dimensionless
+`ReleaseVerificationFailures`, `RawSnapshotFailures`, and
+`MaxFeedStalenessSeconds`; per-feed metrics use only the bounded `FeedName`
+dimension. Every custom watcher alarm metric has a runtime producer, and the
+watcher heartbeat alarm exists only when the watcher runtime is enabled.
 
 ### Delivery
 

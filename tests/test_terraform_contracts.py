@@ -103,6 +103,66 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn('actions = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]', artifact_statement)
         self.assertNotIn("s3:DeleteObject", artifact_statement)
 
+    def test_watcher_uses_the_exact_worker_package_and_frozen_schedule(self):
+        locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+
+        self.assertIn("watcher_timeout_seconds        = 300", locals_source)
+        self.assertIn("watcher_reserved_concurrency   = 1", locals_source)
+        self.assertIn("watcher_lease_seconds          = 360", locals_source)
+        self.assertIn('watcher_schedule_expression    = "rate(15 minutes)"', locals_source)
+        self.assertIn("watcher_maximum_retry_attempts = 2", locals_source)
+        self.assertIn("watcher_maximum_event_age      = 900", locals_source)
+        self.assertIn("s3_key            = local.watcher_artifact_key", lambda_source)
+        self.assertIn("s3_object_version = var.watcher_artifact_version_id", lambda_source)
+        self.assertIn("timeout                        = local.watcher_timeout_seconds", lambda_source)
+        self.assertIn("reserved_concurrent_executions = local.watcher_reserved_concurrency", lambda_source)
+        self.assertIn("maximum_event_age_in_seconds = local.watcher_maximum_event_age", lambda_source)
+        self.assertIn("maximum_retry_attempts       = local.watcher_maximum_retry_attempts", lambda_source)
+        self.assertIn(
+            "(var.watcher_artifact_sha256 == null) == (var.watcher_artifact_version_id == null)",
+            variables,
+        )
+        self.assertIn("var.watcher_artifact_sha256 == var.worker_artifact_sha256", variables)
+        self.assertIn("var.watcher_artifact_version_id == var.worker_artifact_version_id", variables)
+        watcher_rule = lambda_source[lambda_source.index('resource "aws_cloudwatch_event_rule" "watcher"') :]
+        watcher_rule = watcher_rule[: watcher_rule.index("\nresource ", 1)]
+        self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", watcher_rule)
+
+    def test_watcher_receives_every_validated_fetch_policy_value(self):
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        for name in (
+            "APPROVED_FEED_HOSTS_JSON",
+            "FEED_CONNECT_TIMEOUT_SECONDS",
+            "FEED_RESPONSE_TIMEOUT_SECONDS",
+            "MAX_CONCURRENT_FETCHES",
+            "MAX_FEED_ITEM_CHARACTERS",
+            "MAX_FEED_ITEMS",
+            "MAX_FEED_REDIRECTS",
+            "MAX_FEED_RESPONSE_BYTES",
+            "RAW_SNAPSHOT_PREFIX",
+        ):
+            with self.subTest(name=name):
+                self.assertIn(name, lambda_source)
+
+    def test_watcher_failure_target_and_source_state_permissions_are_exact(self):
+        queue = (ROOT / "infra/central/sqs.tf").read_text(encoding="utf-8")
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
+
+        start = queue.index('sid     = "AllowExactWatcherSchedule"')
+        watcher_statement = queue[start : queue.index("\n  statement {", start)]
+        self.assertIn("values   = [aws_cloudwatch_event_rule.watcher[0].arn]", watcher_statement)
+        self.assertNotIn("reconciler.arn", watcher_statement)
+        feed_policy = iam[iam.index('data "aws_iam_policy_document" "feed_watcher"') :]
+        feed_policy = feed_policy[: feed_policy.index('data "aws_iam_policy_document" "outbox_dispatcher"')]
+        self.assertIn('"dynamodb:TransactWriteItems"', feed_policy)
+        self.assertNotIn('"dynamodb:DeleteItem"', feed_policy)
+        heartbeat = alarms[alarms.index('resource "aws_cloudwatch_metric_alarm" "feed_watcher_heartbeat"') :]
+        heartbeat = heartbeat[: heartbeat.index("\nresource ", 1)]
+        self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", heartbeat)
+
     def test_worker_metric_names_match_the_operator_alarms(self):
         runtime = (ROOT / "src/aws_public_change_feed/slack_worker_runtime.py").read_text(encoding="utf-8")
         alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
@@ -202,6 +262,36 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn('[["Function"]]', runtime)
         self.assertIn('[["State"]]', runtime)
         self.assertIn("[[]]", runtime)
+
+    def test_every_custom_alarm_has_a_built_metric_producer(self):
+        alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
+        runtimes = "\n".join(
+            (ROOT / path).read_text(encoding="utf-8")
+            for path in (
+                "src/aws_public_change_feed/watcher_runtime.py",
+                "src/aws_public_change_feed/slack_worker_runtime.py",
+                "src/aws_public_change_feed/recovery_runtime.py",
+            )
+        )
+        planned_exceptions = {"OldestPendingDeliveryAgeSeconds"}
+        custom_metric_lines = [
+            line.split('"')[1] for line in alarms.splitlines() if line.strip().startswith("metric_name") and '"' in line
+        ]
+        custom_metrics = {
+            name
+            for name in custom_metric_lines
+            if f'metric_name         = "{name}"' in alarms
+            and name
+            not in {
+                "ApproximateAgeOfOldestMessage",
+                "ApproximateNumberOfMessagesVisible",
+                "Errors",
+                "WriteThrottleEvents",
+            }
+        }
+        for metric in sorted(custom_metrics - planned_exceptions):
+            with self.subTest(metric=metric):
+                self.assertIn(f'"{metric}"', runtimes)
 
 
 if __name__ == "__main__":

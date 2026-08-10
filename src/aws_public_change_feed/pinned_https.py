@@ -83,6 +83,15 @@ class PinnedHTTPSConnection(http.client.HTTPSConnection):
             raw_socket.close()
             raise
 
+    def set_response_timeout(self, timeout: float) -> None:
+        """Switch the connected socket from its connect bound to the read bound."""
+
+        if timeout <= 0:
+            raise ValueError("response timeout must be positive")
+        if self.sock is None:
+            raise RuntimeError("cannot set the response timeout before connecting")
+        self.sock.settimeout(timeout)
+
 
 def select_validated_address(hostname: str, port: int, resolver: Resolver) -> str:
     """Resolve the hostname and return one address every record justified.

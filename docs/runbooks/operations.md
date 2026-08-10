@@ -25,7 +25,7 @@ Before trusting the runtime deployment, repeat the two checks that found every d
 
 ## Feed stale or fetch failing
 
-1. Identify the feed and compare last attempt, last success, newest observed publication time, ETag, Last-Modified, and error class.
+1. Identify the feed and compare first attempt, last attempt, last success, newest observed publication time, ETag, Last-Modified, state version, lease owner and expiry, and error class. Before the first success, freshness age starts at the durable first attempt and must not reset on each failure.
 2. Check the scheduler and watcher heartbeat. If all feeds are stale, inspect the shared runtime, DNS, egress, release load, and source-table errors first.
 3. For one feed, verify the configured URL and approved host against the publisher's official feed page.
 4. Inspect safe diagnostics for DNS classification, TLS, content type, redirect rejection, response size, timeout, parser limit, and raw-snapshot status.
@@ -61,12 +61,12 @@ Rule changes do not rewrite historical candidates. If an operator needs a past i
 
 ## Candidate or outbox gap
 
-1. Find the feed response-run marker and expected deterministic candidate IDs.
-2. Confirm whether candidate and delivery items exist and whether the feed validator advanced.
+1. Find the feed response-run ID, the page-set ID derived from its current sorted candidate IDs, and that set's deterministic pages. Confirm the zero-candidate case has one empty page and every other page contains at most 25 sorted IDs. More than one page set under a response run can be valid when cross-feed coalescing changed between attempts.
+2. Confirm each page marker, candidate, delivery item, and announcement emission reference survives durable read-back, then check whether the feed validator advanced.
 3. If the validator did not advance, rerun normal feed processing. Conditional writes should fill missing records.
 4. If the validator advanced without every required outbox record, treat it as a correctness incident. Pause the watcher, preserve state and snapshots, and repair through a reviewed recovery tool.
 5. Do not synthesize a new candidate ID. Recompute from the exact source revision and release.
-6. After repair, verify response-run completion and resume the feed lease.
+6. After repair, verify final response-run read-back and the batch checkpoint transaction. Resume only after confirming the exact lease owner and state version; never overwrite a newer owner.
 
 ## Outbox or queue backlog
 
@@ -149,9 +149,9 @@ not delivery requests. Never redrive it into the delivery FIFO queue.
 2. Drain work for the current digest within the approved rollout window. Record every version that remains in `pending_queue`, `queued`, `sending`, or `failed_retryable`; leave `delivery_unknown` as evidence.
 3. Run `python3 scripts/build_lambda_package.py --output build/slack-worker.zip`. Keep the reported `sha256:<digest>` with the change record. A second build from the same source and lock should produce the same digest; a different digest is a packaging change and must be reviewed as such.
 4. Publish with `python3 scripts/publish_lambda_artifact.py --bucket <config-bucket> --prefix <top-prefix>/application-artifacts --package build/slack-worker.zip`. Publication uses `If-None-Match: *`; an existing matching digest is adopted, and existing bytes are never replaced.
-5. Apply `infra/central` with both `worker_artifact_sha256=<digest>` and `worker_artifact_version_id=<version-id>` from the publisher. Terraform derives the digest key, deploys that exact S3 version, and injects `APPLICATION_VERSION=sha256:<digest>`.
-6. Before resuming candidate creation, read the Lambda configuration and event-source mapping. Confirm the injected digest, code S3 version, 300-second timeout, reserved concurrency, batch size 10, `ReportBatchItemFailures`, and 1,800-second queue visibility. Run one approved route preflight and confirm its durable outcome and dimensionless worker metrics.
-7. Resume candidate creation only after every producer composition root uses the same digest. Until the producer Lambda exists, do not describe the worker deployment as an end-to-end rollout.
+5. Apply `infra/central` with the worker and watcher digest and VersionId pairs from the publisher. Terraform refuses the watcher unless both pairs are exactly equal, derives one digest key, deploys that exact S3 version to both functions, and injects `APPLICATION_VERSION=sha256:<digest>`.
+6. Before enabling the watcher schedule, read both Lambda configurations. Confirm their identical digest and code S3 version; the watcher's 300-second timeout, concurrency one, 360-second lease, and 15-minute rule; and the worker's 300-second timeout, FIFO event-source mapping, batch size 10, `ReportBatchItemFailures`, and 1,800-second queue visibility. Run approved feed and route preflights and confirm their durable outcomes and dimensionless metrics.
+7. Resume candidate creation only after every producer composition root uses the same digest. The watcher and worker can now form that package-identity chain, but the absent regular dispatcher still prevents an end-to-end deployment claim.
 8. For rollback, pause candidate creation, select the retained digest required by queued work, locate its digest key, exact S3 version, and reviewed deployment input from that rollout, then deploy them together. The credential store and delivery mode are composition inputs and must still agree with the candidate's exact inventory release. Verify the configuration before redriving a small batch.
 9. If a delivery references a package absent from the artifact prefix, leave its record unchanged and record the bounded reason `artifact_unavailable`. Restore the approved package or make a documented manual closure; current code cannot reinterpret the candidate under another digest.
 10. Do not retire packages yet. The repository has no mechanism that proves both the 400-day age floor and the newest-10 floor, so the safe current behavior is accumulation.

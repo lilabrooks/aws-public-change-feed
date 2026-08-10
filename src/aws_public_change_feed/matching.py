@@ -31,6 +31,7 @@ __all__ = [
     "load_risk_rules",
     "load_services",
     "match_announcement",
+    "rule_exclusion_count",
 ]
 
 FieldName = Literal["title", "summary"]
@@ -258,3 +259,13 @@ def match_announcement(
 
     results.sort(key=lambda result: (result.service_id, result.risk_type, result.rule_id))
     return tuple(results)
+
+
+def rule_exclusion_count(announcement: Announcement, rules: Sequence[RiskRule]) -> int:
+    """Count configured rules suppressed by their explicit `none` evidence."""
+
+    return sum(
+        1
+        for rule in rules
+        if rule.fields and rule.none_terms and _spans_by_field(announcement, rule.fields, rule.none_terms)
+    )

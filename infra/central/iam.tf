@@ -105,7 +105,7 @@ data "aws_iam_policy_document" "feed_watcher" {
 
   statement {
     sid     = "SourceState"
-    actions = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:DeleteItem"]
+    actions = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem", "dynamodb:TransactWriteItems"]
     resources = [
       aws_dynamodb_table.source_state.arn,
     ]

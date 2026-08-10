@@ -77,7 +77,7 @@ class LambdaPackageTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "non-exact"):
                 _require_exact_lock(lock)
 
-    def test_the_deployable_package_contains_both_recovery_entrypoint_modules(self):
+    def test_the_deployable_package_contains_all_built_runtime_entrypoints(self):
         with tempfile.TemporaryDirectory() as raw, patch("build_lambda_package.subprocess.run") as install:
             package = Path(raw) / "reconciler.zip"
 
@@ -89,6 +89,9 @@ class LambdaPackageTests(unittest.TestCase):
                 names = set(archive.namelist())
             self.assertIn("aws_public_change_feed/recovery.py", names)
             self.assertIn("aws_public_change_feed/recovery_runtime.py", names)
+            self.assertIn("aws_public_change_feed/watcher.py", names)
+            self.assertIn("aws_public_change_feed/watcher_runtime.py", names)
+            self.assertIn("aws_public_change_feed/source_store.py", names)
 
 
 class ArtifactPublicationTests(unittest.TestCase):
