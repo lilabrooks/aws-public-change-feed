@@ -46,12 +46,13 @@ from datetime import datetime
 from importlib.resources import files
 from typing import Any
 
-from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema import Draft202012Validator
 
 from .candidates import utc_timestamp
-from .identity import release_id
+from .identity import application_artifact_id, release_id
 from .parsing import load_unique_json, load_unique_yaml
 from .releases import POINTER_SCHEMA_VERSION, ObjectMissing, ObjectStore, StoredObject
+from .schema_formats import contract_format_checker
 
 __all__ = [
     "SUPPORTED_CONFIG_SCHEMA_VERSIONS",
@@ -90,7 +91,7 @@ def _schema_validator(name: str) -> Draft202012Validator:
     resource = files("aws_public_change_feed.schemas").joinpath(_SCHEMA_RESOURCES[name])
     schema = json.loads(resource.read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema, format_checker=FormatChecker())
+    return Draft202012Validator(schema, format_checker=contract_format_checker())
 
 
 _SCHEMA_VALIDATORS = {name: _schema_validator(name) for name in _SCHEMA_RESOURCES}
@@ -269,6 +270,8 @@ def _load_from_pointer(
     disagree about what "verified" means.
     """
 
+    application_version = application_artifact_id(application_version)
+
     try:
         pointer = load_unique_json(current.body)
     except ValueError as error:
@@ -330,7 +333,12 @@ def load_active_release(
         current = store.read(pointer_key)
     except ObjectMissing as missing:
         raise ReleaseIntegrityError(f"no active release pointer at {pointer_key}") from missing
-    return _load_from_pointer(store, current, f"active pointer at {pointer_key}", application_version)
+    return _load_from_pointer(
+        store,
+        current,
+        f"active pointer at {pointer_key}",
+        application_version,
+    )
 
 
 def load_release_version(
@@ -404,6 +412,8 @@ def load_release_reference(
     ones the pointer path raises, so an operator sees the same causes for the
     same bytes whether the block came from the active pointer or a candidate.
     """
+
+    application_version = application_artifact_id(application_version)
 
     config_ref = reference["config"]
     inventory_ref = reference["inventory"]

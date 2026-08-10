@@ -148,7 +148,7 @@ class EmissionTests(OutboxTestCase):
     def test_a_stored_candidate_is_never_replaced(self):
         self.emit_once()
         newer = copy.deepcopy(self.candidate)
-        newer["release"]["application_version"] = "9.9.9-newer-release"
+        newer["release"]["application_version"] = "sha256:" + "0" * 64
         newer["created_at"] = "2027-01-01T00:00:00Z"
 
         self.emit_once([newer])
@@ -167,7 +167,7 @@ class EmissionTests(OutboxTestCase):
         del self.store._deliveries[self.key]
 
         newer = copy.deepcopy(self.candidate)
-        newer["release"]["application_version"] = "9.9.9-newer-release"
+        newer["release"]["application_version"] = "sha256:" + "0" * 64
         result = self.emit_once([newer])
 
         self.assertEqual(result.repaired_deliveries, (self.key,))

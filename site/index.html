@@ -304,7 +304,7 @@
           <article class="compact-card">
             <span class="compact-tag">04 · Deliver</span>
             <h3 class="compact-card-title">Order, pace, and recover Slack work</h3>
-            <p>SQS FIFO groups work by destination. The worker applies pacing and records posted, retryable, terminal, or unknown outcomes for recovery.</p>
+            <p>SQS FIFO groups work by destination. The worker core applies pacing and records posted, retryable, terminal, or unknown outcomes. Destination serialization still depends on the unbuilt FIFO batch handler.</p>
           </article>
         </div>
       </div>
@@ -368,7 +368,7 @@
           <article class="evidence-panel">
             <h3>Available evidence</h3>
             <ul class="site-list">
-              <li>6 numbered specifications and 15 accepted ADRs</li>
+              <li>6 numbered specifications and 16 accepted ADRs</li>
               <li>6 strict schemas with one valid cross-file example bundle</li>
               <li>Deterministic matching scored against a labeled corpus of real and authored announcements</li>
               <li>Feed acquisition with host allowlisting, address validation, and DOCTYPE-refusing parsing</li>
@@ -376,6 +376,7 @@
               <li>Durable outbox holding the feed checkpoint until candidate and delivery records exist</li>
               <li>Due-work dispatch with state-version claims, FIFO dedupe reuse, cross-state batch limits, and explicit unknown-send evidence</li>
               <li>DynamoDB delivery and SQS FIFO producer adapters exercised against service mocks</li>
+              <li>Slack delivery worker core with exact release and application-artifact checks, release-bound candidate semantics, bounded plain-text rendering, conditional outcomes, pacing state, and retry-safe response classification; FIFO destination serialization remains deployment work</li>
               <li>Live feed screening that flags any production match the corpus does not represent</li>
               <li>S3 release preconditions measured against the mock the publisher is tested on, including where that mock cannot stand in for S3</li>
               <li>Release publication and promotion reproducing the committed release from the contract bundle's own bytes</li>
@@ -392,10 +393,11 @@
             <h3>Required implementation evidence</h3>
             <ul class="site-list">
               <li>Corpus coverage of end-of-support announcements from real feeds</li>
-              <li>DynamoDB source and destination operations, S3 snapshot storage, and Slack credential access behind the remaining ports</li>
+              <li>DynamoDB source-state operations, S3 snapshot storage, and Slack credential access behind the remaining ports</li>
               <li>Lambda packaging, schedules, and event source mappings for the four functions</li>
+              <li>Content-addressed application artifact injection, retention, and pause-and-drain rollout</li>
               <li>Publisher-side retirement of superseded releases, which S3 lifecycle cannot express safely</li>
-              <li>Deployed dispatcher handling, Slack delivery, and reconciliation</li>
+              <li>Deployed dispatcher and worker Lambda handling, Slack transport, and reconciliation</li>
               <li>Feed, delivery, recovery, load, and security tests</li>
               <li>Production preflight and confirmed Slack destination checks</li>
               <li>A rendered Slack message sample on this page, produced by the delivery renderer</li>

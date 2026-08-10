@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
@@ -48,6 +48,7 @@ from urllib.parse import urlsplit
 
 from .credentials import WEBHOOK, CredentialReader, CredentialReadError, SlackCredential
 from .dispatch import InvalidDeliveryRequest, validate_delivery_request
+from .identity import application_artifact_id
 from .loading import (
     IncompatibleRelease,
     ReleaseIntegrityError,
@@ -110,6 +111,7 @@ _RETRYABLE_SLACK_ERRORS = frozenset({"ratelimited", "service_unavailable", "inte
 # per-field policy cap, so it is bounded here to leave room for its label.
 _MAX_TEXT_OBJECT_CHARACTERS = 3000
 _MAX_ENVIRONMENT_SUMMARY_CHARACTERS = 2000
+_ENVIRONMENT_LABEL = "Potentially relevant: "
 
 
 class InvalidSlackWebhook(ValueError):
@@ -471,7 +473,7 @@ def render_message(
     reason = _truncate(explainability["reason"], message_policy["max_explanation_characters"])
     recommended_action = _truncate(candidate["recommended_action"], message_policy["max_recommended_action_characters"])
 
-    title_link = f"<{source_url}|{_slack_escape(title)}>"
+    source_link = f"<{source_url}|View source>"
     header = _slack_escape(f"Potentially relevant AWS change candidate ({risk['priority']} priority)")
     if risk.get("priority") == "high" and usergroup_id:
         header = f"{header} <!subteam^{usergroup_id}>"
@@ -489,17 +491,15 @@ def render_message(
         payload when a block is added.
         """
 
-        # The `mrkdwn` block carries only the two things that need Slack to
-        # parse them: the source link, and service/risk names that come from
-        # the release rather than from a feed. The announcement summary used to
-        # ride along here. Escaping `&`, `<`, and `>` stopped it from forging a
-        # link or a mention, but left `*bold*`, `_italics_`, backtick code
-        # spans, and `>` quoting active, so feed text could still dictate how
-        # the message looked. Chapter 04 asks for untrusted content in
-        # `plain_text`, and the summary is untrusted content.
+        # Feed-derived title and summary text stay in `plain_text`; escaping
+        # `&`, `<`, and `>` inside a parsed link label stops link and mention
+        # injection but still leaves formatting such as `*bold*` and backticks
+        # active. The parsed block therefore uses a fixed link label and carries
+        # only release-controlled service and risk names.
         blocks: list[dict[str, Any]] = [
             {"type": "context", "elements": [{"type": "mrkdwn", "text": header}]},
-            {"type": "section", "text": {"type": "mrkdwn", "text": f"{title_link}\n{service_and_risk}"}},
+            {"type": "section", "text": {"type": "plain_text", "text": title, "emoji": False}},
+            {"type": "section", "text": {"type": "mrkdwn", "text": f"{source_link}\n{service_and_risk}"}},
         ]
 
         # Every block below is `plain_text`, which Slack does not parse. The
@@ -513,7 +513,7 @@ def render_message(
                     "type": "section",
                     "text": {
                         "type": "plain_text",
-                        "text": f"Potentially relevant: {environment_summary}",
+                        "text": f"{_ENVIRONMENT_LABEL}{environment_summary}",
                         "emoji": False,
                     },
                 }
@@ -553,7 +553,7 @@ def render_message(
             [
                 f"Source: {source_url}",
                 f"Reason: {reason}",
-                f"Potentially relevant: {environment_summary}",
+                f"{_ENVIRONMENT_LABEL}{environment_summary}",
                 f"Recommended review action: {recommended_action}",
                 f"{_candidate_timestamp(candidate)} \u00b7 {candidate['candidate_id']}",
             ]
@@ -564,13 +564,15 @@ def render_message(
     # Chapter 04: deterministic field truncation first, refusal only if the
     # message is still over. The environment summary is the field that yields,
     # because it is the only one sized by data rather than by a policy cap.
-    # It is charged twice — once in the blocks and once in the fallback — so
-    # the remaining budget is halved before it is offered.
+    # It is charged twice, once in the blocks and once in the fallback. The
+    # fallback's label is already present in `fixed_characters`; adding the
+    # block contributes one more label plus both copies of the summary.
     fixed_characters = sum(len(text) for text in _text_objects(build("")))
+    remaining_for_summary = max(0, max_chars - fixed_characters - len(_ENVIRONMENT_LABEL))
     budget = min(
         _MAX_ENVIRONMENT_SUMMARY_CHARACTERS,
-        _MAX_TEXT_OBJECT_CHARACTERS - len("Potentially relevant: "),
-        max(0, (max_chars - fixed_characters) // 2),
+        _MAX_TEXT_OBJECT_CHARACTERS - len(_ENVIRONMENT_LABEL),
+        remaining_for_summary // 2,
     )
     environment_summary = _fit_environment_summary(labels, maximum=max_environments, budget=budget)
     payload = build(environment_summary)
@@ -879,7 +881,8 @@ def process_delivery(
     sender: SlackSender,
     *,
     candidate: str,
-    now: datetime,
+    application_version: str,
+    clock: Callable[[], datetime],
     max_delivery_request_bytes: int,
     lease_duration_seconds: int,
     max_network_attempts: int,
@@ -890,13 +893,17 @@ def process_delivery(
 
     Returns a `WorkerResult` the batch handler can act on: `handled` messages
     are acknowledged, and unhandled ones return in `batchItemFailures`. The
-    record, release, and pace are read fresh on every attempt, and every write
-    is conditional on the observed state version, so concurrent workers cannot
-    overwrite one another.
+    running application version must exactly match the version embedded in
+    queued work. A mismatch is returned unprocessed before release or secret
+    reads and before state changes, so an application rollback can replay the
+    candidate with the code that produced it. The record, release, and pace are
+    read fresh on every attempt, and every write is conditional on the observed
+    state version, so concurrent workers cannot overwrite one another.
     """
 
+    application_version = application_artifact_id(application_version)
     metrics = metrics if metrics is not None else NullWorkerMetrics()
-    now_ts = int(now.timestamp())
+    observed_ts = int(clock().timestamp())
 
     record = store.get_delivery(candidate)
     if record is None:
@@ -915,7 +922,7 @@ def process_delivery(
         return WorkerResult(handled=False, state=_PENDING, reason="record still awaits queue dispatch")
 
     if record.status == _SENDING:
-        if record.lease_expires_at is not None and record.lease_expires_at <= now_ts:
+        if record.lease_expires_at is not None and record.lease_expires_at <= observed_ts:
             # ADR-004: a stale sending lease becomes delivery_unknown. The
             # reconciler normally performs this; a worker that observes it
             # first records the same transition so redelivery does not spin.
@@ -945,7 +952,7 @@ def process_delivery(
     if record.status != _QUEUED:
         return WorkerResult(handled=True, state=record.status, reason=f"unexpected state {record.status}")
 
-    if record.next_action_at is not None and record.next_action_at > now_ts:
+    if record.next_action_at is not None and record.next_action_at > observed_ts:
         metrics.unprocessed()
         return WorkerResult(handled=False, state=_QUEUED, reason="work not yet due")
 
@@ -966,11 +973,23 @@ def process_delivery(
         return WorkerResult(handled=False, state=_QUEUED, reason=f"invalid delivery request: {error}")
 
     embedded = request["candidate"]
+    embedded_application_version = embedded["release"]["application_version"]
+    if embedded_application_version != application_version:
+        metrics.unprocessed()
+        return WorkerResult(
+            handled=False,
+            state=record.status,
+            reason=(
+                "application version mismatch: "
+                f"candidate requires {embedded_application_version!r}, worker is {application_version!r}"
+            ),
+        )
+
     try:
         loaded = load_release_reference(
             release_store,
             embedded["release"],
-            application_version=embedded["release"]["application_version"],
+            application_version=application_version,
         )
     except (IncompatibleRelease, ReleaseIntegrityError) as error:
         # The release the candidate embeds cannot be verified or evaluated
@@ -996,7 +1015,8 @@ def process_delivery(
     max_retry_after_seconds = rate_control["max_retry_after_seconds"]
 
     pace = store.get_pace(record.destination_key)
-    if pace is not None and pace.next_allowed_at > now_ts:
+    pace_observed_ts = int(clock().timestamp())
+    if pace is not None and pace.next_allowed_at > pace_observed_ts:
         # ADR-015: do not claim work the destination cannot accept yet. Leave
         # the record retryable for the next allowed time and acknowledge this
         # message; the dispatcher creates a fresh queue delivery when due.
@@ -1011,7 +1031,8 @@ def process_delivery(
         return WorkerResult(handled=False, state=_QUEUED, reason="pacing claim lost")
 
     attempt_id = uuid.uuid4().hex
-    lease_expires_at = now_ts + lease_duration_seconds
+    claim_ts = int(clock().timestamp())
+    lease_expires_at = claim_ts + lease_duration_seconds
     if not store.claim_sending(
         candidate,
         expected_state_version=record.state_version,
@@ -1022,7 +1043,6 @@ def process_delivery(
         return WorkerResult(handled=False, state=_QUEUED, reason="sending claim lost")
 
     claimed_version = record.state_version + 1
-    ttl_at = now_ts + int(delivery_state_ttl_days) * 86400
 
     def terminal_without_call(response_class: str, reason: str) -> WorkerResult:
         """Record a terminal outcome for a failure that made no Slack call.
@@ -1035,6 +1055,7 @@ def process_delivery(
         number of retries fixes one.
         """
 
+        completed_ts = int(clock().timestamp())
         if not store.record_outcome(
             candidate,
             expected_state_version=claimed_version,
@@ -1043,7 +1064,7 @@ def process_delivery(
             network_attempt_count=record.network_attempt_count,
             next_action_at=None,
             slack_response={"response_class": response_class},
-            expires_at=ttl_at,
+            expires_at=completed_ts + int(delivery_state_ttl_days) * 86400,
         ):
             # Same reread the post-call path performs. Acknowledging here on a
             # write this worker lost would drop a message whose record may
@@ -1128,6 +1149,7 @@ def process_delivery(
         # The port raised instead of reporting. Nothing is known about whether
         # bytes reached Slack, and ADR-004 permits an automatic retry only on
         # proof that none did, so this is `delivery_unknown` for an operator.
+        completed_ts = int(clock().timestamp())
         recorded = store.record_outcome(
             candidate,
             expected_state_version=claimed_version,
@@ -1138,7 +1160,7 @@ def process_delivery(
             slack_response={"response_class": "sender_raised"},
             expires_at=None,
         )
-        _advance_pace(store, record.destination_key, pace, now_ts, min_interval_seconds, None, "sender_raised")
+        _advance_pace(store, record.destination_key, pace, completed_ts, min_interval_seconds, None, "sender_raised")
         if not recorded:
             return _lost_outcome_write(store, candidate, metrics, performed_network_call=True)
         metrics.unknown()
@@ -1158,6 +1180,7 @@ def process_delivery(
         response_class=response_class,
         retry_after_seconds=bounded_retry_after,
     )
+    completed_ts = int(clock().timestamp())
 
     reason: str | None = None
     if outcome_state == FAILED_RETRYABLE and network_attempt_count >= max_network_attempts:
@@ -1170,7 +1193,7 @@ def process_delivery(
 
     next_action_at: int | None = None
     if outcome_state == FAILED_RETRYABLE:
-        next_action_at = now_ts + (
+        next_action_at = completed_ts + (
             bounded_retry_after
             if bounded_retry_after is not None
             else _retry_delay(
@@ -1186,7 +1209,9 @@ def process_delivery(
     # requires review and a recorded replay decision, so the record must not
     # expire underneath that. `failed_retryable` is outstanding work and the
     # dispatcher still needs it.
-    expires_at = ttl_at if outcome_state in (POSTED, FAILED_TERMINAL) else None
+    expires_at = (
+        completed_ts + int(delivery_state_ttl_days) * 86400 if outcome_state in (POSTED, FAILED_TERMINAL) else None
+    )
 
     recorded = store.record_outcome(
         candidate,
@@ -1209,7 +1234,7 @@ def process_delivery(
         store,
         record.destination_key,
         pace,
-        now_ts,
+        completed_ts,
         min_interval_seconds,
         bounded_retry_after,
         response_class,

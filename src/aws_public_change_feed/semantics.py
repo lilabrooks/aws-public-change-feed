@@ -40,7 +40,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import urlsplit
 
-from .candidates import explainability_reason
+from .candidates import explainability_reason, utc_timestamp
 from .identity import (
     announcement_id,
     audience_fingerprint,
@@ -52,6 +52,7 @@ from .identity import (
     revision_id,
 )
 from .profiles import route_audiences
+from .urls import FeedUrlRejected, validate_feed_url, validate_source_item_url
 
 __all__ = [
     "CandidateSemanticsError",
@@ -81,7 +82,10 @@ def serialized_size(value: Any) -> int:
 
 def parsed_timestamp(value: str) -> datetime:
     normalized = f"{value[:-1]}+00:00" if value.endswith(("Z", "z")) else value
-    return datetime.fromisoformat(normalized)
+    parsed = datetime.fromisoformat(normalized)
+    if parsed.tzinfo is None:
+        raise ValueError("contract timestamps require an explicit UTC offset")
+    return parsed
 
 
 def validate_host(host: str, label: str) -> None:
@@ -103,32 +107,14 @@ def validate_host(host: str, label: str) -> None:
         raise ValueError(f"{label} is not a valid DNS hostname: {host}")
 
 
-def validate_public_url(raw_url: str, allowed_hosts: set[str], label: str, *, allow_fragment: bool = False) -> None:
-    """Apply the public URL policy to a configured or recorded link.
+def validate_public_url(raw_url: str, allowed_hosts: set[str], label: str) -> None:
+    """Apply the public URL policy to a configured or recorded link."""
 
-    `allow_fragment` exists for one caller. Every other URL checked here is a
-    link the service publishes or fetches, and those carry no fragment. A
-    provenance `source_item_url` is different in kind: it records what a feed
-    said, and `validate_candidate_against_release` already requires only that
-    the sighting canonicalize to the announcement URL. Since fragment removal
-    is part of canonicalization, rejecting a fragment here contradicted that
-    rule and put an ordinary feed link outside the contract.
-    """
-
-    parsed = urlsplit(raw_url)
-    # `parsed.username` is falsy for an empty user-info component, so the
-    # netloc is checked directly; `https://@host/path` is not unauthenticated
-    # HTTPS just because the credentials it carries are blank.
-    if parsed.scheme != "https" or "@" in parsed.netloc:
-        raise ValueError(f"{label} must use unauthenticated HTTPS: {raw_url}")
-    if parsed.port not in (None, 443):
-        raise ValueError(f"{label} must use port 443: {raw_url}")
-    if parsed.fragment and not allow_fragment:
-        raise ValueError(f"{label} cannot contain a fragment: {raw_url}")
-    host = (parsed.hostname or "").casefold()
-    if host not in allowed_hosts:
-        raise ValueError(f"{label} host is not allowed: {host}")
-    validate_host(host, label)
+    try:
+        validated = validate_feed_url(raw_url, allowed_hosts)
+    except FeedUrlRejected as error:
+        raise ValueError(f"{label} failed the canonical HTTPS policy: {error}") from error
+    validate_host(validated.hostname, label)
 
 
 def phrase_spans(text: str, phrase: str) -> list[tuple[int, int]]:
@@ -217,7 +203,19 @@ def _validate(
     )
     if candidate["candidate_id"] != expected_candidate_id:
         raise CandidateSemanticsError("candidate_id differs from its canonical identity fields")
-    if parsed_timestamp(candidate["created_at"]) < parsed_timestamp(announcement["observed_at"]):
+    timestamp_fields = {
+        "candidate created_at": candidate["created_at"],
+        "announcement observed_at": announcement["observed_at"],
+    }
+    if "published_at" in announcement:
+        timestamp_fields["announcement published_at"] = announcement["published_at"]
+    parsed_times = {}
+    for label, value in timestamp_fields.items():
+        parsed = parsed_timestamp(value)
+        if utc_timestamp(parsed) != value:
+            raise CandidateSemanticsError(f"{label} is not a normalized UTC timestamp")
+        parsed_times[label] = parsed
+    if parsed_times["candidate created_at"] < parsed_times["announcement observed_at"]:
         raise CandidateSemanticsError("candidate creation predates announcement observation")
 
     service_id = candidate["service"]["id"]
@@ -326,8 +324,8 @@ def _validate(
         if canonical_public_url(item["feed_url"]) != expected_url:
             raise CandidateSemanticsError(f"announcement provenance URL differs from config: {item['feed_name']}")
         if item.get("source_item_url"):
-            validate_public_url(item["source_item_url"], feed_hosts, "source item URL", allow_fragment=True)
-            if canonical_public_url(item["source_item_url"]) != canonical_public_url(announcement["url"]):
+            canonical_item_url = validate_source_item_url(item["source_item_url"], feed_hosts)
+            if canonical_item_url != canonical_public_url(announcement["url"]):
                 raise CandidateSemanticsError(
                     "announcement provenance item URL differs from the canonical announcement URL"
                 )

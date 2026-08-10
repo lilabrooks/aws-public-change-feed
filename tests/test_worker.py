@@ -88,7 +88,8 @@ SOURCE_HOSTS = ("aws.amazon.com",)
 BUCKET = "release-bucket"
 REGION = "us-east-1"
 POINTER = "aws-public-change-alerting/active-versions.json"
-APPLICATION_VERSION = "0.1.0-design-fixture"
+APPLICATION_VERSION = "sha256:afb17da26e5a527af74f93cb8305ae77e5368bdfd0a52cf6bee9cccfeb948566"
+HISTORICAL_APPLICATION_VERSION = "sha256:" + "0" * 64
 NOW = datetime(2026, 7, 13, 17, 30, tzinfo=UTC)
 LATER = NOW + timedelta(minutes=1)
 NOW_TS = int(NOW.timestamp())
@@ -114,6 +115,32 @@ class FakeSlackSender:
     def post(self, payload, *, credential, timeout_seconds):
         self.calls.append({"payload": payload, "credential": credential, "timeout_seconds": timeout_seconds})
         return self._response
+
+
+class MutableClock:
+    """A test clock that moves only when a test phase moves it."""
+
+    def __init__(self, current: datetime) -> None:
+        self.current = current
+
+    def __call__(self) -> datetime:
+        return self.current
+
+    def advance(self, seconds: int) -> None:
+        self.current += timedelta(seconds=seconds)
+
+
+class AdvancingSlackSender(FakeSlackSender):
+    """Move the test clock while the simulated network request is in flight."""
+
+    def __init__(self, response: SlackResponse, clock: MutableClock, seconds: int) -> None:
+        super().__init__(response)
+        self._clock = clock
+        self._seconds = seconds
+
+    def post(self, payload, *, credential, timeout_seconds):
+        self._clock.advance(self._seconds)
+        return super().post(payload, credential=credential, timeout_seconds=timeout_seconds)
 
 
 class RaisingSlackSender:
@@ -231,7 +258,8 @@ class WorkerFixture(unittest.TestCase):
             "credentials": self.credentials,
             "sender": self.sender,
             "candidate": self.key,
-            "now": NOW,
+            "application_version": APPLICATION_VERSION,
+            "clock": lambda: NOW,
             "max_delivery_request_bytes": self.config["message_policy"]["max_delivery_request_bytes"],
             "lease_duration_seconds": 30,
             "max_network_attempts": self.inventory["slack"]["rate_control"]["max_network_attempts"],
@@ -251,6 +279,42 @@ class WorkerFixture(unittest.TestCase):
 
 class NonSlackPathsTests(WorkerFixture):
     """Every path that must not contact Slack returns the right `WorkerResult`."""
+
+    def test_a_candidate_from_another_application_version_is_unprocessed_before_external_reads(self):
+        candidate = copy.deepcopy(self.candidate)
+        candidate["release"]["application_version"] = HISTORICAL_APPLICATION_VERSION
+        request = build_delivery_request(candidate, self.destination_key, NOW)
+        original = self.queued_record(request=request)
+
+        class UnreadableReleaseStore:
+            def read(self, *args, **kwargs):
+                raise AssertionError("an incompatible application version must not read release objects")
+
+        class UnreadableCredentials:
+            def read(self, *args, **kwargs):
+                raise AssertionError("an incompatible application version must not read credentials")
+
+        result = self.process(
+            application_version=APPLICATION_VERSION,
+            release_store=UnreadableReleaseStore(),
+            credentials=UnreadableCredentials(),
+        )
+
+        self.assertFalse(result.handled)
+        self.assertEqual(result.state, "queued")
+        self.assertFalse(result.performed_network_call)
+        assert result.reason is not None
+        self.assertIn("application version mismatch", result.reason)
+        self.assertEqual(self.record(), original)
+        self.assertEqual(self.sender.calls, [])
+
+    def test_an_invalid_running_application_identifier_is_refused_before_store_reads(self):
+        class UnreadableStore:
+            def get_delivery(self, *args, **kwargs):
+                raise AssertionError("an invalid application identifier must not read delivery state")
+
+        with self.assertRaisesRegex(ValueError, "lowercase SHA-256"):
+            self.process(store=UnreadableStore(), application_version="1.2.3")
 
     def test_no_delivery_record_is_handled_without_a_slack_call(self):
         result = self.process()
@@ -845,6 +909,50 @@ class PacingTests(WorkerFixture):
         self.assertEqual(pace.next_allowed_at, NOW_TS + min_interval)
         self.assertEqual(pace.last_response_class, "http_200")
 
+    def test_lease_retry_and_pacing_use_their_own_phase_times(self):
+        self.queued_record()
+        clock = MutableClock(NOW)
+        original_get_pace = self.store.get_pace
+        original_claim = self.store.claim_sending
+        captured: dict[str, int] = {}
+
+        def delayed_get_pace(destination_key):
+            clock.advance(10)
+            return original_get_pace(destination_key)
+
+        def capturing_claim(candidate_id, **kwargs):
+            captured["lease_expires_at"] = kwargs["lease_expires_at"]
+            return original_claim(candidate_id, **kwargs)
+
+        self.store.get_pace = delayed_get_pace  # type: ignore[method-assign]
+        self.store.claim_sending = capturing_claim  # type: ignore[assignment]
+        self.sender = AdvancingSlackSender(
+            SlackResponse(status_code=429, latency_ms=3000, retry_after_seconds=30),
+            clock,
+            3,
+        )
+
+        result = self.process(clock=clock)
+
+        self.assertEqual(result.state, FAILED_RETRYABLE)
+        self.assertEqual(captured["lease_expires_at"], NOW_TS + 10 + 30)
+        self.assertEqual(self.record().next_action_at, NOW_TS + 13 + 30)
+        pace = self.store.get_pace(self.destination_key)
+        assert pace is not None
+        self.assertEqual(pace.next_allowed_at, NOW_TS + 13 + 30)
+
+    def test_resolved_ttl_starts_after_the_network_call(self):
+        self.queued_record()
+        clock = MutableClock(NOW)
+        self.sender = AdvancingSlackSender(self.posted_response(), clock, 7)
+
+        self.process(clock=clock)
+
+        self.assertEqual(
+            self.record().expires_at,
+            NOW_TS + 7 + self.config["state_retention"]["delivery_state_ttl_days"] * 86400,
+        )
+
 
 class CredentialTests(WorkerFixture):
     """A missing, mismatched, or unsafe credential never reaches Slack."""
@@ -1316,19 +1424,17 @@ class RenderMessageTests(unittest.TestCase):
 
         self.assertNotIn("SRETEAM01", json.dumps(payload))
 
-    def test_control_characters_in_link_text_are_escaped(self):
-        """Link text is `mrkdwn`, so it is the one place escaping applies."""
+    def test_control_characters_in_the_title_remain_literal_plain_text(self):
+        """A plain-text title needs no Slack entity escaping."""
 
         candidate = copy.deepcopy(self.candidate)
         candidate["announcement"]["title"] = "A & B <C> D"
 
         payload = self.render(candidate)
 
-        link_block = payload["blocks"][1]["text"]
-        self.assertEqual(link_block["type"], "mrkdwn")
-        self.assertIn("&amp;", link_block["text"])
-        self.assertIn("&lt;C&gt;", link_block["text"])
-        self.assertNotIn("<C>", link_block["text"])
+        title_block = payload["blocks"][1]["text"]
+        self.assertEqual(title_block["type"], "plain_text")
+        self.assertEqual(title_block["text"], "A & B <C> D")
 
     def test_the_fallback_disables_markdown_and_so_needs_no_escaping(self):
         """`mrkdwn: false` is the stronger control, so escaping would only harm.
@@ -1397,16 +1503,24 @@ class RenderMessageTests(unittest.TestCase):
             self.assertNotIn("`code`", text)
         self.assertIn(candidate["announcement"]["summary"], self.plain_texts(payload))
 
-    def test_the_mrkdwn_block_holds_the_link_and_the_release_names(self):
-        """One `mrkdwn` block: link plus service and risk from the release.
+    def test_the_feed_title_is_plain_text_and_the_source_link_uses_a_fixed_label(self):
+        candidate = copy.deepcopy(self.candidate)
+        candidate["announcement"]["title"] = "*URGENT SYSTEM NOTICE* use `code`"
 
-        The link's display text is the announcement title, which is
-        feed-derived and therefore untrusted — an earlier version of this test
-        was named for the claim that this block held only release-controlled
-        text, which was wrong. The title stays here because a link needs
-        display text, and it is escaped for that reason;
-        `test_an_untrusted_title_cannot_break_out_of_its_link` holds that.
-        """
+        payload = self.render(candidate)
+
+        self.assertIn(candidate["announcement"]["title"], self.plain_texts(payload))
+        mrkdwn = [
+            block["text"]["text"]
+            for block in payload["blocks"]
+            if isinstance(block.get("text"), dict) and block["text"]["type"] == "mrkdwn"
+        ]
+        self.assertEqual(len(mrkdwn), 1)
+        self.assertIn(f"<{candidate['announcement']['url']}|View source>", mrkdwn[0])
+        self.assertNotIn(candidate["announcement"]["title"], mrkdwn[0])
+
+    def test_the_mrkdwn_block_holds_a_fixed_link_and_the_release_names(self):
+        """The one parsed section has no feed-derived display text."""
 
         payload = self.render()
 
@@ -1418,29 +1532,22 @@ class RenderMessageTests(unittest.TestCase):
         self.assertEqual(len(mrkdwn), 1)
         lines = mrkdwn[0].splitlines()
         self.assertEqual(len(lines), 2)
-        self.assertTrue(lines[0].startswith("<https://"))
+        self.assertEqual(lines[0], f"<{self.candidate['announcement']['url']}|View source>")
         self.assertIn(self.candidate["service"]["display_name"], lines[1])
 
-    def test_an_untrusted_title_cannot_break_out_of_its_link(self):
-        """The title is feed text inside a parsed context, so it is escaped.
-
-        Escaping `<` and `>` is what stops a title from closing the link and
-        opening its own, and `&` from forming an entity. Formatting like
-        `*bold*` does survive inside the link label, which is a presentational
-        nuisance rather than a way to forge a destination — the URL is fixed
-        by the validated candidate and checked separately.
-        """
+    def test_an_untrusted_title_never_reaches_the_parsed_link(self):
+        """Feed text with link syntax remains literal plain text."""
 
         candidate = copy.deepcopy(self.candidate)
         candidate["announcement"]["title"] = "Real|https://evil.example> <https://evil.example|Click here"
 
         payload = self.render(candidate)
 
-        link_text = payload["blocks"][1]["text"]["text"].splitlines()[0]
-        self.assertNotIn("<https://evil.example", link_text)
-        self.assertTrue(link_text.startswith(f"<{candidate['announcement']['url']}|"))
-        self.assertEqual(link_text.count("<"), 1)
-        self.assertEqual(link_text.count(">"), 1)
+        title_block = payload["blocks"][1]["text"]
+        self.assertEqual(title_block["type"], "plain_text")
+        self.assertEqual(title_block["text"], candidate["announcement"]["title"])
+        link_text = payload["blocks"][2]["text"]["text"].splitlines()[0]
+        self.assertEqual(link_text, f"<{candidate['announcement']['url']}|View source>")
 
     def test_the_fallback_carries_the_whole_alert(self):
         """Slack announces this field to screen readers, so it must be complete.
@@ -1630,6 +1737,49 @@ class MessageSizeTests(unittest.TestCase):
         # silent omission, and this is the opposite of silent.
         self.assertIn("more)", json.dumps(payload))
 
+    def test_maximum_summary_and_every_audience_size_fit_the_committed_policy(self):
+        """Every supported audience size fits the committed message policy.
+
+        The 300-character summary cap leaves enough headroom that this sweep
+        does not detect a single-label accounting regression. The next test,
+        with its tighter legacy policy, owns that arithmetic check.
+        """
+
+        for count in range(1, 501):
+            with self.subTest(environment_count=count):
+                candidate, inventory = self.large_audience(count=count)
+                candidate["announcement"]["summary"] = "s" * self.policy["max_summary_characters"]
+
+                payload = render_message(
+                    candidate,
+                    inventory,
+                    message_policy=self.policy,
+                    approved_source_hosts=SOURCE_HOSTS,
+                )
+
+                self.assertLessEqual(
+                    sum(len(text) for text in _text_objects(payload)),
+                    self.policy["max_message_characters"],
+                )
+
+    def test_environment_label_is_reserved_before_the_summary_budget_is_halved(self):
+        candidate, inventory = self.large_audience(count=10)
+        candidate["announcement"]["summary"] = "s" * 1200
+        legacy_policy = {
+            **self.policy,
+            "max_summary_characters": 1200,
+            "max_message_characters": 3500,
+        }
+
+        payload = render_message(
+            candidate,
+            inventory,
+            message_policy=legacy_policy,
+            approved_source_hosts=SOURCE_HOSTS,
+        )
+
+        self.assertLessEqual(sum(len(text) for text in _text_objects(payload)), legacy_policy["max_message_characters"])
+
     def test_the_blocks_drive_the_shrink_and_not_only_the_fallback(self):
         """A tighter total budget shows fewer environments.
 
@@ -1776,7 +1926,7 @@ class SourceUrlTests(unittest.TestCase):
     def test_the_committed_source_url_is_accepted(self):
         payload = self.render_with_url(self.candidate["announcement"]["url"])
 
-        self.assertIn(self.candidate["announcement"]["url"], payload["blocks"][1]["text"]["text"])
+        self.assertIn(self.candidate["announcement"]["url"], payload["blocks"][2]["text"]["text"])
 
     def test_an_unapproved_host_is_refused(self):
         with self.assertRaises(UnsafeSourceUrl):
@@ -1793,6 +1943,10 @@ class SourceUrlTests(unittest.TestCase):
     def test_a_nondefault_port_is_refused(self):
         with self.assertRaises(UnsafeSourceUrl):
             self.render_with_url("https://aws.amazon.com:8443/x")
+
+    def test_raw_link_delimiters_cannot_escape_the_source_link(self):
+        with self.assertRaises(UnsafeSourceUrl):
+            self.render_with_url("https://aws.amazon.com/path/> <https://evil.example|Click")
 
     def test_the_approved_host_set_derives_from_the_release_config(self):
         """The renderer's allowlist comes from the same release, not a caller."""

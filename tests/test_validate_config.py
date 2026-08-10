@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 
 import yaml
-from jsonschema.exceptions import SchemaError
+from jsonschema.exceptions import FormatError, SchemaError
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
@@ -15,6 +15,7 @@ sys.path.insert(0, str(ROOT / "src"))
 import validate_config as validator  # noqa: E402
 
 from aws_public_change_feed import identity  # noqa: E402
+from aws_public_change_feed.schema_formats import contract_format_checker  # noqa: E402
 
 SCHEMA_FILES = {
     "deployment": "deployment.schema.json",
@@ -178,6 +179,32 @@ class ConfigurationValidatorTests(unittest.TestCase):
             with self.assertRaises(SchemaError):
                 validator.validate_schema(schema_path, Path("example.json"), {})
 
+    def test_contract_format_checks_are_registered_without_optional_packages(self):
+        checker = contract_format_checker()
+
+        for format_name, invalid in (("date-time", "tomorrow"), ("uri", "https://aws.amazon.com/a b")):
+            with self.subTest(format_name=format_name):
+                with self.assertRaises(FormatError):
+                    checker.check(invalid, format_name)
+
+    def test_owned_schemas_reject_malformed_dates_and_uris(self):
+        cases = (
+            ("active_versions", "promoted_at", "tomorrow", "date-time"),
+            ("alert_candidate", "created_at", "2026-99-99T00:00:00Z", "date-time"),
+            ("delivery_request", "created_at", "2026-07-13", "date-time"),
+        )
+        for name, field, value, format_name in cases:
+            with self.subTest(document=name):
+                document = copy.deepcopy(self.documents[name])
+                document[field] = value
+                with self.assertRaisesRegex(ValueError, format_name):
+                    self.validate_schema(name, document)
+
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["url"] = "https://aws.amazon.com/a b"
+        with self.assertRaisesRegex(ValueError, "uri"):
+            self.validate_schema("alert_candidate", candidate)
+
     def test_breaking_document_versions_are_rejected(self):
         cases = {
             "deployment": ("schema_version", 2),
@@ -318,8 +345,22 @@ class ConfigurationValidatorTests(unittest.TestCase):
                 documents["config"]["feeds"][0]["url"] = url
                 if label == "ip":
                     documents["deployment"]["feed_fetch_policy"]["allowed_feed_hosts"].append("127.0.0.1")
-                with self.assertRaisesRegex(ValueError, "not allowed|IP literal|fragment"):
+                with self.assertRaisesRegex(ValueError, "not approved|IP literal|fragment"):
                     self.validate_contract(documents)
+
+    def test_publication_rejects_every_feed_url_the_runtime_rejects(self):
+        cases = {
+            "uppercase hostname": "https://AWS.AMAZON.COM/feed/",
+            "path over runtime limit": "https://aws.amazon.com/" + "p" * 513,
+            "query over runtime limit": "https://aws.amazon.com/feed/?q=" + "q" * 513,
+            "raw link delimiters": "https://aws.amazon.com/feed/> <https://evil.example|Click",
+        }
+        for label, url in cases.items():
+            with self.subTest(label=label):
+                documents = load_documents()
+                documents["config"]["feeds"][0]["url"] = url
+                with self.assertRaisesRegex(ValueError, "lowercase|path exceeds|query exceeds|percent-encoded"):
+                    validator.validate_semantics(documents["deployment"], documents["config"], documents["inventory"])
 
     def test_unused_or_invalid_allowed_feed_hosts_are_rejected(self):
         cases = {
@@ -531,6 +572,20 @@ class ConfigurationValidatorTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     self.validate_contract(documents)
 
+    def test_message_policy_must_render_every_release_reachable_maximum(self):
+        documents = load_documents()
+        documents["config"]["message_policy"]["max_summary_characters"] = 1200
+
+        with self.assertRaisesRegex(ValueError, "cannot render its reachable maxima"):
+            self.validate_contract(documents)
+
+    def test_message_policy_must_hold_the_required_block_structure(self):
+        documents = load_documents()
+        documents["config"]["message_policy"]["max_blocks"] = 1
+
+        with self.assertRaisesRegex(ValueError, "max_blocks cannot hold"):
+            self.validate_contract(documents)
+
     def test_feed_redirects_are_disabled(self):
         deployment = copy.deepcopy(self.documents["deployment"])
         deployment["feed_fetch_policy"]["max_redirects"] = 1
@@ -637,6 +692,13 @@ class ConfigurationValidatorTests(unittest.TestCase):
                 with self.assertRaisesRegex(ValueError, message):
                     self.validate_schema(name, document)
 
+    def test_candidate_application_version_must_be_an_artifact_digest(self):
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["release"]["application_version"] = "1.2.3"
+
+        with self.assertRaisesRegex(ValueError, "sha256"):
+            self.validate_schema("alert_candidate", candidate)
+
     def test_candidate_announcement_identity_chain_is_enforced(self):
         mutations = {
             "announcement": ("announcement_id", "canonical announcement URL"),
@@ -694,6 +756,16 @@ class ConfigurationValidatorTests(unittest.TestCase):
                 self.documents["alert_candidate"],
                 request,
             )
+
+    def test_candidate_publication_time_must_be_normalized_but_may_be_future_dated(self):
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["published_at"] = "2026-07-13T08:00:00-04:00"
+        with self.assertRaisesRegex(ValueError, "published_at is not a normalized UTC timestamp"):
+            self.validate_candidate(candidate)
+
+        candidate = copy.deepcopy(self.documents["alert_candidate"])
+        candidate["announcement"]["published_at"] = "2099-01-01T00:00:00Z"
+        self.validate_candidate(candidate)
 
     def test_candidate_release_and_config_values_are_enforced(self):
         mutations = {
@@ -803,11 +875,20 @@ class ConfigurationValidatorTests(unittest.TestCase):
         # which `test_pipeline` drives through the whole chain.
         self.validate_candidate(candidate)
 
+        for item_url in (
+            "https://AWS.AMAZON.COM/about-aws/whats-new/2026/example-eks-update/",
+            "https://aws.amazon.com:443/about-aws/whats-new/2026/example-eks-update/",
+        ):
+            with self.subTest(canonicalizable_source_item_url=item_url):
+                candidate = copy.deepcopy(self.documents["alert_candidate"])
+                candidate["announcement"]["provenance"][0]["source_item_url"] = item_url
+                self.validate_candidate(candidate)
+
         candidate = copy.deepcopy(self.documents["alert_candidate"])
         candidate["announcement"]["provenance"][0]["source_item_url"] = (
             "https://user:pw@aws.amazon.com/about-aws/whats-new/2026/example-eks-update/"
         )
-        with self.assertRaisesRegex(ValueError, "must use unauthenticated HTTPS"):
+        with self.assertRaisesRegex(ValueError, "user-info component"):
             self.validate_candidate(candidate)
 
         candidate = copy.deepcopy(self.documents["alert_candidate"])
@@ -816,13 +897,13 @@ class ConfigurationValidatorTests(unittest.TestCase):
         )
         # Blank credentials are still a user-info component; `parsed.username`
         # is the empty string here and a username check alone would pass it.
-        with self.assertRaisesRegex(ValueError, "must use unauthenticated HTTPS"):
+        with self.assertRaisesRegex(ValueError, "user-info component"):
             self.validate_candidate(candidate)
 
         candidate = copy.deepcopy(self.documents["alert_candidate"])
         candidate["announcement"]["url"] = "https://example.com/announcement/"
         sync_candidate_identity(candidate)
-        with self.assertRaisesRegex(ValueError, "announcement URL host is not allowed"):
+        with self.assertRaisesRegex(ValueError, "hostname is not approved"):
             self.validate_candidate(candidate)
 
     def test_candidate_claimed_match_evidence_is_enforced(self):

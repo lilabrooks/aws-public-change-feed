@@ -16,11 +16,11 @@ import re
 from collections.abc import Collection, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from urllib.parse import urlsplit
 
 from .feedparse import ParsedItem
-from .identity import announcement_id, canonical_public_url, content_fingerprint, revision_id
+from .identity import announcement_id, content_fingerprint, revision_id
 from .normalize import normalize_text
+from .urls import FeedUrlRejected, validate_source_item_url
 
 __all__ = [
     "MAX_SUMMARY_CHARACTERS",
@@ -131,52 +131,19 @@ def normalize_item(
 ) -> NormalizedAnnouncement | None:
     """Normalize one parsed item, or return None when it cannot be accepted.
 
-    Two URLs matter here and both are checked. The canonical URL carries
-    identity, so the host allowlist and default-port checks run on it rather
-    than on raw feed text. The raw URL is kept as the sighting record in
-    provenance and reaches the candidate contract as `source_item_id` and
-    `source_item_url`, so anything canonicalization silently repairs has to be
-    rejected here instead: credentials in the netloc are dropped by
-    canonicalization but would remain in the stored sighting, where the
-    contract forbids them. A fragment is the one raw/canonical difference the
-    contract accepts, because the provenance rule is that the sighting
-    canonicalizes to the announcement URL rather than equalling it.
+    Two forms of one URL matter here and both are checked. The canonical URL
+    carries identity. The accepted raw URL remains the provenance sighting.
+    Scheme and host case, a default port, and a fragment may differ because
+    chapter 04 names those canonicalizations. Malformed spelling and user info
+    are refused before the raw value can become durable.
 
     A malformed URL (for example a non-numeric port) cannot abort the
     acquisition run, so it is dropped here.
     """
 
-    # Checked on the raw netloc, not on `parsed.username`: an empty user-info
-    # component (`https://@host/x`) leaves a falsy username behind and would
-    # otherwise be stored verbatim.
-    if "@" in urlsplit(item.url).netloc:
-        return None
-
     try:
-        canonical = canonical_public_url(item.url)
-    except ValueError:
-        return None
-    if not canonical.startswith("https://"):
-        return None
-
-    # The allowlist is folded here rather than trusted from callers: hosts in
-    # the canonical URL are always lowercase, so an unfolded list would reject
-    # every item the moment one caller hands over a differently cased set.
-    approved = {host.casefold() for host in approved_hosts}
-    parsed = urlsplit(canonical)
-    if (parsed.hostname or "") not in approved:
-        return None
-    try:
-        if parsed.port not in (None, 443):
-            return None
-    except ValueError:
-        # Defensive only, and not for the reason it looks like. Canonicalization
-        # raises on a non-numeric port, so that form never arrives. A bracketed
-        # IPv6 URL does reach here re-parsed and unbracketed
-        # (`https://[::1]/x` canonicalizes to `https://::1/x`, whose port text
-        # is `:1`), but the allowlist check above has already dropped it: the
-        # mangled hostname cannot be an approved host. Kept so a reordering of
-        # these two checks cannot turn a dropped item into a raised exception.
+        canonical = validate_source_item_url(item.url, approved_hosts)
+    except FeedUrlRejected:
         return None
 
     title = sanitize(item.title, MAX_TITLE_CHARACTERS)

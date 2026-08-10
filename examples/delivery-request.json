@@ -47,20 +47,20 @@
     },
     "recommended_action": "Review supported Kubernetes versions and plan required cluster upgrades.",
     "release": {
-      "release_id": "3554793b4e504dfb6fc6c2e6359ec6290b41c4f5a95889d3b37574ab6d27d344",
+      "release_id": "880fb7af338833bd261f99cfe68c87202b8cc2fda7615b0a3e54b0794b077f5b",
       "config": {
-        "key": "aws-public-change-alerting/releases/3554793b4e504dfb6fc6c2e6359ec6290b41c4f5a95889d3b37574ab6d27d344/config.yaml",
+        "key": "aws-public-change-alerting/releases/880fb7af338833bd261f99cfe68c87202b8cc2fda7615b0a3e54b0794b077f5b/config.yaml",
         "version_id": "example-config-version-id",
-        "sha256": "945fcc9260536310f90d89425367dc66fdda132b90846d5eb3669702a48fa971",
+        "sha256": "9fa91cd2c7f0b8280d94c27c9843f951bf3005820d918a7c03bd7806e5cc1a70",
         "schema_version": 4
       },
       "inventory": {
-        "key": "aws-public-change-alerting/releases/3554793b4e504dfb6fc6c2e6359ec6290b41c4f5a95889d3b37574ab6d27d344/inventory.json",
+        "key": "aws-public-change-alerting/releases/880fb7af338833bd261f99cfe68c87202b8cc2fda7615b0a3e54b0794b077f5b/inventory.json",
         "version_id": "example-inventory-version-id",
         "sha256": "00b84f7cc404fb7740fe778387eac40327511b6b94439beec46f51f383cb93f1",
         "schema_version": 3
       },
-      "application_version": "0.1.0-design-fixture"
+      "application_version": "sha256:afb17da26e5a527af74f93cb8305ae77e5368bdfd0a52cf6bee9cccfeb948566"
     }
   },
   "destination_key": "shared-aws-change-alerts",

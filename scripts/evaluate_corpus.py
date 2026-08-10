@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from aws_public_change_feed.corpus import load_corpus, load_thresholds  # noqa: E402
 from aws_public_change_feed.evaluation import evaluate_corpus, format_report  # noqa: E402
 from aws_public_change_feed.matching import load_risk_rules, load_services  # noqa: E402
+from aws_public_change_feed.schema_formats import contract_format_checker  # noqa: E402
 
 CORPUS_PATH = Path("corpus/announcements.json")
 THRESHOLDS_PATH = Path("corpus/thresholds.json")
@@ -38,7 +39,7 @@ def validate_document(document_path: Path, schema_path: Path) -> list[str]:
         document = json.load(handle)
     with schema_path.open(encoding="utf-8") as handle:
         schema = json.load(handle)
-    validator = jsonschema.Draft202012Validator(schema)
+    validator = jsonschema.Draft202012Validator(schema, format_checker=contract_format_checker())
     return [
         f"{document_path}: {'/'.join(str(part) for part in error.path) or '<root>'}: {error.message}"
         for error in sorted(validator.iter_errors(document), key=lambda error: list(error.path))

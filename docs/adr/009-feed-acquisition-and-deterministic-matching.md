@@ -30,6 +30,30 @@ The dedicated AWS Security Bulletins feed is public guidance and follows the sam
 - Match results are reproducible from source content and release artifacts.
 - Historical corpus tests are required before rule promotion.
 
+## Revision: acquisition owns the stored-URL boundary
+
+- Status: Accepted
+- Date: 2026-08-10
+- Accepted: 2026-08-10
+
+The producer must reject a raw item URL before persistence when its syntax is
+malformed, it carries user information, it contains an unencoded character
+outside the URI character set, or it has a malformed percent escape. Scheme
+and hostname case, an explicit default port, and a fragment are canonicalized
+as chapter 04 specifies. The original accepted URL remains in provenance while
+its canonical form supplies announcement identity.
+
+The producer and every later candidate consumer apply one reachable-state
+rule: any URL accepted into a candidate must pass the worker's source-link
+policy after canonicalization. A regression matrix covers the raw forms at the
+producer, the canonical URL stored on the announcement, and the exact
+provenance URL checked during delivery.
+
+A feed publication time remains optional. When present on a candidate, it must
+be a parseable normalized timestamp. No ordering against `observed_at` is
+inferred because the public feed's clock may differ from the watcher clock and
+the product has no accepted skew policy.
+
 ## References
 
 References verified: 2026-07-13.

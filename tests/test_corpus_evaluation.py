@@ -242,7 +242,10 @@ class CorpusRejectionTests(unittest.TestCase):
         mutate(document)
         with (ROOT / "schemas/corpus.schema.json").open(encoding="utf-8") as handle:
             schema = json.load(handle)
-        validator = jsonschema.Draft202012Validator(schema)
+        validator = jsonschema.Draft202012Validator(
+            schema,
+            format_checker=harness.contract_format_checker(),
+        )
         return list(validator.iter_errors(document))
 
     def test_unknown_field_is_rejected(self):
@@ -258,6 +261,9 @@ class CorpusRejectionTests(unittest.TestCase):
         self.assertTrue(
             self.mutated(lambda document: document["items"][0].update({"canonical_url": "http://corpus.invalid/x"}))
         )
+
+    def test_malformed_timestamp_is_rejected(self):
+        self.assertTrue(self.mutated(lambda document: document["items"][0].update({"published_at": "tomorrow"})))
 
     def test_blank_title_is_rejected(self):
         self.assertTrue(self.mutated(lambda document: document["items"][0].update({"title": "   "})))
