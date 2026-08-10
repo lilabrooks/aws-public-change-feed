@@ -377,6 +377,8 @@
               <li>Due-work dispatch with state-version claims, FIFO dedupe reuse, cross-state batch limits, and explicit unknown-send evidence</li>
               <li>DynamoDB delivery and SQS FIFO producer adapters exercised against service mocks</li>
               <li>Slack delivery worker core with exact release and application-artifact checks, release-bound candidate semantics, bounded plain-text rendering, conditional outcomes, pacing state, and retry-safe response classification; FIFO destination serialization remains deployment work</li>
+              <li>Slack HTTP transport for incoming-webhook and bot-token modes, sharing feed acquisition&rsquo;s address validation and pinned TLS connection, reporting only observed facts, and proving its no-bytes-sent claim row by row against a truth table</li>
+              <li>Credential readers for both accepted secret stores, Secrets Manager and SSM SecureString, returning the stored value whole with a configured kind and keeping it out of every message, repr, and log</li>
               <li>Live feed screening that flags any production match the corpus does not represent</li>
               <li>S3 release preconditions measured against the mock the publisher is tested on, including where that mock cannot stand in for S3</li>
               <li>Release publication and promotion reproducing the committed release from the contract bundle's own bytes</li>
@@ -393,11 +395,11 @@
             <h3>Required implementation evidence</h3>
             <ul class="site-list">
               <li>Corpus coverage of end-of-support announcements from real feeds</li>
-              <li>DynamoDB source-state operations, S3 snapshot storage, and Slack credential access behind the remaining ports</li>
+              <li>DynamoDB source-state operations and S3 snapshot storage behind the remaining ports</li>
               <li>Lambda packaging, schedules, and event source mappings for the four functions</li>
               <li>Content-addressed application artifact injection, retention, and pause-and-drain rollout</li>
               <li>Publisher-side retirement of superseded releases, which S3 lifecycle cannot express safely</li>
-              <li>Deployed dispatcher and worker Lambda handling, Slack transport, and reconciliation</li>
+              <li>Deployed dispatcher and worker Lambda handling, FIFO batch responses, bounded metrics, and reconciliation</li>
               <li>Feed, delivery, recovery, load, and security tests</li>
               <li>Production preflight and confirmed Slack destination checks</li>
               <li>A rendered Slack message sample on this page, produced by the delivery renderer</li>

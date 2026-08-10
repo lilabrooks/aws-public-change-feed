@@ -25,19 +25,27 @@ publication-time validation can never have seen it. A failure in any of them is
 `failed_terminal` with no network call and no charge against the Slack
 attempt budget, which chapter 06 reserves for calls that actually happen.
 
-The Slack transport and the Secrets Manager adapter stay behind ports here, so
-the state machine is exercised against the same boundary that runs in
-production without a deployed secret or network. The classification of a Slack
-response into a delivery state lives here rather than in the client: the client
-reports HTTP-level facts and the worker owns the ADR-004 mapping, so the
-retry-safety condition ADR-004 states — that no request bytes were sent — is
-proved from a reported fact rather than asserted by whatever adapter is wired
-in.
+Where a message goes is derived here, not passed through. `_destination_for`
+builds a `SlackDestination` from the verified inventory release, so the channel a
+bot-mode post targets and the hosts a webhook URL may use both come from the
+document whose hashes were just checked, rather than from the rendered payload,
+the delivery record, or the credential. A route that cannot produce one is
+terminal without a network call.
+
+The Slack transport and the credential reader stay behind ports here even though
+both now have production adapters — `slack_transport` and `aws_credentials`. The
+ports are what let this state machine be exercised against the boundary that runs
+in production without a deployed secret or a network, and they are also where the
+fact/decision split is enforced: the classification of a Slack response into a
+delivery state lives here rather than in the client, so the retry-safety
+condition ADR-004 states — that no request bytes were sent — is proved from a
+reported fact rather than asserted by whatever adapter is wired in.
 """
 
 from __future__ import annotations
 
 import hashlib
+import re
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -46,7 +54,7 @@ from enum import StrEnum
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
-from .credentials import WEBHOOK, CredentialReader, CredentialReadError, SlackCredential
+from .credentials import BOT_TOKEN, WEBHOOK, CredentialReader, CredentialReadError, SlackCredential
 from .dispatch import InvalidDeliveryRequest, validate_delivery_request
 from .identity import application_artifact_id
 from .loading import (
@@ -68,6 +76,7 @@ __all__ = [
     "MessageTooLarge",
     "NullWorkerMetrics",
     "POSTED",
+    "SlackDestination",
     "SlackResponse",
     "SlackSender",
     "TransportError",
@@ -90,6 +99,11 @@ _PENDING = "pending_queue"
 
 # Slack webhook URLs take the path /services/<workspace>/<channel>/<secret>.
 _WEBHOOK_PATH_SEGMENTS = 4
+
+# The same shape `inventory.schema.json` requires of a bot-mode route's
+# `channel_id`. Re-checked when the destination is built so a hand-edited
+# inventory that reached the runtime cannot put arbitrary text in the API call.
+_CHANNEL_ID = re.compile(r"C[A-Z0-9]+")
 
 _HTTP_OK = 200
 _HTTP_TOO_MANY_REQUESTS = 429
@@ -146,7 +160,14 @@ class TransportError(StrEnum):
     `CONNECT_FAILED` and `TLS_FAILED` occur before any request byte leaves, so
     the worker can prove an automatic retry is safe. `TIMEOUT`, `READ_FAILED`,
     and `CONNECTION_LOST` occur once a request is in flight, so they cannot.
-    `MALFORMED_URL` never reaches a socket at all.
+
+    `MALFORMED_URL` never reaches a socket at all: the request could not be
+    constructed. It covers a stored webhook URL that fails policy at the network
+    boundary, a credential that cannot be placed in a header, and a resolved
+    address set the anti-rebinding rules refuse. Those are policy and
+    configuration faults rather than transient ones, which is why they are the
+    one no-bytes class the worker still treats as terminal — retrying them to
+    the attempt ceiling would only delay the escalation an operator needs.
     """
 
     MALFORMED_URL = "malformed_url"
@@ -247,17 +268,72 @@ class SlackResponse:
                 raise ValueError(f"slack_error must be a nonempty string when present, not {self.slack_error!r}")
 
 
+@dataclass(frozen=True, slots=True)
+class SlackDestination:
+    """Where one delivery goes, derived from the exact inventory release.
+
+    The transport needs routing facts the credential cannot supply. A bot token
+    is usable against any channel in its workspace, so the channel has to come
+    from the release rather than from the payload or the secret; chapter 04's
+    bot-token controls say "the route uses a configured channel ID". A webhook
+    URL is the credential, so what the release supplies there is the host
+    allowlist the URL must satisfy at the network boundary.
+
+    Only those facts. The rendered payload, the destination key, the route ID,
+    and the candidate stay out, because a transport that can see them is a
+    transport that can be asked to make a routing decision, and every routing
+    decision here belongs to the release.
+
+    Mode-specific invariants hold at construction, so an adapter never has to
+    ask whether the field it needs is present, and a malformed destination
+    fails before a socket exists rather than as a request Slack rejects.
+    """
+
+    mode: str
+    channel_id: str | None = None
+    approved_webhook_hosts: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.mode not in (WEBHOOK, BOT_TOKEN):
+            raise ValueError(f"delivery mode must be {WEBHOOK!r} or {BOT_TOKEN!r}, not {self.mode!r}")
+        if self.mode == WEBHOOK:
+            if not self.approved_webhook_hosts:
+                raise ValueError("webhook delivery needs at least one approved webhook host")
+            if self.channel_id is not None:
+                # A channel ID in webhook mode means the release was read as
+                # the wrong mode somewhere. The URL already fixes the channel,
+                # so carrying one would put two answers in the same object.
+                raise ValueError("webhook delivery must not carry a channel_id")
+        else:
+            if not self.channel_id or _CHANNEL_ID.fullmatch(self.channel_id) is None:
+                raise ValueError("bot delivery needs a channel_id matching the inventory contract")
+            if self.approved_webhook_hosts:
+                raise ValueError("bot delivery must not carry approved webhook hosts")
+
+
 class SlackSender(Protocol):
     """The narrow network surface the worker needs.
 
-    `credential.kind` tells the adapter how to post: an incoming webhook is
-    posted to its validated secret URL, and a bot token posts to the fixed
-    Slack API host. The adapter reports HTTP-level facts in a `SlackResponse`
-    and makes no delivery-state decision; the worker owns the ADR-004 mapping.
+    `destination.mode` tells the adapter how to post: an incoming webhook is
+    posted to its validated secret URL under the destination's approved hosts,
+    and a bot token posts to the fixed Slack API host for the destination's
+    channel. The adapter reports HTTP-level facts in a `SlackResponse` and makes
+    no delivery-state decision; the worker owns the ADR-004 mapping.
+
+    The mode is read from the destination rather than from `credential.kind`
+    even though `process_delivery` has already proved the two agree. The
+    destination is derived from the verified release, and the credential is
+    mutable deployment state; when a contract has one authority, the port names
+    it, so a later adapter cannot accidentally take the mutable one.
     """
 
     def post(
-        self, payload: Mapping[str, Any], *, credential: SlackCredential, timeout_seconds: float
+        self,
+        payload: Mapping[str, Any],
+        *,
+        credential: SlackCredential,
+        destination: SlackDestination,
+        timeout_seconds: float,
     ) -> SlackResponse: ...
 
 
@@ -850,6 +926,28 @@ def _approved_source_hosts(config: Mapping[str, Any]) -> tuple[str, ...]:
     return tuple(sorted(hosts))
 
 
+def _destination_for(inventory: Mapping[str, Any], route: Mapping[str, Any]) -> SlackDestination:
+    """Build the transport's destination from the verified inventory release.
+
+    Reads only the release. The delivery mode and the webhook host allowlist are
+    deployment-wide, the channel is the route's; none of them comes from the
+    candidate, the delivery record, or the credential, so a stored record edited
+    in place cannot move a message to another channel.
+
+    A `KeyError` here means the loaded inventory does not match its own schema
+    for the mode it declares. `process_delivery` treats that as a terminal
+    render-time failure rather than letting it escape, because the release was
+    already hash-verified and a missing field is a contract fault an operator
+    has to fix rather than something a retry resolves.
+    """
+
+    slack = inventory["slack"]
+    mode = slack["delivery_mode"]
+    if mode == WEBHOOK:
+        return SlackDestination(mode=WEBHOOK, approved_webhook_hosts=tuple(slack["approved_webhook_hosts"]))
+    return SlackDestination(mode=BOT_TOKEN, channel_id=route["channel_id"])
+
+
 def _advance_pace(
     store: OutboxStore,
     destination_key: str,
@@ -1108,6 +1206,18 @@ def process_delivery(
 
     delivery_mode = inventory["slack"]["delivery_mode"]
     try:
+        destination = _destination_for(inventory, route)
+    except (KeyError, ValueError) as error:
+        # The release verified its hashes and its schema, so a destination that
+        # cannot be built means the inventory declares a mode whose required
+        # route or deployment fields are absent or malformed. No retry repairs
+        # that, and it must not reach a socket.
+        return terminal_without_call(
+            "destination_unusable",
+            f"the release route cannot produce a Slack destination: {error}",
+        )
+
+    try:
         secret = credentials.read(
             route["credential_secret_id"] if delivery_mode == WEBHOOK else inventory["slack"]["bot_token_secret_id"]
         )
@@ -1144,7 +1254,12 @@ def process_delivery(
     network_attempt_count = record.network_attempt_count + 1
     try:
         metrics.delivery_attempted()
-        response = sender.post(payload, credential=secret, timeout_seconds=timeout_seconds)
+        response = sender.post(
+            payload,
+            credential=secret,
+            destination=destination,
+            timeout_seconds=timeout_seconds,
+        )
     except Exception:
         # The port raised instead of reporting. Nothing is known about whether
         # bytes reached Slack, and ADR-004 permits an automatic retry only on
