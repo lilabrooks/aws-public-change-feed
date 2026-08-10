@@ -121,6 +121,88 @@ class TerraformContractTests(unittest.TestCase):
                 self.assertIn(f'metric_name         = "{metric}"', alarms)
                 self.assertIn(f'"{metric}"', dashboard)
 
+    def test_reconciler_has_its_own_exact_artifact_and_bounded_schedule(self):
+        locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+
+        self.assertIn("reconciler_timeout_seconds        = 60", locals_source)
+        self.assertIn("reconciler_reserved_concurrency   = 1", locals_source)
+        self.assertIn("reconciler_repair_limit           = 100", locals_source)
+        self.assertIn("reconciler_observation_limit      = 101", locals_source)
+        self.assertIn('reconciler_schedule_expression    = "rate(5 minutes)"', locals_source)
+        self.assertIn("reconciler_maximum_retry_attempts = 2", locals_source)
+        self.assertIn("reconciler_maximum_event_age      = 300", locals_source)
+        self.assertIn("s3_key            = local.reconciler_artifact_key", lambda_source)
+        self.assertIn("s3_object_version = var.reconciler_artifact_version_id", lambda_source)
+        self.assertIn("timeout                        = local.reconciler_timeout_seconds", lambda_source)
+        self.assertIn("reserved_concurrent_executions = local.reconciler_reserved_concurrency", lambda_source)
+        self.assertIn("maximum_event_age_in_seconds = local.reconciler_maximum_event_age", lambda_source)
+        self.assertIn("maximum_retry_attempts       = local.reconciler_maximum_retry_attempts", lambda_source)
+        self.assertIn(
+            "(var.reconciler_artifact_sha256 == null) == (var.reconciler_artifact_version_id == null)",
+            variables,
+        )
+        self.assertNotIn(
+            "var.worker_artifact_version_id\n\n  timeout                        = local.reconciler", lambda_source
+        )
+
+    def test_reconciler_failure_queue_is_standard_encrypted_and_source_scoped(self):
+        queue = (ROOT / "infra/central/sqs.tf").read_text(encoding="utf-8")
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+
+        runtime_queue = queue[queue.index('resource "aws_sqs_queue" "runtime_failures"') :]
+        self.assertIn("sqs_managed_sse_enabled   = true", runtime_queue)
+        self.assertNotIn("fifo_queue", runtime_queue.split("data ", 1)[0])
+        self.assertIn('sid     = "AllowExactReconcilerSchedule"', queue)
+        self.assertIn('identifiers = ["events.amazonaws.com"]', queue)
+        self.assertIn('variable = "aws:SourceArn"', queue)
+        self.assertIn("values   = [aws_cloudwatch_event_rule.reconciler.arn]", queue)
+        self.assertIn("dead_letter_config", lambda_source)
+        self.assertIn("arn = aws_sqs_queue.runtime_failures.arn", lambda_source)
+
+    def test_reconciler_iam_has_no_scan_secret_or_external_network_permission(self):
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        statement = iam[iam.index('data "aws_iam_policy_document" "recovery_reconciler"') :]
+        statement = statement[: statement.index('\nresource "aws_iam_role_policy"')]
+
+        self.assertIn('actions = ["dynamodb:Query"]', statement)
+        self.assertIn('actions = ["dynamodb:GetItem"]', statement)
+        self.assertIn('actions = ["dynamodb:UpdateItem"]', statement)
+        self.assertIn('actions   = ["sqs:SendMessage"]', statement)
+        for forbidden in ("dynamodb:Scan", "secretsmanager", "ssm:GetParameter", "execute-api", "lambda:Invoke"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, statement)
+
+    def test_reconciler_metric_names_and_dimensions_match_consumers(self):
+        runtime = (ROOT / "src/aws_public_change_feed/recovery_runtime.py").read_text(encoding="utf-8")
+        alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
+        dashboard = (ROOT / "infra/central/dashboard.tf").read_text(encoding="utf-8")
+
+        for metric in (
+            "DeliveryUnknown",
+            "DispatchUnknownOutcome",
+            "ExpiredLeaseUnknown",
+            "RecoveryRepairLimitReached",
+            "StateObservationSaturated",
+            "ReconcilerFault",
+        ):
+            with self.subTest(metric=metric):
+                self.assertIn(f'"{metric}"', runtime)
+                self.assertIn(f'"{metric}"', dashboard)
+        for alarmed in (
+            "DeliveryUnknown",
+            "DispatchUnknownOutcome",
+            "RecoveryRepairLimitReached",
+            "StateObservationSaturated",
+            "ReconcilerFault",
+        ):
+            with self.subTest(alarmed=alarmed):
+                self.assertIn(f'metric_name         = "{alarmed}"', alarms)
+        self.assertIn('[["Function"]]', runtime)
+        self.assertIn('[["State"]]', runtime)
+        self.assertIn("[[]]", runtime)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -304,7 +304,7 @@
           <article class="compact-card">
             <span class="compact-tag">04 · Deliver</span>
             <h3 class="compact-card-title">Order, pace, and recover Slack work</h3>
-            <p>SQS FIFO groups work by destination. The worker applies pacing and records posted, retryable, terminal, or unknown outcomes. Its Lambda handler preserves the ordered suffix after the first failure and stops before its invocation reserve is spent.</p>
+            <p>SQS FIFO groups work by destination. The worker records posted, retryable, terminal, or unknown outcomes. A separate five-minute reconciler repairs bounded safe work, converts exact expired leases to unknown, and reports stale queued records without guessing that SQS lost them.</p>
           </article>
         </div>
       </div>
@@ -378,6 +378,8 @@
               <li>DynamoDB delivery and SQS FIFO producer adapters exercised against service mocks</li>
               <li>Slack delivery worker with exact release and application-artifact checks, release-bound candidate semantics, bounded plain-text rendering, conditional outcomes, pacing state, and retry-safe response classification</li>
               <li>FIFO Lambda handling with strict queue-body validation, remaining-time checks, ordered partial-batch failures, and fixed-name, dimensionless embedded metrics</li>
+              <li>Bounded recovery with exact expired-lease conditions, no automatic replay of unknown or unproven queued work, fixed state dimensions, and a scheduled Lambda composition root</li>
+              <li>A five-minute reconciler schedule with reserved concurrency one, separate exact package inputs, bounded retries, and a source-scoped standard runtime-failure queue</li>
               <li>Deterministic Python 3.12 packaging, a complete dependency lock, append-only digest-key publication, exact S3 object-version deployment inputs, and one injected <code>sha256:</code> application identity</li>
               <li>Slack HTTP transport for incoming-webhook and bot-token modes, sharing feed acquisition&rsquo;s address validation and pinned TLS connection, reporting only observed facts, and proving its no-bytes-sent claim row by row against a truth table</li>
               <li>Credential readers for both accepted secret stores, Secrets Manager and SSM SecureString, requiring an encrypted parameter type, returning the stored value whole, and keeping it out of every message, repr, and log</li>
@@ -399,10 +401,10 @@
             <ul class="site-list">
               <li>Corpus coverage of end-of-support announcements from real feeds</li>
               <li>DynamoDB source-state operations and S3 snapshot storage behind the remaining ports</li>
-              <li>Lambda packaging, schedules, and event source mappings for the watcher, dispatcher, and reconciler</li>
+              <li>Lambda handlers and schedules for the watcher and regular dispatcher</li>
               <li>A package-retirement tool that proves both the accepted 400-day and 10-version floors; packages accumulate until it exists</li>
               <li>Publisher-side retirement of superseded releases, which S3 lifecycle cannot express safely</li>
-              <li>Applied worker infrastructure, controlled Slack preflight evidence, deployed dispatch, and reconciliation</li>
+              <li>Applied worker and reconciler infrastructure, controlled Slack and recovery evidence, and deployed regular dispatch</li>
               <li>Feed, delivery, recovery, load, and security tests</li>
               <li>Production preflight and confirmed Slack destination checks</li>
               <li>A rendered Slack message sample on this page, produced by the delivery renderer</li>

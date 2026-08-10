@@ -7,6 +7,7 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 import boto3
 from moto import mock_aws
@@ -14,7 +15,7 @@ from moto import mock_aws
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from build_lambda_package import FIXED_ZIP_TIME, _archive_tree, _require_exact_lock  # noqa: E402
+from build_lambda_package import FIXED_ZIP_TIME, _archive_tree, _require_exact_lock, build  # noqa: E402
 from publish_lambda_artifact import publish  # noqa: E402
 
 
@@ -75,6 +76,19 @@ class LambdaPackageTests(unittest.TestCase):
             lock.write_text("boto3>=1\n", encoding="utf-8")
             with self.assertRaisesRegex(ValueError, "non-exact"):
                 _require_exact_lock(lock)
+
+    def test_the_deployable_package_contains_both_recovery_entrypoint_modules(self):
+        with tempfile.TemporaryDirectory() as raw, patch("build_lambda_package.subprocess.run") as install:
+            package = Path(raw) / "reconciler.zip"
+
+            digest = build(package)
+
+            install.assert_called_once()
+            self.assertEqual(digest, hashlib.sha256(package.read_bytes()).hexdigest())
+            with zipfile.ZipFile(package) as archive:
+                names = set(archive.namelist())
+            self.assertIn("aws_public_change_feed/recovery.py", names)
+            self.assertIn("aws_public_change_feed/recovery_runtime.py", names)
 
 
 class ArtifactPublicationTests(unittest.TestCase):

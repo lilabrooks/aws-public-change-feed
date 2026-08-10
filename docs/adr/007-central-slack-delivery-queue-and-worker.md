@@ -127,6 +127,51 @@ batch duration exceeds half the configured function timeout, or when bounded DNS
 and one monotonic request deadline can be added without weakening the shared
 anti-rebinding controls.
 
+## Revision: recovery is bounded and acts only on proven-safe state
+
+- Status: Accepted
+- Date: 2026-08-10
+- Accepted: 2026-08-10
+
+The recovery reconciler runs every five minutes with a 60-second timeout,
+reserved concurrency of one, and a limit of 100 repairs per invocation. It
+observes at most 101 records per state, reports the first 100, and emits a fixed
+`StateObservationSaturated` metric when more exist. Reaching a repair or
+observation cap, p99 runtime above 30 seconds, overlapping scheduled work, or a
+larger declared scale envelope reopens these values.
+
+Due `pending_queue` and `failed_retryable` records use the existing dispatcher
+path. That path owns exact-request validation, the dispatch claim, FIFO group,
+deduplication ID, queue send, and `queued` transition. Recovery does not build a
+second queue protocol.
+
+An expired `sending` lease becomes `delivery_unknown` only through a conditional
+write that still owns the observed state version and attempt ID. The durable
+`lease_expires_at` value is the authority even when initialization made the
+lease outlive the Lambda invocation. The transition preserves network-attempt
+and response evidence, writes no TTL, and never authorizes automatic replay.
+Revisit the unknown outcome after material false-unknown evidence, an audited
+manual-replay path, a durable pre-network phase that does not create another
+crash gap, or a reviewed Slack idempotency or outcome-query mechanism.
+
+An old `queued` record is evidence of a queue or worker problem, not proof that
+SQS lost the message. The canonical stale threshold is the existing 600-second
+queue-age threshold. Because SQS supplies no authoritative lookup by message ID,
+recovery emits age and stale-work signals but does not enqueue it again.
+`posted`, `failed_terminal`, and `delivery_unknown` receive no automatic
+transition.
+
+Unresolved records preserve retention by having no TTL. Recovery keeps applying
+that invariant to records it reads and transitions; it does not write periodic
+TTL extensions or scan the whole table to restate it.
+
+The reconciler uses its own exact package digest and S3 object-version inputs so
+its rollout cannot silently update the Slack worker. Scheduled target failures
+receive at most two EventBridge retries while the event is no more than 300
+seconds old, then enter a separate encrypted standard runtime-failure queue.
+That queue is distinct from the delivery FIFO DLQ and permits sends only from
+the exact schedule rule.
+
 ## Consequences
 
 - Feed checkpoints cannot pass undurable delivery work.

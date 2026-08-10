@@ -72,6 +72,28 @@ resource "aws_cloudwatch_metric_alarm" "delivery_dlq_depth" {
   tags                      = local.common_alarm_tags
 }
 
+resource "aws_cloudwatch_metric_alarm" "runtime_failure_queue_depth" {
+  alarm_name          = "apcf-${local.deployment_id}-runtime-failure-queue-depth"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  dimensions = {
+    QueueName = local.runtime_failure_queue_name
+  }
+
+  alarm_description         = "A scheduled runtime event exhausted retries. Deployment ${local.deployment_id}, region ${local.region}, queue ${local.runtime_failure_queue_name}. See operations runbook 'Scheduled runtime failure'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
 resource "aws_cloudwatch_metric_alarm" "feed_watcher_errors" {
   alarm_name          = "apcf-${local.deployment_id}-feed-watcher-errors"
   comparison_operator = "GreaterThanThreshold"
@@ -350,6 +372,60 @@ resource "aws_cloudwatch_metric_alarm" "dispatch_unknown_outcome" {
   treat_missing_data  = "notBreaching"
 
   alarm_description         = "An SQS send outcome was unknown and remains recoverable. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Outbox or queue backlog'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "recovery_observation_saturated" {
+  alarm_name          = "apcf-${local.deployment_id}-recovery-observation-saturated"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "StateObservationSaturated"
+  namespace           = local.metrics_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  alarm_description         = "A recovery state exceeded its bounded 100-record observation. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Outbox or queue backlog'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "recovery_repair_limit" {
+  alarm_name          = "apcf-${local.deployment_id}-recovery-repair-limit"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "RecoveryRepairLimitReached"
+  namespace           = local.metrics_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  alarm_description         = "A recovery run left repairable work beyond its 100-record limit. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Outbox or queue backlog'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "reconciler_fault" {
+  alarm_name          = "apcf-${local.deployment_id}-reconciler-fault"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ReconcilerFault"
+  namespace           = local.metrics_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  alarm_description         = "The recovery reconciler stopped on an unexpected internal fault. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Scheduled runtime failure'."
   alarm_actions             = [aws_sns_topic.operations.arn]
   ok_actions                = [aws_sns_topic.operations.arn]
   insufficient_data_actions = [aws_sns_topic.operations.arn]

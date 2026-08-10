@@ -78,6 +78,17 @@ Rule changes do not rewrite historical candidates. If an operator needs a past i
 6. Scale only within the validated support envelope. Slack destination pacing may remain the limiting factor after Lambda capacity increases.
 7. Confirm backlog age falls and no new unknown outcomes appear.
 
+The reconciler runs every five minutes and may repair at most 100 records. A
+`StateObservationSaturated` or `RecoveryRepairLimitReached` alarm means the run
+was deliberately incomplete and failed so EventBridge could retry it. Confirm
+that repeated runs reduce the oldest durable age. Do not raise the limits until
+the accepted capacity reopening conditions have been reviewed.
+
+An old `queued` record is a signal only. Do not enqueue it manually from age
+alone: SQS has no authoritative lookup proving that its recorded message is
+absent. Inspect queue depth, in-flight messages, worker concurrency, event-source
+mapping health, and the durable message ID first.
+
 ## Slack retryable or terminal failure
 
 1. Locate the delivery record by request or candidate ID and inspect response class, network-attempt count, next action, and destination key.
@@ -107,6 +118,21 @@ Automatic retry is forbidden because Slack may already contain the message.
 5. Redrive a small batch. Confirm no duplicate network call occurs for `posted` or active `sending` records.
 6. Expand redrive gradually while watching queue age, unknown outcomes, and terminal failures.
 
+## Scheduled runtime failure
+
+The standard runtime-failure queue contains exhausted EventBridge target events,
+not delivery requests. Never redrive it into the delivery FIFO queue.
+
+1. Identify the exact schedule rule, target Lambda, event ID, and event time.
+2. Check the reconciler Lambda error, `ReconcilerFault`, observation saturation,
+   repair limit, DynamoDB throttling, and SQS send evidence for that invocation.
+3. Confirm whether later five-minute runs completed the durable work. Conditional
+   transitions make a repeated schedule event safe, but a failed invocation may
+   already have repaired part of its bounded set.
+4. Fix the source-level or permission failure and invoke one reviewed schedule
+   event against the same deployed package before deleting the failure message.
+5. Preserve messages whose durable outcome is still unexplained.
+
 ## Release failure or rollback
 
 1. Identify the active manifest S3 version and the last known good immutable release.
@@ -129,6 +155,13 @@ Automatic retry is forbidden because Slack may already contain the message.
 8. For rollback, pause candidate creation, select the retained digest required by queued work, locate its digest key, exact S3 version, and reviewed deployment input from that rollout, then deploy them together. The credential store and delivery mode are composition inputs and must still agree with the candidate's exact inventory release. Verify the configuration before redriving a small batch.
 9. If a delivery references a package absent from the artifact prefix, leave its record unchanged and record the bounded reason `artifact_unavailable`. Restore the approved package or make a documented manual closure; current code cannot reinterpret the candidate under another digest.
 10. Do not retire packages yet. The repository has no mechanism that proves both the 400-day age floor and the newest-10 floor, so the safe current behavior is accumulation.
+
+The recovery reconciler uses the same built package bytes but separate Terraform
+inputs: `reconciler_artifact_sha256` and `reconciler_artifact_version_id`. Setting
+them must not change the worker inputs. Before enabling its schedule, confirm the
+60-second timeout, reserved concurrency one, five-minute rule, 100/101 repair and
+observation bounds, two retries, 300-second event age, and exact runtime-failure
+queue policy.
 
 ## Manual source replay
 
