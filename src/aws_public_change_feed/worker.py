@@ -94,6 +94,7 @@ __all__ = [
     "MessageTooLarge",
     "NullWorkerMetrics",
     "POSTED",
+    "QueueDelivery",
     "SlackDestination",
     "SlackResponse",
     "SlackSender",
@@ -364,6 +365,9 @@ class WorkerMetrics(Protocol):
     def duplicate_posted(self) -> None: ...
     def unprocessed(self) -> None: ...
     def dropped_message(self) -> None: ...
+    def application_version_mismatch(self) -> None: ...
+    def artifact_unavailable(self) -> None: ...
+    def artifact_availability_check_failed(self) -> None: ...
 
 
 class NullWorkerMetrics:
@@ -391,6 +395,15 @@ class NullWorkerMetrics:
     def dropped_message(self) -> None:
         pass
 
+    def application_version_mismatch(self) -> None:
+        pass
+
+    def artifact_unavailable(self) -> None:
+        pass
+
+    def artifact_availability_check_failed(self) -> None:
+        pass
+
 
 @dataclass(frozen=True, slots=True)
 class WorkerResult:
@@ -408,6 +421,24 @@ class WorkerResult:
     state: str | None = None
     performed_network_call: bool = False
     reason: str | None = None
+    reason_code: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class QueueDelivery:
+    """The SQS envelope facts that must agree with actionable durable work."""
+
+    request: Mapping[str, Any]
+    message_id: str
+    message_group_id: str
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.request, Mapping):
+            raise ValueError("queue delivery request must be an object")
+        if not isinstance(self.message_id, str) or not self.message_id:
+            raise ValueError("queue delivery message_id must be nonempty")
+        if not isinstance(self.message_group_id, str) or not self.message_group_id:
+            raise ValueError("queue delivery message_group_id must be nonempty")
 
 
 def _slack_escape(text: str) -> str:
@@ -1001,8 +1032,9 @@ def process_delivery(
     clock: Callable[[], datetime],
     max_delivery_request_bytes: int,
     lease_duration_seconds: int,
-    max_network_attempts: int,
-    delivery_state_ttl_days: int,
+    max_network_attempts: int | None = None,
+    delivery_state_ttl_days: int | None = None,
+    queue_delivery: QueueDelivery | None = None,
     metrics: WorkerMetrics | None = None,
 ) -> WorkerResult:
     """Process one delivery record to one outcome, with at most one Slack call.
@@ -1068,6 +1100,22 @@ def process_delivery(
     if record.status != _QUEUED:
         return WorkerResult(handled=True, state=record.status, reason=f"unexpected state {record.status}")
 
+    if queue_delivery is not None:
+        # DynamoDB owns delivery state, while the SQS envelope owns which FIFO
+        # stream invoked this worker. All three facts must name the same
+        # dispatch. Dropping them at the handler boundary lets a record for one
+        # destination run under another destination's message group and breaks
+        # the serialization ADR-007 assigns to FIFO.
+        if dict(queue_delivery.request) != dict(record.request):
+            metrics.unprocessed()
+            return WorkerResult(handled=False, state=_QUEUED, reason="queue body disagrees with durable request")
+        if queue_delivery.message_group_id != record.destination_key:
+            metrics.unprocessed()
+            return WorkerResult(handled=False, state=_QUEUED, reason="queue group disagrees with durable destination")
+        if queue_delivery.message_id != record.queue_message_id:
+            metrics.unprocessed()
+            return WorkerResult(handled=False, state=_QUEUED, reason="queue message ID disagrees with dispatch record")
+
     if record.next_action_at is not None and record.next_action_at > observed_ts:
         metrics.unprocessed()
         return WorkerResult(handled=False, state=_QUEUED, reason="work not yet due")
@@ -1091,6 +1139,7 @@ def process_delivery(
     embedded = request["candidate"]
     embedded_application_version = embedded["release"]["application_version"]
     if embedded_application_version != application_version:
+        metrics.application_version_mismatch()
         metrics.unprocessed()
         return WorkerResult(
             handled=False,
@@ -1099,6 +1148,7 @@ def process_delivery(
                 "application version mismatch: "
                 f"candidate requires {embedded_application_version!r}, worker is {application_version!r}"
             ),
+            reason_code="application_version_mismatch",
         )
 
     try:
@@ -1129,6 +1179,10 @@ def process_delivery(
     min_interval_seconds = rate_control["per_destination_min_interval_seconds"]
     timeout_seconds = rate_control["slack_request_timeout_seconds"]
     max_retry_after_seconds = rate_control["max_retry_after_seconds"]
+    if max_network_attempts is None:
+        max_network_attempts = rate_control["max_network_attempts"]
+    if delivery_state_ttl_days is None:
+        delivery_state_ttl_days = loaded.config["state_retention"]["delivery_state_ttl_days"]
 
     pace = store.get_pace(record.destination_key)
     pace_observed_ts = int(clock().timestamp())

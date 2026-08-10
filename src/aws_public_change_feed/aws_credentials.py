@@ -42,7 +42,7 @@ and no branch interpolates a value, a message, or a body.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from .credentials import (
     BOT_TOKEN,
@@ -51,6 +51,7 @@ from .credentials import (
     CredentialEmpty,
     CredentialError,
     CredentialNotFound,
+    CredentialReader,
     CredentialUnavailable,
     CredentialUnreadable,
     SlackCredential,
@@ -340,7 +341,7 @@ class SsmParameterCredentialReader(_BaseReader):
         return self._credential(parameter.get("Value"))
 
 
-def credential_reader_for(store: str, client: AwsClient, *, kind: str) -> _BaseReader:
+def credential_reader_for(store: str, client: AwsClient, *, kind: str) -> CredentialReader:
     """Build the reader for a deployment's `secret_store` value.
 
     The mapping lives here rather than in the future composition root so that
@@ -355,4 +356,4 @@ def credential_reader_for(store: str, client: AwsClient, *, kind: str) -> _BaseR
     reader = readers.get(store)
     if reader is None:
         raise ValueError(f"unsupported secret_store: {store!r}")
-    return reader(client, kind=kind)
+    return cast(CredentialReader, reader(client, kind=kind))

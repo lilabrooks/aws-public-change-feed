@@ -13,6 +13,16 @@ output "raw_snapshot_prefix" {
   value       = local.raw_snapshot_prefix
 }
 
+output "application_artifact_prefix" {
+  description = "Append-only prefix for content-addressed deployable Lambda packages."
+  value       = local.application_artifact_prefix
+}
+
+output "worker_application_version" {
+  description = "Exact sha256 application version injected into the deployed worker, or null when undeployed."
+  value       = local.application_version
+}
+
 output "release_prefix" {
   description = "Key prefix holding write-once release objects."
   value       = "${local.release_prefix}/"
@@ -70,7 +80,7 @@ output "roles" {
 }
 
 output "function_names" {
-  description = "Planned Lambda function names (runtime packages not yet deployed)."
+  description = "Lambda names; the Slack worker exists when exact artifact inputs are supplied, while the other handlers remain planned."
   value       = local.function_names
 }
 

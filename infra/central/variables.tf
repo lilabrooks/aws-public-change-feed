@@ -17,3 +17,32 @@ variable "tags" {
     project = "aws-public-change-feed"
   }
 }
+
+variable "worker_artifact_sha256" {
+  description = "Lowercase SHA-256 digest of the exact published Slack worker package bytes. Null leaves Slice 2 undeployed."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.worker_artifact_sha256 == null || can(regex("^[a-f0-9]{64}$", var.worker_artifact_sha256))
+    error_message = "worker_artifact_sha256 must be null or exactly 64 lowercase hexadecimal characters."
+  }
+
+  validation {
+    condition     = (var.worker_artifact_sha256 == null) == (var.worker_artifact_version_id == null)
+    error_message = "worker_artifact_sha256 and worker_artifact_version_id must both be set or both be null."
+  }
+}
+
+variable "worker_artifact_version_id" {
+  description = "Exact S3 VersionId returned by append-only publication of worker_artifact_sha256."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.worker_artifact_version_id == null || length(trimspace(var.worker_artifact_version_id)) > 0
+    error_message = "worker_artifact_version_id must be null or a nonempty S3 version ID."
+  }
+}

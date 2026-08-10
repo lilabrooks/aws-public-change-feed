@@ -74,6 +74,14 @@ data "aws_iam_policy_document" "release_publisher" {
       "${aws_s3_bucket.config.arn}/${local.release_prefix}/*",
     ]
   }
+
+  statement {
+    sid     = "PublishApplicationArtifacts"
+    actions = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]
+    resources = [
+      "${aws_s3_bucket.config.arn}/${local.application_artifact_prefix}/*",
+    ]
+  }
 }
 
 data "aws_iam_policy_document" "feed_watcher" {
@@ -162,6 +170,12 @@ data "aws_iam_policy_document" "slack_worker" {
     sid       = "ReadReleaseVersions"
     actions   = ["s3:GetObjectVersion"]
     resources = ["${aws_s3_bucket.config.arn}/${local.release_prefix}/*"]
+  }
+
+  statement {
+    sid       = "CheckApplicationArtifactAvailability"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.config.arn}/${local.application_artifact_prefix}/*"]
   }
 
   statement {

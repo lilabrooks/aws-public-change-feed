@@ -16,7 +16,8 @@ locals {
   # both scoped to it, and the S3 SnapshotStore adapter must write here. The
   # raw_snapshot_prefix output publishes it so the adapter reads it rather than
   # reconstructing the string.
-  raw_snapshot_prefix = "${local.top_prefix}/raw-snapshots/"
+  raw_snapshot_prefix         = "${local.top_prefix}/raw-snapshots/"
+  application_artifact_prefix = "${local.top_prefix}/application-artifacts"
 
   secret_store = local.deployment.secret_store
 
@@ -58,9 +59,16 @@ locals {
     reconciler = "apcf-${local.deployment_id}-recovery-reconciler"
   }
 
-  worker_timeout_seconds    = 300
-  worker_batch_work_seconds = 60
-  worker_visibility_seconds = local.worker_timeout_seconds + local.worker_batch_work_seconds + 60
+  worker_timeout_seconds             = 300
+  worker_batch_size                  = 10
+  worker_batch_window_seconds        = 0
+  worker_safety_reserve_milliseconds = 30000
+  worker_lease_duration_seconds      = local.worker_timeout_seconds
+  max_delivery_request_bytes         = 245760
+  worker_visibility_seconds          = 6 * local.worker_timeout_seconds + local.worker_batch_window_seconds
+  worker_runtime_enabled             = var.worker_artifact_sha256 != null && var.worker_artifact_version_id != null
+  worker_artifact_key                = var.worker_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.worker_artifact_sha256}.zip"
+  application_version                = var.worker_artifact_sha256 == null ? null : "sha256:${var.worker_artifact_sha256}"
 
   metrics_namespace = "AWSPublicChangeFeed/${local.deployment_id}"
 }

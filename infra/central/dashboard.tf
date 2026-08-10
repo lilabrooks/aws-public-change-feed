@@ -121,6 +121,11 @@ resource "aws_cloudwatch_dashboard" "operations" {
             [local.metrics_namespace, "Heartbeat", "Function", local.function_names.watcher, { "stat" : "Maximum", "id" : "hw", "label" : "watcher heartbeat" }],
             [local.metrics_namespace, "Heartbeat", "Function", local.function_names.reconciler, { "stat" : "Maximum", "id" : "hr", "label" : "reconciler heartbeat" }],
             [local.metrics_namespace, "DeliveryUnknown", { "stat" : "Sum", "id" : "du", "label" : "delivery unknown", "yAxis" : "right" }],
+            [local.metrics_namespace, "TerminalFailure", { "stat" : "Sum", "id" : "tf", "label" : "terminal delivery", "yAxis" : "right" }],
+            [local.metrics_namespace, "ApplicationVersionMismatch", { "stat" : "Sum", "id" : "av", "label" : "application mismatch", "yAxis" : "right" }],
+            [local.metrics_namespace, "ArtifactUnavailable", { "stat" : "Sum", "id" : "au", "label" : "artifact unavailable", "yAxis" : "right" }],
+            [local.metrics_namespace, "ArtifactAvailabilityCheckFailed", { "stat" : "Sum", "id" : "ac", "label" : "artifact check failed", "yAxis" : "right" }],
+            [local.metrics_namespace, "WorkerFault", { "stat" : "Sum", "id" : "wf", "label" : "worker fault", "yAxis" : "right" }],
             [local.metrics_namespace, "DispatchUnknownOutcome", { "stat" : "Sum", "id" : "uo", "label" : "dispatch unknown", "yAxis" : "right" }],
           ]
         }

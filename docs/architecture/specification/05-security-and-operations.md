@@ -211,10 +211,24 @@ deployable bytes. Retain them for at least 400 days and keep at least the newest
 actionable work from the current package, record any remaining package versions,
 deploy producer and worker roots with one identical digest, and then resume.
 
+The package builder uses a complete exact dependency lock and deterministic ZIP
+metadata. Publication conditionally creates
+`<top-prefix>/application-artifacts/<sha256>.zip` in the versioned deployment
+bucket, reads the returned S3 version back, verifies its bytes against the
+digest, and records that version. Terraform deploys that exact key and version
+and injects `sha256:<digest>` into the composition root. Publication has no
+delete grant. No lifecycle rule covers this prefix; packages accumulate until a
+retirement tool can prove both the age and version-count conditions.
+
 Evidence can outlive its runnable package. When that happens, automatic delivery
 leaves the record unchanged and reports `artifact_unavailable`; an operator must
 restore the approved package or record a manual closure. Package retirement must
 prove the age and version-count floors before deletion.
+
+On an exact-version mismatch, the worker checks only the expected digest key's
+metadata. A missing key emits the dimensionless `ArtifactUnavailable` metric; a
+provider failure emits `ArtifactAvailabilityCheckFailed`. Neither condition
+changes the delivery record or permits current code to process it.
 
 ## References
 

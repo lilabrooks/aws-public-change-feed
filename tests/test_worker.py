@@ -73,6 +73,7 @@ from aws_public_change_feed.worker import (  # noqa: E402
     POSTED,
     InvalidSlackWebhook,
     MessageTooLarge,
+    QueueDelivery,
     SlackDestination,
     SlackResponse,
     TransportError,
@@ -375,6 +376,27 @@ class NonSlackPathsTests(WorkerFixture):
         self.assertIn("application version mismatch", result.reason)
         self.assertEqual(self.record(), original)
         self.assertEqual(self.sender.calls, [])
+
+    def test_queue_body_group_and_message_id_must_match_the_durable_dispatch(self):
+        altered_request = copy.deepcopy(self.request)
+        altered_request["created_at"] = LATER.isoformat().replace("+00:00", "Z")
+        cases = {
+            "body": QueueDelivery(altered_request, "sqs-one", self.destination_key),
+            "group": QueueDelivery(self.request, "sqs-one", "another-destination"),
+            "message": QueueDelivery(self.request, "sqs-two", self.destination_key),
+        }
+
+        for label, envelope in cases.items():
+            with self.subTest(label=label):
+                self.store = InMemoryOutboxStore()
+                original = self.queued_record(queue_message_id="sqs-one")
+                self.sender = FakeSlackSender(self.posted_response())
+
+                result = self.process(queue_delivery=envelope)
+
+                self.assertFalse(result.handled)
+                self.assertEqual(self.store.get_delivery(self.key), original)
+                self.assertEqual(self.sender.calls, [])
 
     def test_an_invalid_running_application_identifier_is_refused_before_store_reads(self):
         class UnreadableStore:
@@ -1133,6 +1155,20 @@ class PacingTests(WorkerFixture):
         self.assertEqual(
             self.record().expires_at,
             NOW_TS + 7 + self.config["state_retention"]["delivery_state_ttl_days"] * 86400,
+        )
+
+    def test_production_defaults_derive_attempt_budget_and_ttl_from_the_exact_release(self):
+        maximum = self.inventory["slack"]["rate_control"]["max_network_attempts"]
+        self.queued_record(network_attempt_count=maximum - 1)
+        self.sender = FakeSlackSender(SlackResponse(status_code=500, latency_ms=100))
+
+        result = self.process(max_network_attempts=None, delivery_state_ttl_days=None)
+
+        self.assertEqual(result.state, FAILED_TERMINAL)
+        self.assertEqual(self.record().network_attempt_count, maximum)
+        self.assertEqual(
+            self.record().expires_at,
+            NOW_TS + self.config["state_retention"]["delivery_state_ttl_days"] * 86400,
         )
 
 
