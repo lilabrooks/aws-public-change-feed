@@ -25,6 +25,11 @@ from aws_public_change_feed.announcements import (  # noqa: E402
     NormalizedAnnouncement,
     Provenance,
 )
+from aws_public_change_feed.identity import (  # noqa: E402
+    announcement_id,
+    content_fingerprint,
+    revision_id,
+)
 from aws_public_change_feed.state import (  # noqa: E402
     AnnouncementRecord,
     InMemoryAnnouncementStateStore,
@@ -167,11 +172,17 @@ class RevisionTests(AnnouncementStateTestCase):
 
     def test_a_revision_is_appended_only_when_absent(self):
         original = self.announcement()
-        edited = self.announcement(title="Amazon EKS Kubernetes version 1.35 available")
+        edited = self.announcement(
+            title="Amazon EKS Kubernetes version 1.35 available",
+            observed_at=self.observed_at + timedelta(minutes=1),
+        )
 
         observe(self.store, original)
         observe(self.store, edited)
-        reverted = observe(self.store, original)
+        reverted = observe(
+            self.store,
+            self.announcement(observed_at=self.observed_at + timedelta(minutes=2)),
+        )
 
         self.assertEqual(
             len(reverted.record.revision_ids),
@@ -209,6 +220,31 @@ class ObservationWindowTests(AnnouncementStateTestCase):
             later.isoformat(),
             msg="a late-arriving earlier sighting must not rewind the window",
         )
+
+    def test_an_older_revision_extends_history_without_rewinding_content(self):
+        newer_time = self.observed_at + timedelta(minutes=5)
+        newer = self.announcement(
+            title="Amazon EKS Kubernetes version 1.35 available",
+            observed_at=newer_time,
+        )
+        observe(self.store, newer)
+
+        replay = observe(self.store, self.announcement(observed_at=self.observed_at))
+
+        self.assertEqual(replay.record.title, newer.title)
+        self.assertEqual(replay.record.current_observed_at, newer_time.isoformat())
+        self.assertEqual(len(replay.record.revision_ids), 2)
+
+    def test_equal_observation_times_choose_the_lexically_smaller_revision(self):
+        left = self.announcement(title="Amazon EKS Kubernetes version 1.35 available")
+        right = self.announcement(title="Amazon EKS Kubernetes version 1.36 available")
+        expected = left if left.revision_id < right.revision_id else right
+
+        observe(self.store, right if expected is left else left)
+        result = observe(self.store, expected)
+
+        self.assertEqual(result.record.revision_id, expected.revision_id)
+        self.assertEqual(result.record.title, expected.title)
 
 
 class EmissionRecordTests(AnnouncementStateTestCase):
@@ -264,12 +300,16 @@ class RecordShapeTests(AnnouncementStateTestCase):
         self.assertIsNone(record.published_at)
 
     def test_the_record_type_is_constructible_directly(self):
+        canonical_url = "https://aws.amazon.com/x/"
+        identifier = announcement_id(canonical_url)
+        fingerprint = content_fingerprint("t", "s")
+        revision = revision_id(identifier, fingerprint)
         record = AnnouncementRecord(
-            announcement_id="a" * 64,
-            canonical_url="https://aws.amazon.com/x/",
-            content_fingerprint="b" * 64,
-            revision_id="c" * 64,
-            revision_ids=("c" * 64,),
+            announcement_id=identifier,
+            canonical_url=canonical_url,
+            content_fingerprint=fingerprint,
+            revision_id=revision,
+            revision_ids=(revision,),
             title="t",
             summary="s",
             first_observed_at="2026-07-13T16:59:00+00:00",

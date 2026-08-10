@@ -135,7 +135,12 @@ def _atom_entries(root: ElementTree.Element) -> Iterator[ParsedItem]:
         )
 
 
-def parse_feed(body: bytes) -> tuple[ParsedItem, ...]:
+def parse_feed(
+    body: bytes,
+    *,
+    max_items: int = MAX_ITEMS,
+    max_item_characters: int = MAX_ITEM_CHARACTERS,
+) -> tuple[ParsedItem, ...]:
     """Parse an RSS or Atom body into items, or raise ``FeedParseRejected``.
 
     Items missing a URL or a title are dropped rather than failing the feed:
@@ -143,6 +148,9 @@ def parse_feed(body: bytes) -> tuple[ParsedItem, ...]:
     title, and one malformed entry should not discard a whole response.
     """
 
+    for name, value in (("max_items", max_items), ("max_item_characters", max_item_characters)):
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise ValueError(f"{name} must be a positive integer")
     if not body.strip():
         raise FeedParseRejected("parser", "feed body is empty")
 
@@ -156,13 +164,13 @@ def parse_feed(body: bytes) -> tuple[ParsedItem, ...]:
         raise FeedParseRejected("parser", f"unsupported feed root element: {root.tag}")
 
     items: list[ParsedItem] = []
-    for item in produced:
-        if len(items) >= MAX_ITEMS:
-            raise FeedParseRejected("parser", f"feed contains more than {MAX_ITEMS} items")
+    for item_number, item in enumerate(produced, start=1):
+        if item_number > max_items:
+            raise FeedParseRejected("parser", f"feed contains more than {max_items} items")
         if not item.url or not item.title.strip():
             continue
-        if len(item.title) + len(item.summary) > MAX_ITEM_CHARACTERS:
-            raise FeedParseRejected("parser", f"feed item exceeds {MAX_ITEM_CHARACTERS} characters")
+        if len(item.title) + len(item.summary) > max_item_characters:
+            raise FeedParseRejected("parser", f"feed item exceeds {max_item_characters} characters")
         items.append(item)
 
     return tuple(items)

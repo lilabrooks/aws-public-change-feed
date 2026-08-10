@@ -178,12 +178,16 @@ class FakeConnection:
         self._recorder["hostname"] = hostname
         self._recorder["address"] = address
         self._recorder["context"] = context
+        self._recorder["connect_timeout"] = timeout
         return self
 
     def request(self, method, path, headers=None):
         self._recorder["method"] = method
         self._recorder["path"] = path
         self._recorder["headers"] = headers or {}
+
+    def set_response_timeout(self, timeout):
+        self._recorder["response_timeout"] = timeout
 
     def getresponse(self):
         return self._response
@@ -214,6 +218,18 @@ class FetchPolicyTests(unittest.TestCase):
         self.assertEqual(outcome.status, 200)
         self.assertEqual(outcome.etag, '"v1"')
         self.assertEqual(outcome.address, "93.184.216.34")
+
+    def test_connect_and_response_timeouts_remain_distinct(self):
+        recorder: dict = {}
+        fetcher = FeedFetcher(
+            resolver=lambda hostname, port: ["93.184.216.34"],
+            connection_factory=FakeConnection(FakeResponse(200, RSS, self.ok_headers()), recorder),
+            connect_timeout_seconds=5,
+            response_timeout_seconds=15,
+        )
+        fetcher.fetch(self.target)
+        self.assertEqual(recorder["connect_timeout"], 5)
+        self.assertEqual(recorder["response_timeout"], 15)
 
     def test_connection_pins_address_but_keeps_hostname(self):
         recorder: dict = {}
@@ -338,6 +354,12 @@ class ParserSafetyTests(unittest.TestCase):
         with self.assertRaises(FeedParseRejected):
             parse_feed(body)
 
+    def test_deployment_item_limit_is_applied_by_the_parser(self):
+        entry = b"<item><title>t</title><link>https://aws.amazon.com/x/</link></item>"
+        body = b"<rss version='2.0'><channel>" + entry * 2 + b"</channel></rss>"
+        with self.assertRaises(FeedParseRejected):
+            parse_feed(body, max_items=1, max_item_characters=50_000)
+
     def test_oversized_item_is_refused(self):
         body = (
             b"<rss version='2.0'><channel><item><title>t</title>"
@@ -348,6 +370,15 @@ class ParserSafetyTests(unittest.TestCase):
         with self.assertRaises(FeedParseRejected):
             parse_feed(body)
 
+    def test_deployment_item_character_limit_is_applied_by_the_parser(self):
+        body = (
+            b"<rss version='2.0'><channel><item><title>title</title>"
+            b"<link>https://aws.amazon.com/x/</link><description>summary</description>"
+            b"</item></channel></rss>"
+        )
+        with self.assertRaises(FeedParseRejected):
+            parse_feed(body, max_items=200, max_item_characters=10)
+
     def test_item_without_link_or_title_is_dropped_not_fatal(self):
         body = (
             b"<rss version='2.0'><channel>"
@@ -357,6 +388,16 @@ class ParserSafetyTests(unittest.TestCase):
             b"</channel></rss>"
         )
         self.assertEqual([item.title for item in parse_feed(body)], ["keep"])
+
+    def test_dropped_items_still_count_toward_the_deployment_limit(self):
+        body = (
+            b"<rss version='2.0'><channel>"
+            b"<item><title>missing link</title></item>"
+            b"<item><title>too many</title></item>"
+            b"</channel></rss>"
+        )
+        with self.assertRaises(FeedParseRejected):
+            parse_feed(body, max_items=1, max_item_characters=50_000)
 
 
 class NormalizationTests(unittest.TestCase):

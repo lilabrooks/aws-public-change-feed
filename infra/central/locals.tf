@@ -24,7 +24,8 @@ locals {
   log_retention_days = local.deployment.log_retention_days
   sns_topic_name     = local.deployment.operational_sns_topic_name
 
-  rate_control = local.deployment.slack.rate_control
+  rate_control      = local.deployment.slack.rate_control
+  feed_fetch_policy = local.deployment.feed_fetch_policy
 
   slack_secret_ids = distinct(compact(concat(
     [try(local.deployment.slack.bot_token_secret_id, null)],
@@ -70,6 +71,16 @@ locals {
   worker_runtime_enabled             = var.worker_artifact_sha256 != null && var.worker_artifact_version_id != null
   worker_artifact_key                = var.worker_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.worker_artifact_sha256}.zip"
   application_version                = var.worker_artifact_sha256 == null ? null : "sha256:${var.worker_artifact_sha256}"
+
+  watcher_timeout_seconds        = 300
+  watcher_reserved_concurrency   = 1
+  watcher_lease_seconds          = 360
+  watcher_schedule_expression    = "rate(15 minutes)"
+  watcher_maximum_retry_attempts = 2
+  watcher_maximum_event_age      = 900
+  watcher_runtime_enabled        = var.watcher_artifact_sha256 != null && var.watcher_artifact_version_id != null
+  watcher_artifact_key           = var.watcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.watcher_artifact_sha256}.zip"
+  watcher_application_version    = var.watcher_artifact_sha256 == null ? null : "sha256:${var.watcher_artifact_sha256}"
 
   reconciler_timeout_seconds        = 60
   reconciler_reserved_concurrency   = 1

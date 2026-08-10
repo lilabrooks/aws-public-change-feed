@@ -54,6 +54,7 @@ __all__ = [
     "SendStatus",
     "dispatch_due_work",
     "serialize_request",
+    "validate_alert_candidate",
     "validate_delivery_request",
 ]
 
@@ -194,18 +195,40 @@ def serialize_request(request: Mapping[str, Any]) -> str:
     return json.dumps(request, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
 
 
-def _build_request_validator() -> Draft202012Validator:
+def _build_contract_validators() -> tuple[Draft202012Validator, Draft202012Validator]:
     resources = files("aws_public_change_feed.schemas")
     registry = Registry()
     for name in (_ALERT_CANDIDATE_SCHEMA, _DELIVERY_REQUEST_SCHEMA):
         schema = json.loads(resources.joinpath(name).read_text(encoding="utf-8"))
         registry = registry.with_resource(schema["$id"], Resource.from_contents(schema))
+    candidate_schema = json.loads(resources.joinpath(_ALERT_CANDIDATE_SCHEMA).read_text(encoding="utf-8"))
     request_schema = json.loads(resources.joinpath(_DELIVERY_REQUEST_SCHEMA).read_text(encoding="utf-8"))
+    Draft202012Validator.check_schema(candidate_schema)
     Draft202012Validator.check_schema(request_schema)
-    return Draft202012Validator(request_schema, format_checker=contract_format_checker(), registry=registry)
+    return (
+        Draft202012Validator(
+            candidate_schema,
+            format_checker=contract_format_checker(),
+            registry=registry,
+        ),
+        Draft202012Validator(
+            request_schema,
+            format_checker=contract_format_checker(),
+            registry=registry,
+        ),
+    )
 
 
-_request_validator = _build_request_validator()
+_candidate_validator, _request_validator = _build_contract_validators()
+
+
+def validate_alert_candidate(candidate: Mapping[str, Any]) -> None:
+    """Refuse a produced candidate before it crosses the durable outbox boundary."""
+
+    violation = next(_candidate_validator.iter_errors(candidate), None)
+    if violation is not None:
+        location = ".".join(str(part) for part in violation.absolute_path) or "<root>"
+        raise InvalidDeliveryRequest(f"alert candidate fails its contract at {location}: {violation.message}")
 
 
 def validate_delivery_request(

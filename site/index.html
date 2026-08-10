@@ -372,6 +372,8 @@
               <li>6 strict schemas with one valid cross-file example bundle</li>
               <li>Deterministic matching scored against a labeled corpus of real and authored announcements</li>
               <li>Feed acquisition with host allowlisting, address validation, and DOCTYPE-refusing parsing</li>
+              <li>A scheduled watcher composition root with exact release loading, conditional feed leases, response snapshots before parsing, compare-and-swap announcement history, deterministic response pages, and all-or-none checkpoint advancement</li>
+              <li>Watcher AWS adapters exercised through service mocks from an exact S3 release pointer and raw RSS response to S3 snapshot evidence and both DynamoDB tables</li>
               <li>Route-scoped candidate construction rebuilt from the committed contract bundle</li>
               <li>Durable outbox holding the feed checkpoint until candidate and delivery records exist</li>
               <li>Due-work dispatch with state-version claims, FIFO dedupe reuse, cross-state batch limits, and explicit unknown-send evidence</li>
@@ -400,11 +402,10 @@
             <h3>Required implementation evidence</h3>
             <ul class="site-list">
               <li>Corpus coverage of end-of-support announcements from real feeds</li>
-              <li>DynamoDB source-state operations and S3 snapshot storage behind the remaining ports</li>
-              <li>Lambda handlers and schedules for the watcher and regular dispatcher</li>
+              <li>A Lambda handler and schedule for the regular dispatcher</li>
               <li>A package-retirement tool that proves both the accepted 400-day and 10-version floors; packages accumulate until it exists</li>
               <li>Publisher-side retirement of superseded releases, which S3 lifecycle cannot express safely</li>
-              <li>Applied worker and reconciler infrastructure, controlled Slack and recovery evidence, and deployed regular dispatch</li>
+              <li>Applied watcher, worker, and reconciler infrastructure; controlled feed, Slack, and recovery evidence; and deployed regular dispatch</li>
               <li>Feed, delivery, recovery, load, and security tests</li>
               <li>Production preflight and confirmed Slack destination checks</li>
               <li>A rendered Slack message sample on this page, produced by the delivery renderer</li>

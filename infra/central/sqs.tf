@@ -43,6 +43,34 @@ resource "aws_sqs_queue" "runtime_failures" {
 }
 
 data "aws_iam_policy_document" "runtime_failure_queue" {
+  dynamic "statement" {
+    for_each = local.watcher_runtime_enabled ? [1] : []
+    content {
+      sid     = "AllowExactWatcherSchedule"
+      actions = ["sqs:SendMessage"]
+      resources = [
+        aws_sqs_queue.runtime_failures.arn,
+      ]
+
+      principals {
+        type        = "Service"
+        identifiers = ["events.amazonaws.com"]
+      }
+
+      condition {
+        test     = "ArnEquals"
+        variable = "aws:SourceArn"
+        values   = [aws_cloudwatch_event_rule.watcher[0].arn]
+      }
+
+      condition {
+        test     = "StringEquals"
+        variable = "aws:SourceAccount"
+        values   = [data.aws_caller_identity.current.account_id]
+      }
+    }
+  }
+
   statement {
     sid     = "AllowExactReconcilerSchedule"
     actions = ["sqs:SendMessage"]

@@ -227,6 +227,8 @@ resource "aws_cloudwatch_metric_alarm" "delivery_write_throttles" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "feed_watcher_heartbeat" {
+  count = local.watcher_runtime_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-feed-watcher-heartbeat"
   comparison_operator = "LessThanThreshold"
   evaluation_periods  = 3

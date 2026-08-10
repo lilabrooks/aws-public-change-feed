@@ -5,11 +5,11 @@
 The `infra/central` root creates:
 
 - A versioned S3 configuration bucket with immutable release, active-manifest, and short-lived raw-feed snapshot prefixes.
-- A feed watcher Lambda and schedule.
+- A conditional feed watcher Lambda and schedule when its exact package pair is supplied.
 - A DynamoDB source-state table for feed checkpoints and announcement records.
 - A DynamoDB delivery table for candidates, outbox work, destination pacing, and delivery outcomes.
 - An encrypted SQS FIFO queue and FIFO DLQ.
-- An outbox dispatcher Lambda, Slack worker Lambda, and recovery reconciler Lambda.
+- An outbox dispatcher role, plus conditional Slack worker and recovery reconciler Lambdas. The regular dispatcher handler remains planned.
 - Secrets Manager secrets or SecureString parameters referenced by exact identifier.
 - CloudWatch logs, metrics, dashboard, alarms, and an operational SNS topic.
 
@@ -22,16 +22,17 @@ Use on-demand capacity for the baseline. A single-table layout may use `PK` and 
 ### Feed item
 
 - Key: `PK = FEED#<feed_name>`, `SK = STATE`.
-- Fields: feed URL, ETag, Last-Modified, last attempt, last success, newest observed publication time, consecutive failures, last error class, lease owner, lease expiry, TTL.
-- A conditional lease prevents overlapping fetches for the same feed.
+- Fields: feed URL, ETag, Last-Modified, first and last attempt, last success, newest observed publication time, consecutive failures, last error class, pending validators and response-run ID, lease owner, lease expiry, and monotonic state version.
+- A conditional lease prevents overlapping fetches for the same feed. The canonical lease is 360 seconds, carries an opaque invocation owner, and may be replaced only after expiry.
 - A `304 Not Modified` response updates success and freshness without source items.
-- Validator changes use a conditional expression based on the lease and previously observed version.
+- Fetched validators remain pending until downstream durability is proved. Attempt, failure, pending, `304`, and final writes require the exact lease owner and state version. The final fetched-feed commits use one transaction, so a lost condition advances none of the batch.
+- Active feed items have no cleanup TTL. Removed-feed retirement needs a separate policy.
 
 ### Announcement item
 
 - Key: `PK = ANNOUNCEMENT#<announcement_id>`, `SK = STATE`.
-- Fields: canonical URL, latest content fingerprint, known revision IDs, normalized title and summary, first and last observed times, optional source publication and update times, merged provenance, emitted candidate IDs, release references, TTL.
-- Conditional update merges provenance and appends a revision only when absent.
+- Fields: canonical URL, current content fingerprint and revision, known revision IDs, normalized title and summary, first, last, and current-content observation times, optional source publication time, merged provenance, emitted candidate IDs, release references, and monotonic state version.
+- Conditional compare-and-swap merges provenance, revision history, emission references, and release references without losing another writer. The sighting with the later `observed_at` owns current content; equal times choose the lexically smaller revision ID.
 - Raw content is excluded. A bounded raw response snapshot may live in S3 for replay during its configured retention.
 
 ## Delivery table
@@ -60,7 +61,7 @@ The states are `pending_queue`, `queued`, `sending`, `posted`, `failed_retryable
 
 ## Durable creation boundary
 
-For each feed response, the watcher must make candidate and delivery records durable before saving the response's new ETag or Last-Modified value. Batch work may use transactions in bounded groups. When a response produces more records than one transaction can hold, record a response-run item and deterministic page markers. The feed checkpoint can advance only after every page marker is complete.
+For each feed response, the watcher must make candidate and delivery records durable before saving the response's new ETag or Last-Modified value. A response-run ID is the null-framed SHA-256 of `feed-response-run:v1`, feed name, body SHA-256, release ID, and application digest. Because cross-feed coalescing can give the same response body a different candidate set when another feed succeeds or fails, each immutable page set also has a null-framed SHA-256 identity over `feed-response-pages:v1`, the response-run ID, and every sorted candidate ID. Candidate IDs are sorted into pages of at most 25 within that set; page numbers start at zero, and a zero-candidate response has one empty completion page. A marker is written only after durable read-back. The feed checkpoint advances only after every current page and final candidate, delivery, emission, and release reference is read back.
 
 A repeated invocation can safely reconstruct the same candidates and conditionally put missing records. Candidate identity is deterministic, so partial completion cannot create new logical work.
 
@@ -130,12 +131,12 @@ The visibility timeout must exceed Lambda timeout plus the maximum work duration
 
 ## Scheduling and concurrency
 
-- Feed watcher: every 10 to 15 minutes by default, with per-feed conditional leases.
+- Feed watcher: every 15 minutes, with a 300-second timeout, reserved concurrency one, deployment-controlled fetch concurrency, and 360-second per-feed leases. It stops claiming new feeds below a 60-second remaining-time reserve.
 - Dispatcher: event-driven where practical plus a scheduled recovery scan.
 - Slack worker: SQS event source, reserved concurrency from deployment configuration.
 - Reconciler: every five minutes.
 
-Schedules use retries and DLQs or equivalent failure destinations. Heartbeat alarms distinguish a quiet source from a scheduler failure.
+The watcher target receives at most two retries while its event is no more than 900 seconds old. Exhausted events enter the encrypted standard runtime-failure queue under a policy scoped to the exact watcher schedule ARN. Heartbeat alarms distinguish a quiet source from a scheduler failure.
 
 ## Terraform state
 
