@@ -242,7 +242,9 @@ class CredentialReader(Protocol):
 
     `secret_id` is the exact identifier the inventory names — a route's
     `credential_secret_id` in webhook mode or the deployment-wide
-    `bot_token_secret_id` in bot mode. A failed read raises `CredentialReadError`.
+    `bot_token_secret_id` in bot mode. A failed read raises `CredentialError`;
+    callers that decide a delivery outcome distinguish permanent
+    `CredentialReadError` from transient `CredentialUnavailable`.
     """
 
     def read(self, secret_id: str) -> SlackCredential: ...

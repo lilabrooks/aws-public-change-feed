@@ -96,9 +96,10 @@ UNKNOWN_ERROR_CODE = "Unknown"
 #
 # These two sets are the *permanent* allowlist, and being an allowlist is the
 # design. A code nobody has reviewed is transient, so an unfamiliar failure
-# preserves the delivery for a bounded retry instead of discarding it. Getting
-# that wrong in the transient direction costs a retry; getting it wrong in the
-# permanent direction destroys an alert, and only the second is unrecoverable.
+# preserves the delivery on a bounded delay instead of discarding it. Getting
+# that wrong in the transient direction leaves work scheduled; getting it wrong
+# in the permanent direction destroys an alert, and only the second is
+# unrecoverable.
 _NOT_FOUND_CODES = frozenset(
     {
         "ResourceNotFoundException",
@@ -111,9 +112,6 @@ _DENIED_CODES = frozenset(
         "AccessDeniedException",
         "AccessDenied",
         "UnauthorizedOperation",
-        "UnrecognizedClientException",
-        "InvalidSignatureException",
-        "ExpiredTokenException",
         "KMSAccessDeniedException",
         "AccessDeniedError",
         "DecryptionFailure",
@@ -124,29 +122,6 @@ _DENIED_CODES = frozenset(
         "InvalidRequestException",
         "InvalidResourceException",
         "InvalidResourceStateException",
-    }
-)
-
-# Named only for the message an operator reads. Any code outside the permanent
-# allowlist takes this path whether or not it appears here.
-_UNAVAILABLE_CODES = frozenset(
-    {
-        "ThrottlingException",
-        "Throttling",
-        "ThrottledException",
-        "TooManyRequestsException",
-        "RequestLimitExceeded",
-        "ServiceUnavailable",
-        "ServiceUnavailableException",
-        "InternalServiceError",
-        "InternalServerError",
-        "InternalFailure",
-        "InternalError",
-        "RequestTimeout",
-        "RequestTimeoutException",
-        "EndpointConnectionError",
-        "ConnectTimeoutError",
-        "ReadTimeoutError",
     }
 )
 
