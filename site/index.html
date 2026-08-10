@@ -373,6 +373,7 @@
               <li>Deterministic matching scored against a labeled corpus of real and authored announcements</li>
               <li>Feed acquisition with host allowlisting, address validation, and DOCTYPE-refusing parsing</li>
               <li>A scheduled watcher composition root with exact release loading, conditional feed leases, response snapshots before parsing, compare-and-swap announcement history, deterministic response pages, and all-or-none checkpoint advancement</li>
+              <li>Watcher paging signals that separate bounded incompletion from unexpected faults, retain scheduled retries, and distinguish immediate fault pages from sustained 15-minute alarm periods</li>
               <li>Watcher AWS adapters exercised through service mocks from an exact S3 release pointer and raw RSS response to S3 snapshot evidence and both DynamoDB tables</li>
               <li>Route-scoped candidate construction rebuilt from the committed contract bundle</li>
               <li>Durable outbox holding the feed checkpoint until candidate and delivery records exist</li>

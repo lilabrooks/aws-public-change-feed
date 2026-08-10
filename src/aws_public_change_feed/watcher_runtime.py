@@ -17,6 +17,7 @@ from .loading import IncompatibleRelease, ReleaseIntegrityError, load_active_rel
 from .outbox import DynamoDBDeliveryStore
 from .releases import ObjectStore, S3ObjectStore
 from .source_store import DynamoDBAnnouncementStateStore, DynamoDBFeedStateStore, S3SnapshotStore
+from .state import ConditionalStateConflict
 from .watcher import WatcherMetrics, WatcherOrchestrator, WatcherReleaseMismatch, WatcherResult
 
 __all__ = ["EmbeddedWatcherMetrics", "WatcherRuntime", "lambda_handler"]
@@ -80,6 +81,7 @@ class EmbeddedWatcherMetrics:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     emit: Callable[[str], None] = print
     _heartbeat: bool = field(default=False, init=False)
+    _function: dict[str, int] = field(default_factory=dict, init=False)
     _dimensionless: dict[str, int] = field(default_factory=dict, init=False)
     _feeds: dict[str, dict[str, int]] = field(default_factory=dict, init=False)
     _candidates: dict[tuple[str, str, str, str], int] = field(default_factory=dict, init=False)
@@ -101,6 +103,12 @@ class EmbeddedWatcherMetrics:
         with self._lock:
             self._dimensionless[name] = self._dimensionless.get(name, 0) + value
 
+    def _function_increment(self, name: str, value: int = 1) -> None:
+        if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+            raise ValueError("metric increments must be non-negative integers")
+        with self._lock:
+            self._function[name] = self._function.get(name, 0) + value
+
     def _feed_increment(self, feed_name: str, name: str, value: int = 1) -> None:
         feed_name = _safe_dimension("feed_name", feed_name)
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
@@ -116,7 +124,7 @@ class EmbeddedWatcherMetrics:
         self._increment("ReleaseVerificationFailures")
 
     def watcher_fault(self) -> None:
-        self._increment("WatcherFaults")
+        self._function_increment("WatcherFaults")
 
     def feed_attempt(self, feed_name: str) -> None:
         self._feed_increment(feed_name, "FeedAttempts")
@@ -196,18 +204,26 @@ class EmbeddedWatcherMetrics:
             self._dimensionless["MaxFeedStalenessSeconds"] = seconds
 
     def incomplete_run(self) -> None:
-        self._increment("IncompleteRuns")
+        # One metrics object represents one invocation. The orchestrator records
+        # the remaining-time stop where it occurs, and the handler records the
+        # resulting classification at its boundary; both observations still
+        # describe one incomplete run.
+        with self._lock:
+            self._function["IncompleteRuns"] = 1
 
     def flush(self) -> None:
         timestamp_ms = int(self.clock().timestamp() * 1000)
+        function = dict(self._function)
         if self._heartbeat:
+            function["Heartbeat"] = 1
+        if function:
             self.emit(
                 _metric_document(
                     self.namespace,
                     timestamp_ms,
                     [["Function"]],
-                    [("Heartbeat", "Count")],
-                    {"Function": self.function_name, "Heartbeat": 1},
+                    [(name, "Count") for name in sorted(function)],
+                    {"Function": self.function_name, **function},
                 )
             )
 
@@ -478,6 +494,10 @@ def _build_runtime(configuration: _RuntimeConfiguration) -> WatcherRuntime:
 _runtime: _WatcherRunner | None = None
 
 
+class _WatcherIncomplete(RuntimeError):
+    """A scheduled watcher pass stopped on a known bounded condition."""
+
+
 def lambda_handler(event: Mapping[str, Any], context: object) -> dict[str, object]:
     """Run one scheduled watcher pass and expose only bounded diagnostics."""
 
@@ -496,13 +516,19 @@ def lambda_handler(event: Mapping[str, Any], context: object) -> dict[str, objec
             metrics=metrics,
         )
         if result.incomplete:
-            raise RuntimeError("watcher invocation incomplete")
+            metrics.incomplete_run()
+            raise _WatcherIncomplete
         return {
             "feeds": len(result.outcomes),
             "advanced": len(result.advanced_feeds),
             "candidates": len(result.candidate_ids),
         }
-    except Exception:  # noqa: BLE001 - EventBridge must retry any incomplete watcher run
+    except _WatcherIncomplete:
+        raise RuntimeError("watcher invocation failed") from None
+    except ConditionalStateConflict:
+        metrics.incomplete_run()
+        raise RuntimeError("watcher invocation failed") from None
+    except Exception:  # noqa: BLE001 - EventBridge must retry any unexpected watcher fault
         metrics.watcher_fault()
         raise RuntimeError("watcher invocation failed") from None
     finally:

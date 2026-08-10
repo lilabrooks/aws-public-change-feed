@@ -180,8 +180,13 @@ The scheduled handler emits `Heartbeat` after validating the event, environment,
 and Lambda context and before loading a release. It emits dimensionless
 `ReleaseVerificationFailures`, `RawSnapshotFailures`, and
 `MaxFeedStalenessSeconds`; per-feed metrics use only the bounded `FeedName`
-dimension. Every custom watcher alarm metric has a runtime producer, and the
-watcher heartbeat alarm exists only when the watcher runtime is enabled.
+dimension. A remaining-time stop and exhausted bounded conditional-state retry
+emit `IncompleteRuns` with the bounded `Function` dimension and fail the
+invocation so the scheduled target can retry. They do not emit `WatcherFaults`.
+Every other exception emits function-scoped `WatcherFaults` and fails with the
+same bounded outward error. Every custom watcher alarm metric has a runtime
+producer, and the watcher heartbeat alarm exists only when the watcher runtime
+is enabled.
 
 ### Delivery
 
@@ -201,11 +206,17 @@ Production alarms include:
 
 - Feed last success beyond its schedule-based threshold.
 - No watcher heartbeat.
+- One unexpected watcher fault, through function-scoped `WatcherFaults`.
+- Watcher incompletion in two consecutive 15-minute CloudWatch periods, through
+  function-scoped `IncompleteRuns`.
+- AWS/Lambda watcher errors in two consecutive 15-minute CloudWatch periods as
+  a backstop. A period can include EventBridge retries and does not prove that a
+  distinct scheduled event failed.
 - Source-state throttling or errors.
 - Oldest `pending_queue`, `queued`, or retryable work beyond the service objective.
 - Queue age, worker errors, throttles, and DLQ depth.
 - Any `delivery_unknown` or sustained terminal delivery failures.
-- No reconciler heartbeat.
+- No reconciler heartbeat, only when the reconciler runtime is enabled.
 - Raw-snapshot or immutable-release verification failures.
 - Operational notification delivery test unconfirmed.
 

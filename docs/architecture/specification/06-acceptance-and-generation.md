@@ -111,6 +111,16 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 
 - Every component emits a heartbeat and its documented metrics.
 - Feed freshness is measured per feed and includes newest observed publication age.
+- Given a watcher remaining-time stop or exhausted bounded conditional-state
+  retry, the invocation fails for scheduled retry, emits `IncompleteRuns`, and
+  does not emit `WatcherFaults`; given another watcher exception, the invocation
+  emits `WatcherFaults` and the bounded outward error.
+- Watcher faults alarm on one occurrence. Watcher incompletion and the
+  AWS/Lambda error backstop alarm only after two consecutive 15-minute
+  CloudWatch periods breach; neither alarm claims those samples came from two
+  distinct scheduled events.
+- A missing-heartbeat alarm exists only when its corresponding conditional
+  runtime is enabled.
 - Alarm subscriptions are configured by automation and receipt of a test notification is confirmed by an operator.
 - A load test at the declared envelope records throughput, duration, concurrency, DynamoDB throttling, queue age, destination pacing, and Slack response classes.
 - Queue visibility, receive threshold, retry delay, network attempts, and reserved concurrency satisfy the tested timing model.
