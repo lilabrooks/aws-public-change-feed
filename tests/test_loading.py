@@ -28,9 +28,11 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from aws_public_change_feed.loading import (  # noqa: E402
     SUPPORTED_CONFIG_SCHEMA_VERSIONS,
+    SUPPORTED_INVENTORY_SCHEMA_VERSIONS,
     IncompatibleRelease,
     ReleaseIntegrityError,
     load_active_release,
+    load_release_reference,
     load_release_version,
     probe_release,
 )
@@ -663,6 +665,118 @@ class RollbackTests(ReleaseFixture):
                 version_id="no-such-version",
                 application_version=APPLICATION_VERSION,
             )
+
+
+class ReleaseReferenceTests(ReleaseFixture):
+    """`load_release_reference` loads the exact release a candidate embeds.
+
+    ADR-014: the worker loads the exact object versions a candidate carries
+    and verifies hashes before rendering. Unlike the active and versioned
+    loads there is no pointer to read — the reference is the candidate's
+    embedded release block — so the same refusals have to fire from that
+    entry point too. An operator sees the same typed cause for the same bad
+    bytes whether the block came from the active pointer or a candidate.
+    """
+
+    def reference(self):
+        """The committed bundle promoted, then read back as a candidate reference."""
+
+        self.publish_and_promote()
+        return self.load().reference
+
+    def load_reference(self, reference):
+        return load_release_reference(self.store, reference, application_version=APPLICATION_VERSION)
+
+    def test_a_candidate_reference_loads_to_the_active_release(self):
+        reference = self.reference()
+
+        loaded = self.load_reference(reference)
+
+        active = self.load()
+        self.assertEqual(loaded.release_id, active.release_id)
+        self.assertEqual(loaded.config, active.config)
+        self.assertEqual(loaded.inventory, active.inventory)
+        self.assertEqual(loaded.reference, active.reference)
+
+    def test_an_unsupported_config_schema_version_is_refused(self):
+        reference = self.reference()
+        reference["config"]["schema_version"] = max(SUPPORTED_CONFIG_SCHEMA_VERSIONS) + 1
+
+        with self.assertRaisesRegex(IncompatibleRelease, "config schema_version"):
+            self.load_reference(reference)
+
+    def test_an_unsupported_inventory_schema_version_is_refused(self):
+        reference = self.reference()
+        reference["inventory"]["schema_version"] = max(SUPPORTED_INVENTORY_SCHEMA_VERSIONS) + 1
+
+        with self.assertRaisesRegex(IncompatibleRelease, "inventory schema_version"):
+            self.load_reference(reference)
+
+    def test_a_release_id_its_objects_do_not_derive_is_refused(self):
+        reference = self.reference()
+        reference["release_id"] = "f" * 64
+
+        with self.assertRaisesRegex(ReleaseIntegrityError, "but its objects derive"):
+            self.load_reference(reference)
+
+    def test_a_pinned_object_that_vanished_is_an_integrity_failure(self):
+        reference = self.reference()
+        self.client.delete_object(
+            Bucket=BUCKET,
+            Key=reference["config"]["key"],
+            VersionId=reference["config"]["version_id"],
+        )
+
+        with self.assertRaisesRegex(ReleaseIntegrityError, "config version pinned by the pointer is missing"):
+            self.load_reference(reference)
+
+    def test_a_tampered_pinned_object_is_an_integrity_failure(self):
+        reference = self.reference()
+        original = self.store.read(reference["config"]["key"], reference["config"]["version_id"])
+
+        class TamperedRead(S3ObjectStore):
+            def read(self, key, version_id=None):
+                stored = super().read(key, version_id)
+                if key == reference["config"]["key"] and version_id is not None:
+                    return type(stored)(body=b"tampered", etag=stored.etag, version_id=stored.version_id)
+                return stored
+
+        with self.assertRaisesRegex(ReleaseIntegrityError, "config at the pinned version hashes to"):
+            load_release_reference(
+                TamperedRead(self.client, BUCKET),
+                reference,
+                application_version=APPLICATION_VERSION,
+            )
+        self.assertEqual(original.body, self.config_body)
+
+    def test_a_pinned_document_that_does_not_parse_is_refused(self):
+        self.publish_and_promote(config_body=b"key: [unclosed\n")
+        pointer = json.loads(self.store.read(POINTER).body)
+        reference = {
+            "release_id": pointer["release_id"],
+            "config": dict(pointer["config"]),
+            "inventory": dict(pointer["inventory"]),
+            "application_version": APPLICATION_VERSION,
+        }
+
+        with self.assertRaisesRegex(IncompatibleRelease, "config at the pinned version does not parse"):
+            self.load_reference(reference)
+
+    def test_a_document_version_that_disagrees_with_the_reference_is_refused(self):
+        mutated = yaml.safe_load(self.config_body)
+        mutated["version"] = 999
+        body = yaml.safe_dump(mutated, sort_keys=False).encode()
+        self.publish_and_promote(config_body=body)
+        pointer = json.loads(self.store.read(POINTER).body)
+        reference = {
+            "release_id": pointer["release_id"],
+            "config": dict(pointer["config"]),
+            "inventory": dict(pointer["inventory"]),
+            "application_version": APPLICATION_VERSION,
+        }
+
+        with self.assertRaisesRegex(IncompatibleRelease, "does not match the pointer's schema_version"):
+            self.load_reference(reference)
 
 
 if __name__ == "__main__":

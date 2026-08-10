@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
@@ -34,16 +35,20 @@ from .identity import audience_fingerprint, candidate_id, delivery_request_id, q
 
 __all__ = [
     "CANDIDATE_KEY_PREFIX",
+    "DESTINATION_KEY_PREFIX",
     "DELIVERY_STATES",
     "CandidateIdentityError",
+    "DeliveryPace",
     "DeliveryRecord",
     "DynamoDBDeliveryStore",
     "EmissionResult",
     "InMemoryOutboxStore",
     "OutboxStore",
+    "ACKNOWLEDGED_STATES",
     "OversizeDeliveryError",
     "SCHEDULED_STATES",
     "SCHEDULED_STATES_ORDERED",
+    "TTL_ELIGIBLE_STATES",
     "build_delivery_request",
     "emit",
     "serialized_size",
@@ -53,9 +58,12 @@ __all__ = [
 # A dispatch ID is `queue_dispatch_id` output, a lowercase SHA-256 digest.
 _DIGEST = re.compile(r"[a-f0-9]{64}")
 
-# Chapter 02 keys the candidate and delivery items under one partition.
+# Chapter 02 keys the candidate and delivery items under one partition, and the
+# destination pacing item under its own.
 CANDIDATE_KEY_PREFIX = "CANDIDATE#"
 DELIVERY_SORT_KEY = "DELIVERY"
+DESTINATION_KEY_PREFIX = "DESTINATION#"
+PACE_SORT_KEY = "PACE"
 
 # Chapter 02. Only `pending_queue` is written here; the rest are listed so the
 # dispatcher and worker share one definition rather than three string literals.
@@ -72,6 +80,75 @@ DELIVERY_STATES = (
 INITIAL_STATE = "pending_queue"
 SCHEDULED_STATES = frozenset({"pending_queue", "failed_retryable"})
 SCHEDULED_STATES_ORDERED = ("pending_queue", "failed_retryable")
+
+# Two distinct sets, and collapsing them into one is a correctness bug.
+#
+# `ACKNOWLEDGED_STATES` is "no further delivery work is scheduled": a queue
+# message for one of these is finished, whoever recorded it.
+#
+# `TTL_ELIGIBLE_STATES` is the strictly smaller set chapter 02 permits to
+# expire — "`posted` and `failed_terminal` may expire after the configured
+# terminal retention". `delivery_unknown` is acknowledged but must never
+# expire: ADR-004 requires an operator to inspect Slack and record a manual
+# replay decision, and a TTL would delete the evidence that review depends on.
+#
+# The distinction is load-bearing twice over. `DeliveryRecord` refuses
+# `expires_at` outside the TTL-eligible set, and `put_delivery_if_absent`
+# replaces an expired item only within it — because an expired TTL is only
+# proof that a record may be discarded if a TTL could legitimately be there in
+# the first place. Admitting `delivery_unknown` to that set let a replay
+# silently overwrite an unknown outcome awaiting review.
+ACKNOWLEDGED_STATES = frozenset({"posted", "failed_terminal", "delivery_unknown"})
+TTL_ELIGIBLE_STATES = frozenset({"posted", "failed_terminal"})
+
+
+def validate_delivery_transition(
+    *,
+    status: str,
+    next_action_at: int | None,
+    attempt_id: str | None = None,
+    lease_expires_at: int | None = None,
+    network_attempt_count: int = 0,
+    slack_response: Mapping[str, Any] | None = None,
+    expires_at: int | None = None,
+) -> None:
+    """Refuse a delivery transition that would produce an unreadable record.
+
+    `InMemoryOutboxStore` gets this for free: every transition goes through
+    `dataclasses.replace`, so `DeliveryRecord.__post_init__` sees the complete
+    proposed record. `DynamoDBDeliveryStore` builds update expressions
+    attribute by attribute and never constructs one, so it had no validation
+    beyond a status/TTL pairing — it would write an unknown status, a
+    `failed_retryable` with no `next_action_at`, a `sending` with no lease, or
+    a negative attempt count, each of which its own decoder then refused on
+    the next read. A store that can write what it cannot read can strand a
+    record where no code path repairs it.
+
+    The proposed record is assembled here rather than read back from the
+    table, so this costs no extra request. Identity and payload fields get
+    placeholders because the transition never touches them and no invariant
+    below relates them to the fields it does touch; every rule being checked
+    is a relation among exactly these arguments.
+    """
+
+    DeliveryRecord(
+        candidate_id=_TRANSITION_PROBE_ID,
+        destination_key=_TRANSITION_PROBE_ID,
+        request={},
+        next_action_at=next_action_at,
+        status=status,
+        attempt_id=attempt_id,
+        lease_expires_at=lease_expires_at,
+        network_attempt_count=network_attempt_count,
+        slack_response=slack_response,
+        expires_at=expires_at,
+    )
+
+
+# A placeholder for the fields `validate_delivery_transition` does not check.
+# Nonempty so it cannot trip an unrelated emptiness rule, and obviously not a
+# real candidate ID so it can never be mistaken for one in a traceback.
+_TRANSITION_PROBE_ID = "transition-probe"
 
 
 class CandidateIdentityError(Exception):
@@ -121,6 +198,26 @@ class DeliveryRecord:
     dispatch_generation: int | None = None
     dispatch_id: str | None = None
     queue_message_id: str | None = None
+    # The worker claim chapter 02 names "sending with a lease and attempt ID".
+    # `attempt_id` and `lease_expires_at` exist only on `sending` records, and
+    # the worker's outcome write removes them. `network_attempt_count` counts
+    # Slack network calls, which stays separate from the SQS receive count:
+    # redeliveries that never call Slack must not exhaust a Slack retry budget.
+    attempt_id: str | None = None
+    lease_expires_at: int | None = None
+    network_attempt_count: int = 0
+    # Bounded Slack response metadata for diagnosis: the worker's derived
+    # response class, latency, whether request bytes went out, the HTTP status
+    # when one arrived, a bounded `Retry-After`, and in bot mode the returned
+    # message timestamp. Never a secret, never a response body, and never the
+    # webhook URL.
+    slack_response: Mapping[str, Any] | None = None
+    # TTL in whole Unix epoch seconds, valid only on a state in
+    # `TTL_ELIGIBLE_STATES`. `__post_init__` enforces that, and
+    # `put_delivery_if_absent` depends on it: an expired TTL is what proves an
+    # item may be replaced. `delivery_unknown` is deliberately excluded — it is
+    # acknowledged but awaits operator review, so it never expires.
+    expires_at: int | None = None
 
     def __post_init__(self) -> None:
         if self.status not in DELIVERY_STATES:
@@ -154,6 +251,64 @@ class DeliveryRecord:
                 raise ValueError("dispatch_id requires a valid request_id") from None
             if self.dispatch_id != expected_dispatch_id:
                 raise ValueError("dispatch_id does not derive from request_id and dispatch_generation")
+        if self.status == "sending":
+            if self.attempt_id is None or self.lease_expires_at is None:
+                raise ValueError("sending delivery records require attempt_id and lease_expires_at")
+        else:
+            if self.attempt_id is not None:
+                raise ValueError("attempt_id is only valid on sending delivery records")
+            if self.lease_expires_at is not None:
+                raise ValueError("lease_expires_at is only valid on sending delivery records")
+        if self.attempt_id is not None and (not isinstance(self.attempt_id, str) or not self.attempt_id):
+            raise ValueError("attempt_id must be a nonempty string")
+        if self.lease_expires_at is not None and (
+            isinstance(self.lease_expires_at, bool)
+            or not isinstance(self.lease_expires_at, int)
+            or self.lease_expires_at < 0
+        ):
+            raise ValueError("lease_expires_at must be a non-negative integer Unix timestamp")
+        if isinstance(self.network_attempt_count, bool) or not isinstance(self.network_attempt_count, int):
+            raise ValueError("network_attempt_count must be an integer")
+        if self.network_attempt_count < 0:
+            raise ValueError("network_attempt_count cannot be negative")
+        if self.slack_response is not None and not isinstance(self.slack_response, Mapping):
+            raise ValueError("slack_response must be an object")
+        if self.expires_at is not None:
+            if isinstance(self.expires_at, bool) or not isinstance(self.expires_at, int) or self.expires_at < 0:
+                raise ValueError("expires_at must be a non-negative integer Unix timestamp")
+            # Chapter 02 lets only `posted` and `failed_terminal` expire, and
+            # ADR-004 keeps `delivery_unknown` for operator review.
+            # `put_delivery_if_absent` treats an expired TTL as proof a record
+            # may be replaced, so a TTL anywhere else makes that unsound.
+            if self.status not in TTL_ELIGIBLE_STATES:
+                raise ValueError(f"expires_at is only valid on {sorted(TTL_ELIGIBLE_STATES)}, not {self.status}")
+
+
+@dataclass(frozen=True, slots=True)
+class DeliveryPace:
+    """The destination pacing item chapter 02 keys as `DESTINATION#<key>` / `PACE`.
+
+    `next_allowed_at` is the whole-epoch second before which the worker must
+    not make another Slack call for this destination. `last_response_class` is
+    the reviewed bounded class of the most recent Slack response, and `version`
+    is a monotonic counter the conditional pacing update writes against, which
+    is what serializes two workers updating one destination.
+    """
+
+    destination_key: str
+    next_allowed_at: int
+    last_response_class: str | None = None
+    version: int = 1
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.destination_key, str) or not self.destination_key:
+            raise ValueError("destination_key must be a nonempty string")
+        if isinstance(self.next_allowed_at, bool) or not isinstance(self.next_allowed_at, int):
+            raise ValueError("next_allowed_at must be an integer Unix timestamp")
+        if self.next_allowed_at < 0:
+            raise ValueError("next_allowed_at cannot be negative")
+        if isinstance(self.version, bool) or not isinstance(self.version, int) or self.version < 1:
+            raise ValueError("pace version must be a positive integer")
 
 
 @dataclass(frozen=True, slots=True)
@@ -187,7 +342,16 @@ class OutboxStore(Protocol):
 
     def get_delivery(self, candidate: str) -> DeliveryRecord | None: ...
 
-    def put_delivery_if_absent(self, record: DeliveryRecord) -> bool: ...
+    def put_delivery_if_absent(self, record: DeliveryRecord, *, now: int | None = None) -> bool:
+        """Write the record unless a live item occupies the key.
+
+        Returns `False` when the item already exists and is not an expired
+        terminal item. Chapter 06 lets a new put over an expired terminal item
+        prove its TTL is in the past and replace it, because DynamoDB TTL
+        deletion is asynchronous. `now` is the epoch clock for that proof;
+        callers that do not pass one use the current time.
+        """
+        ...
 
     def query_due(self, status: str, *, due_before: int, limit: int) -> Sequence[tuple[int, str]]:
         """Return `(next_action_at, candidate_id)` for records due at or before `due_before`.
@@ -225,6 +389,87 @@ class OutboxStore(Protocol):
         """
         ...
 
+    def get_pace(self, destination_key: str) -> DeliveryPace | None:
+        """Read the destination pacing item, or `None` when no call was made yet."""
+        ...
+
+    def update_pace(
+        self,
+        destination_key: str,
+        *,
+        expected_version: int | None,
+        next_allowed_at: int,
+        last_response_class: str | None,
+    ) -> bool:
+        """Advance the destination's pacing, conditional on its version.
+
+        `expected_version = None` creates the item and succeeds only while it
+        does not exist; an integer requires the observed version so a lost
+        pacing race cannot overwrite a newer decision. Succeeds atomically or
+        not at all, which is what serializes workers updating one destination.
+        """
+        ...
+
+    def claim_sending(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        attempt_id: str,
+        lease_expires_at: int,
+    ) -> bool:
+        """Move a `queued` record to `sending` with a lease and attempt ID.
+
+        Succeeds only while the record is still `queued` at the observed state
+        version, so two workers cannot both believe they hold the same claim.
+        `next_action_at` is set to `lease_expires_at` so the status index can
+        surface expired leases to the reconciler.
+        """
+        ...
+
+    def record_outcome(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        attempt_id: str,
+        status: str,
+        network_attempt_count: int,
+        next_action_at: int | None,
+        slack_response: Mapping[str, Any] | None,
+        expires_at: int | None,
+    ) -> bool:
+        """Record the documented outcome of a held `sending` claim.
+
+        Succeeds only while the record is `sending`, at the observed state
+        version, and still carries `attempt_id`, so a worker whose lease was
+        superseded cannot overwrite a newer transition. Clears the lease and the
+        active dispatch claim and writes the outcome's `next_action_at`,
+        `expires_at`, attempt counter, and bounded response metadata. Clearing
+        `dispatch_id` on a recorded retry is what makes the next due dispatch
+        increment the generation for a fresh dispatch ID (chapter 02 and
+        ADR-007).
+        """
+        ...
+
+    def schedule_retry(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        next_action_at: int,
+        slack_response: Mapping[str, Any] | None,
+    ) -> bool:
+        """Defer a `queued` record to `failed_retryable` without a network call.
+
+        Used when destination pacing forbids a call now. Clears the active
+        dispatch claim so the next due dispatch increments the generation for a
+        fresh dispatch ID, exactly as chapter 02 requires for a worker-scheduled
+        future retry. Succeeds only while the record is still `queued` at the
+        observed version.
+        """
+        ...
+
 
 class InMemoryOutboxStore:
     """Candidate and delivery items held in memory, for tests and dry runs.
@@ -237,6 +482,7 @@ class InMemoryOutboxStore:
     def __init__(self) -> None:
         self._candidates: dict[str, str] = {}
         self._deliveries: dict[str, DeliveryRecord] = {}
+        self._paces: dict[str, DeliveryPace] = {}
 
     def get_candidate(self, candidate: str) -> Mapping[str, Any] | None:
         stored = self._candidates.get(candidate)
@@ -252,9 +498,17 @@ class InMemoryOutboxStore:
     def get_delivery(self, candidate: str) -> DeliveryRecord | None:
         return self._deliveries.get(candidate)
 
-    def put_delivery_if_absent(self, record: DeliveryRecord) -> bool:
-        if record.candidate_id in self._deliveries:
-            return False
+    def put_delivery_if_absent(self, record: DeliveryRecord, *, now: int | None = None) -> bool:
+        existing = self._deliveries.get(record.candidate_id)
+        if existing is not None:
+            timestamp = int(time.time()) if now is None else now
+            if existing.expires_at is None or existing.expires_at >= timestamp:
+                return False
+            # Mirrors the DynamoDB condition. `DeliveryRecord` already refuses
+            # a TTL outside the eligible states, so this is the second of two
+            # independent guards rather than the only one.
+            if existing.status not in TTL_ELIGIBLE_STATES:
+                return False
         self._deliveries[record.candidate_id] = record
         return True
 
@@ -310,6 +564,110 @@ class InMemoryOutboxStore:
         )
         return True
 
+    def get_pace(self, destination_key: str) -> DeliveryPace | None:
+        return self._paces.get(destination_key)
+
+    def update_pace(
+        self,
+        destination_key: str,
+        *,
+        expected_version: int | None,
+        next_allowed_at: int,
+        last_response_class: str | None,
+    ) -> bool:
+        existing = self._paces.get(destination_key)
+        if expected_version is None:
+            if existing is not None:
+                return False
+            version = 1
+        else:
+            if existing is None or existing.version != expected_version:
+                return False
+            version = expected_version + 1
+        self._paces[destination_key] = DeliveryPace(
+            destination_key=destination_key,
+            next_allowed_at=next_allowed_at,
+            last_response_class=last_response_class,
+            version=version,
+        )
+        return True
+
+    def claim_sending(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        attempt_id: str,
+        lease_expires_at: int,
+    ) -> bool:
+        record = self._deliveries.get(candidate)
+        if record is None or record.status != "queued" or record.state_version != expected_state_version:
+            return False
+        self._deliveries[candidate] = replace(
+            record,
+            status="sending",
+            attempt_id=attempt_id,
+            lease_expires_at=lease_expires_at,
+            next_action_at=lease_expires_at,
+            state_version=record.state_version + 1,
+        )
+        return True
+
+    def record_outcome(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        attempt_id: str,
+        status: str,
+        network_attempt_count: int,
+        next_action_at: int | None,
+        slack_response: Mapping[str, Any] | None,
+        expires_at: int | None,
+    ) -> bool:
+        record = self._deliveries.get(candidate)
+        if (
+            record is None
+            or record.status != "sending"
+            or record.state_version != expected_state_version
+            or record.attempt_id != attempt_id
+        ):
+            return False
+        self._deliveries[candidate] = replace(
+            record,
+            status=status,
+            attempt_id=None,
+            lease_expires_at=None,
+            network_attempt_count=network_attempt_count,
+            next_action_at=next_action_at,
+            slack_response=slack_response,
+            expires_at=expires_at,
+            dispatch_id=None,
+            state_version=record.state_version + 1,
+        )
+        return True
+
+    def schedule_retry(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        next_action_at: int,
+        slack_response: Mapping[str, Any] | None,
+    ) -> bool:
+        record = self._deliveries.get(candidate)
+        if record is None or record.status != "queued" or record.state_version != expected_state_version:
+            return False
+        self._deliveries[candidate] = replace(
+            record,
+            status="failed_retryable",
+            dispatch_id=None,
+            next_action_at=next_action_at,
+            slack_response=slack_response,
+            state_version=record.state_version + 1,
+        )
+        return True
+
 
 class DynamoDBDeliveryStore:
     """`OutboxStore` backed by the delivery table chapter 02 defines.
@@ -339,6 +697,10 @@ class DynamoDBDeliveryStore:
     def _candidate_key(candidate: str) -> dict[str, dict[str, str]]:
         return {"PK": {"S": f"{CANDIDATE_KEY_PREFIX}{candidate}"}, "SK": {"S": "CANDIDATE"}}
 
+    @staticmethod
+    def _pace_key(destination_key: str) -> dict[str, dict[str, str]]:
+        return {"PK": {"S": f"{DESTINATION_KEY_PREFIX}{destination_key}"}, "SK": {"S": PACE_SORT_KEY}}
+
     def _encode_delivery(self, record: DeliveryRecord) -> dict[str, dict[str, object]]:
         item: dict[str, dict[str, object]] = {
             "PK": {"S": f"{CANDIDATE_KEY_PREFIX}{record.candidate_id}"},
@@ -348,6 +710,7 @@ class DynamoDBDeliveryStore:
             "destination_key": {"S": record.destination_key},
             "request": {"S": json.dumps(record.request, sort_keys=True)},
             "created_at": {"S": record.created_at},
+            "network_attempt_count": {"N": str(record.network_attempt_count)},
         }
         if record.next_action_at is not None:
             item["next_action_at"] = {"N": str(record.next_action_at)}
@@ -357,6 +720,14 @@ class DynamoDBDeliveryStore:
             item["dispatch_id"] = {"S": record.dispatch_id}
         if record.queue_message_id is not None:
             item["queue_message_id"] = {"S": record.queue_message_id}
+        if record.attempt_id is not None:
+            item["attempt_id"] = {"S": record.attempt_id}
+        if record.lease_expires_at is not None:
+            item["lease_expires_at"] = {"N": str(record.lease_expires_at)}
+        if record.slack_response is not None:
+            item["slack_response"] = {"S": json.dumps(record.slack_response, sort_keys=True)}
+        if record.expires_at is not None:
+            item["expires_at"] = {"N": str(record.expires_at)}
         return item
 
     def _decode_delivery(self, item: Mapping[str, Any]) -> DeliveryRecord:
@@ -371,10 +742,20 @@ class DynamoDBDeliveryStore:
             dispatch_generation=int(item["dispatch_generation"]["N"]) if "dispatch_generation" in item else None,
             dispatch_id=item["dispatch_id"]["S"] if "dispatch_id" in item else None,
             queue_message_id=item["queue_message_id"]["S"] if "queue_message_id" in item else None,
+            attempt_id=item["attempt_id"]["S"] if "attempt_id" in item else None,
+            lease_expires_at=int(item["lease_expires_at"]["N"]) if "lease_expires_at" in item else None,
+            network_attempt_count=(int(item["network_attempt_count"]["N"]) if "network_attempt_count" in item else 0),
+            slack_response=json.loads(item["slack_response"]["S"]) if "slack_response" in item else None,
+            expires_at=int(item["expires_at"]["N"]) if "expires_at" in item else None,
         )
 
     def get_candidate(self, candidate: str) -> Mapping[str, Any] | None:
-        response = self._client.get_item(TableName=self._table, Key=self._candidate_key(candidate))
+        # Strongly consistent: `emit` reads this to decide whether a candidate
+        # is already durable, and `verify_durable` reads it to gate checkpoint
+        # advancement. An eventually consistent miss right after a write would
+        # either duplicate the write or hold back a checkpoint that is in fact
+        # safe to advance.
+        response = self._client.get_item(TableName=self._table, Key=self._candidate_key(candidate), ConsistentRead=True)
         stored = response.get("Item")
         if stored is None:
             return None
@@ -399,20 +780,43 @@ class DynamoDBDeliveryStore:
         return True
 
     def get_delivery(self, candidate: str) -> DeliveryRecord | None:
-        response = self._client.get_item(TableName=self._table, Key=self._key(candidate))
+        # Strongly consistent: every worker and dispatcher decision is taken
+        # against this record and then written back conditionally on the state
+        # version it reports. A stale read makes the worker reason about
+        # superseded state, and a stale miss is worse still — the worker treats
+        # an absent record as "no delivery work" and acknowledges the message,
+        # discarding work that is durable.
+        response = self._client.get_item(TableName=self._table, Key=self._key(candidate), ConsistentRead=True)
         stored = response.get("Item")
         if stored is None:
             return None
         return self._decode_delivery(stored)
 
-    def put_delivery_if_absent(self, record: DeliveryRecord) -> bool:
+    def put_delivery_if_absent(self, record: DeliveryRecord, *, now: int | None = None) -> bool:
         from botocore.exceptions import ClientError
 
+        # Chapter 06: a new put over an expired `posted` or `failed_terminal`
+        # item proves the TTL is in the past, because DynamoDB TTL deletion is
+        # asynchronous. A live item stays put, and so does any item outside
+        # those two states that carries a TTL it should never have had. The
+        # status clause is the guard: it keeps a corrupt `expires_at` on live
+        # `pending_queue`, `queued`, `sending`, or `failed_retryable` work from
+        # satisfying this condition, and it keeps a `delivery_unknown` awaiting
+        # operator review from being replaced by a replay.
         try:
             self._client.put_item(
                 TableName=self._table,
                 Item=self._encode_delivery(record),
-                ConditionExpression="attribute_not_exists(PK)",
+                ConditionExpression=(
+                    "attribute_not_exists(PK) OR (attribute_exists(expires_at) AND expires_at < :now "
+                    "AND #status IN (:posted, :terminal))"
+                ),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":now": {"N": str(int(time.time()) if now is None else now)},
+                    ":posted": {"S": "posted"},
+                    ":terminal": {"S": "failed_terminal"},
+                },
             )
         except ClientError as error:
             if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
@@ -509,6 +913,239 @@ class DynamoDBDeliveryStore:
                     ":dispatch_id": {"S": dispatch_id},
                     ":message_id": {"S": message_id},
                     ":one": {"N": "1"},
+                },
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
+
+    def get_pace(self, destination_key: str) -> DeliveryPace | None:
+        # Strongly consistent: ADR-015's rate control is only as good as this
+        # read. A stale `next_allowed_at` lets a worker call Slack inside an
+        # interval another worker already reserved, which is the exact thing
+        # destination pacing exists to prevent.
+        response = self._client.get_item(
+            TableName=self._table, Key=self._pace_key(destination_key), ConsistentRead=True
+        )
+        stored = response.get("Item")
+        if stored is None:
+            return None
+        return DeliveryPace(
+            destination_key=destination_key,
+            next_allowed_at=int(stored["next_allowed_at"]["N"]),
+            last_response_class=stored["last_response_class"]["S"] if "last_response_class" in stored else None,
+            version=int(stored["version"]["N"]),
+        )
+
+    def update_pace(
+        self,
+        destination_key: str,
+        *,
+        expected_version: int | None,
+        next_allowed_at: int,
+        last_response_class: str | None,
+    ) -> bool:
+        from botocore.exceptions import ClientError
+
+        # `DeliveryPace` validates a pacing item the same way `DeliveryRecord`
+        # validates a delivery one, and the in-memory store gets that by
+        # constructing one. This store writes attributes directly, so it
+        # constructs the proposed item purely to have it checked.
+        DeliveryPace(
+            destination_key=destination_key,
+            next_allowed_at=next_allowed_at,
+            last_response_class=last_response_class,
+            version=1 if expected_version is None else expected_version + 1,
+        )
+
+        values: dict[str, dict[str, object]] = {
+            ":next": {"N": str(next_allowed_at)},
+            ":version": {"N": str(1 if expected_version is None else expected_version + 1)},
+        }
+        if last_response_class is not None:
+            values[":class"] = {"S": last_response_class}
+        if expected_version is None:
+            condition = "attribute_not_exists(PK)"
+        else:
+            condition = "version = :expected"
+            values[":expected"] = {"N": str(expected_version)}
+        update = "SET version = :version, next_allowed_at = :next"
+        if last_response_class is not None:
+            update += ", last_response_class = :class"
+        else:
+            update += " REMOVE last_response_class"
+
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key=self._pace_key(destination_key),
+                UpdateExpression=update,
+                ConditionExpression=condition,
+                ExpressionAttributeValues=values,
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
+
+    def claim_sending(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        attempt_id: str,
+        lease_expires_at: int,
+    ) -> bool:
+        from botocore.exceptions import ClientError
+
+        validate_delivery_transition(
+            status="sending",
+            next_action_at=lease_expires_at,
+            attempt_id=attempt_id,
+            lease_expires_at=lease_expires_at,
+        )
+
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key=self._key(candidate),
+                UpdateExpression=(
+                    "SET #status = :sending, attempt_id = :attempt, lease_expires_at = :lease, "
+                    "next_action_at = :lease, state_version = state_version + :one"
+                ),
+                ConditionExpression="#status = :queued AND state_version = :version AND attribute_not_exists(attempt_id)",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":queued": {"S": "queued"},
+                    ":sending": {"S": "sending"},
+                    ":attempt": {"S": attempt_id},
+                    ":lease": {"N": str(lease_expires_at)},
+                    ":version": {"N": str(expected_state_version)},
+                    ":one": {"N": "1"},
+                },
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
+
+    def record_outcome(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        attempt_id: str,
+        status: str,
+        network_attempt_count: int,
+        next_action_at: int | None,
+        slack_response: Mapping[str, Any] | None,
+        expires_at: int | None,
+    ) -> bool:
+        from botocore.exceptions import ClientError
+
+        # Before the write, not after the read. This store builds the item
+        # attribute by attribute and never constructs a `DeliveryRecord`, so
+        # nothing else here would refuse a shape its own decoder rejects.
+        # `record_outcome` always clears the lease, so the probe carries no
+        # attempt ID: that is the post-state being validated, not the claim
+        # this call is resolving.
+        validate_delivery_transition(
+            status=status,
+            next_action_at=next_action_at,
+            network_attempt_count=network_attempt_count,
+            slack_response=slack_response,
+            expires_at=expires_at,
+        )
+
+        set_parts = ["#status = :status", "network_attempt_count = :net", "state_version = state_version + :one"]
+        remove_parts = ["attempt_id", "lease_expires_at", "dispatch_id"]
+        values: dict[str, dict[str, object]] = {
+            ":status": {"S": status},
+            ":net": {"N": str(network_attempt_count)},
+            ":one": {"N": "1"},
+        }
+        if next_action_at is not None:
+            set_parts.append("next_action_at = :next")
+            values[":next"] = {"N": str(next_action_at)}
+        else:
+            remove_parts.append("next_action_at")
+        if slack_response is not None:
+            set_parts.append("slack_response = :resp")
+            values[":resp"] = {"S": json.dumps(slack_response, sort_keys=True)}
+        else:
+            remove_parts.append("slack_response")
+        if expires_at is not None:
+            set_parts.append("expires_at = :expiry")
+            values[":expiry"] = {"N": str(expires_at)}
+        else:
+            remove_parts.append("expires_at")
+        update = f"SET {', '.join(set_parts)} REMOVE {', '.join(remove_parts)}"
+
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key=self._key(candidate),
+                UpdateExpression=update,
+                ConditionExpression="#status = :sending AND state_version = :version AND attempt_id = :attempt",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    **values,
+                    ":sending": {"S": "sending"},
+                    ":version": {"N": str(expected_state_version)},
+                    ":attempt": {"S": attempt_id},
+                },
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
+
+    def schedule_retry(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        next_action_at: int,
+        slack_response: Mapping[str, Any] | None,
+    ) -> bool:
+        from botocore.exceptions import ClientError
+
+        validate_delivery_transition(
+            status="failed_retryable",
+            next_action_at=next_action_at,
+            slack_response=slack_response,
+        )
+
+        set_parts = ["#status = :retryable", "next_action_at = :next", "state_version = state_version + :one"]
+        remove_parts = ["dispatch_id"]
+        values: dict[str, dict[str, object]] = {
+            ":retryable": {"S": "failed_retryable"},
+            ":next": {"N": str(next_action_at)},
+            ":one": {"N": "1"},
+        }
+        if slack_response is not None:
+            set_parts.append("slack_response = :resp")
+            values[":resp"] = {"S": json.dumps(slack_response, sort_keys=True)}
+        else:
+            remove_parts.append("slack_response")
+        update = f"SET {', '.join(set_parts)} REMOVE {', '.join(remove_parts)}"
+
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key=self._key(candidate),
+                UpdateExpression=update,
+                ConditionExpression="#status = :queued AND state_version = :version",
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    **values,
+                    ":queued": {"S": "queued"},
+                    ":version": {"N": str(expected_state_version)},
                 },
             )
         except ClientError as error:
