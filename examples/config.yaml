@@ -5,7 +5,7 @@ message_policy:
   max_message_characters: 4000
   max_blocks: 40
   max_title_characters: 150
-  max_summary_characters: 1200
+  max_summary_characters: 300
   max_explanation_characters: 1000
   max_recommended_action_characters: 1000
   max_candidate_bytes: 196608

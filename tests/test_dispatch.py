@@ -431,6 +431,23 @@ class DispatchValidationTests(DispatchTestCase):
             self.dispatch()
         self.assertEqual(self.sender.calls, [])
 
+    def test_a_request_with_a_malformed_timestamp_is_rejected_before_any_claim(self):
+        self.seed()
+        tampered = copy.deepcopy(self.request)
+        tampered["candidate"]["announcement"]["published_at"] = "tomorrow"
+        self.store._deliveries[self.key] = DeliveryRecord(
+            candidate_id=self.key,
+            destination_key=self.destination,
+            request=tampered,
+            next_action_at=DUE,
+        )
+
+        with self.assertRaisesRegex(InvalidDeliveryRequest, "date-time"):
+            self.dispatch()
+
+        self.assertEqual(self.sender.calls, [])
+        self.assertIsNone(stored(self.store, self.key).dispatch_id)
+
     def test_a_request_naming_the_wrong_destination_is_rejected(self):
         self.seed()
         tampered = copy.deepcopy(self.request)

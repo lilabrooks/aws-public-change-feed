@@ -35,11 +35,12 @@ from enum import Enum
 from importlib.resources import files
 from typing import Any, Protocol
 
-from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
 from .identity import delivery_request_id
 from .outbox import SCHEDULED_STATES, SCHEDULED_STATES_ORDERED, DeliveryRecord, OutboxStore, serialized_size
+from .schema_formats import contract_format_checker
 
 __all__ = [
     "DispatchResult",
@@ -201,7 +202,7 @@ def _build_request_validator() -> Draft202012Validator:
         registry = registry.with_resource(schema["$id"], Resource.from_contents(schema))
     request_schema = json.loads(resources.joinpath(_DELIVERY_REQUEST_SCHEMA).read_text(encoding="utf-8"))
     Draft202012Validator.check_schema(request_schema)
-    return Draft202012Validator(request_schema, format_checker=FormatChecker(), registry=registry)
+    return Draft202012Validator(request_schema, format_checker=contract_format_checker(), registry=registry)
 
 
 _request_validator = _build_request_validator()

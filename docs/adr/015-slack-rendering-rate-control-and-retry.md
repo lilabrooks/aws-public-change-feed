@@ -25,6 +25,57 @@ Retry only documented retryable status classes. Bound `Retry-After`, exponential
 - Public content cannot inject Slack formatting or mentions.
 - Long retry windows survive worker termination.
 
+## Revision: capacity is a release invariant and pacing starts at completion
+
+- Status: Accepted
+- Date: 2026-08-10
+- Accepted: 2026-08-10
+
+Configuration publication rejects a message policy whose maximum title,
+summary, explanation, and recommended-action fields cannot fit the required
+message structure within `max_message_characters`. The calculation includes
+both the top-level fallback and Block Kit text, fixed labels and link text, and
+an environment summary that visibly reports omitted entries. The renderer owns
+the calculation, and a test renders the same worst-case values to catch drift.
+
+The canonical release therefore reduces `max_summary_characters` from 1,200 to
+300. Its binding case is the 1,047-character source URL allowed by the shared
+512-character path and 512-character query limits. The URL appears in both the
+source link and the fallback, consuming 2,094 of the 4,000-character aggregate
+budget. In the 44-item labeled corpus, 27 summaries exceed 300 characters and
+14 exceed the former 1,200-character cap; the normalized median is 1,047 and
+the maximum is 1,770. This decision favors guaranteed rendering for every URL
+the release accepts and a short Slack excerpt. The complete normalized summary
+remains in the durable candidate, and Slack remains a delivery surface rather
+than the source of truth. A separate source-item URL cap or a different message
+budget would be a later product decision with its own acquisition and rendering
+evidence.
+
+### Deferred follow-up: Slack summary capacity
+
+Revisit the 300-character Slack summary cap before accepting the renderer-built
+Slack sample and again during production preflight. Keep the current baseline:
+27 of 44 labeled corpus summaries exceed 300 characters, compared with 14 at
+the former 1,200-character cap; the normalized median is 1,047 and the maximum
+is 1,770. The review should use text produced by the normal acquisition path
+and judge operator usefulness alongside worst-case rendering capacity.
+
+Candidate changes include a distinct source-item URL bound or revised aggregate
+message-budget semantics. Either would alter the acquisition or rendering
+contract, so it requires its own chapter 04 and ADR decision. This worker-core
+repair records the cost without choosing that later change.
+
+The environment list remains the data-sized field that yields at render time.
+It is shortened deterministically, keeps an omitted count, and is charged for
+its exact label in both copies. The final whole-message measurement remains a
+refusal backstop for stored releases that predate the publication rule.
+
+Worker time is read at each state boundary. Due-work checks use the invocation
+observation, the sending lease starts immediately before the conditional
+claim, and retry scheduling, destination pacing, and resolved-state TTL use a
+fresh time after the Slack call returns or raises. A slow credential read or
+network call therefore cannot consume part of a future lease or retry delay.
+
 ## References
 
 References verified: 2026-07-13.

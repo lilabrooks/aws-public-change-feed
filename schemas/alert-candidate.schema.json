@@ -170,7 +170,7 @@
         "release_id": {"$ref": "#/$defs/sha256"},
         "config": {"$ref": "#/$defs/artifact"},
         "inventory": {"$ref": "#/$defs/artifact"},
-        "application_version": {"type": "string", "minLength": 1, "maxLength": 100}
+        "application_version": {"type": "string", "pattern": "^sha256:[a-f0-9]{64}$"}
       }
     }
   }

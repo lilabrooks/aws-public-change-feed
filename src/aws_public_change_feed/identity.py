@@ -16,6 +16,7 @@ from urllib.parse import unquote_plus, urlsplit, urlunsplit
 
 __all__ = [
     "TRACKING_QUERY_KEYS",
+    "application_artifact_id",
     "announcement_id",
     "audience_fingerprint",
     "candidate_id",
@@ -31,6 +32,7 @@ __all__ = [
 ]
 
 _DIGEST = re.compile(r"[a-f0-9]{64}")
+_APPLICATION_ARTIFACT_ID = re.compile(r"sha256:[a-f0-9]{64}")
 
 # Reviewed list. Canonicalization removes only these; it must not strip
 # arbitrary parameters, because distinct resources can differ by query alone.
@@ -46,6 +48,14 @@ TRACKING_QUERY_KEYS = frozenset(
         "utm_term",
     }
 )
+
+
+def application_artifact_id(value: str) -> str:
+    """Validate and return the content address used as application version."""
+
+    if not isinstance(value, str) or _APPLICATION_ARTIFACT_ID.fullmatch(value) is None:
+        raise ValueError("application_version must be sha256 followed by a lowercase SHA-256 digest")
+    return value
 
 
 def digest_parts(*values: str) -> str:

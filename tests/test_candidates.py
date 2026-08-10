@@ -193,13 +193,13 @@ class BuildCandidateTests(FixtureBase):
         self.assertEqual(self.build(), load_json("delivery-request.json")["candidate"])
 
     def test_release_metadata_is_copied_not_aliased(self):
+        original = self.candidate["release"]["application_version"]
+        replacement = "sha256:" + "0" * 64
         built = self.build()
-        built["release"]["application_version"] = "mutated"
-        self.assertNotEqual(
-            self.candidate["release"]["application_version"],
-            "mutated",
-            msg="the candidate must not alias the release mapping it was given",
-        )
+        built["release"]["application_version"] = replacement
+
+        self.assertEqual(self.candidate["release"]["application_version"], original)
+        self.assertEqual(built["release"]["application_version"], replacement)
 
     def test_absent_publication_time_omits_the_key(self):
         announcement = NormalizedAnnouncement(

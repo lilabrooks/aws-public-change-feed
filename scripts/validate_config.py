@@ -7,13 +7,14 @@ import sys
 from pathlib import Path
 
 import yaml
-from jsonschema import Draft202012Validator, FormatChecker
+from jsonschema import Draft202012Validator
 from referencing import Registry, Resource
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 # Chapter 04 requires one framing helper for runtime and test vectors, so the
 # validator shares the runtime implementation rather than copying it.
+from aws_public_change_feed.candidates import explainability_reason  # noqa: E402
 from aws_public_change_feed.identity import (  # noqa: E402
     canonical_public_url,
     delivery_request_id,
@@ -21,6 +22,8 @@ from aws_public_change_feed.identity import (  # noqa: E402
     release_id,
 )
 from aws_public_change_feed.parsing import load_unique_json, load_unique_yaml  # noqa: E402
+from aws_public_change_feed.profiles import route_audiences  # noqa: E402
+from aws_public_change_feed.schema_formats import contract_format_checker  # noqa: E402
 from aws_public_change_feed.semantics import (  # noqa: E402
     configured_feed_hosts,
     parsed_timestamp,
@@ -29,6 +32,8 @@ from aws_public_change_feed.semantics import (  # noqa: E402
     validate_host,
     validate_public_url,
 )
+from aws_public_change_feed.urls import MAX_PATH_CHARACTERS, MAX_QUERY_CHARACTERS  # noqa: E402
+from aws_public_change_feed.worker import MessageTooLarge, render_message  # noqa: E402
 
 MINIMUM_PYTHON = (3, 12)
 GENERIC_ALIASES = {"cluster", "engine version", "runtime", "version"}
@@ -77,7 +82,7 @@ def validate_schema(schema_path: Path, document_path: Path, document):
     Draft202012Validator.check_schema(schema)
     validator = Draft202012Validator(
         schema,
-        format_checker=FormatChecker(),
+        format_checker=contract_format_checker(),
         registry=schema_registry(schema_path.parent),
     )
     errors = sorted(validator.iter_errors(document), key=lambda error: list(error.absolute_path))
@@ -147,6 +152,74 @@ def validate_slack(deployment):
     rate = slack["rate_control"]
     if rate["queue_max_receive_count"] <= rate["max_network_attempts"] + 5:
         raise ValueError("queue_max_receive_count must leave room for rate deferrals and network attempts")
+
+
+def validate_message_policy_capacity(config, inventory):
+    """Prove every release-reachable maximum message can be rendered.
+
+    The renderer remains the size oracle. This function supplies the longest
+    source URL acquisition accepts, title and summary values at their policy
+    caps, and every service, risk, and reachable route combination from the
+    release. That binds publication to the same structure the worker sends.
+    """
+
+    policy = config["message_policy"]
+    hosts = configured_feed_hosts(config)
+    longest_host = max(hosts, key=len)
+    source_url = f"https://{longest_host}/{'p' * (MAX_PATH_CHARACTERS - 1)}?{'q' * MAX_QUERY_CHARACTERS}"
+    by_route = inventory["slack"]["routes"]
+
+    for service_id, service in config["services"].items():
+        audiences = route_audiences(config, inventory, service_id)
+        for rule in config["risk_rules"]:
+            for audience in audiences:
+                if not audience.environment_ids:
+                    continue
+                route = by_route[audience.route_id]
+                candidate = {
+                    "candidate_id": "f" * 64,
+                    "announcement": {
+                        "url": source_url,
+                        "title": "T" * policy["max_title_characters"],
+                        "summary": "S" * policy["max_summary_characters"],
+                        "observed_at": "9999-12-31T23:59:59Z",
+                    },
+                    "service": {"id": service_id, "display_name": service["display_name"]},
+                    "risk": {"risk_type": rule["risk_type"], "priority": rule["priority"]},
+                    "explainability": {"reason": explainability_reason(service["display_name"], rule["risk_type"])},
+                    "recommended_action": service["recommended_action"],
+                    "route_id": audience.route_id,
+                    "environment_ids": list(audience.environment_ids),
+                }
+                label = f"service={service_id}, risk={rule['risk_type']}, route={audience.route_id}"
+                try:
+                    payload = render_message(
+                        candidate,
+                        inventory,
+                        message_policy=policy,
+                        approved_source_hosts=tuple(sorted(hosts)),
+                        usergroup_id=route.get("high_priority_usergroup_id"),
+                    )
+                except MessageTooLarge as error:
+                    raise ValueError(f"message policy cannot render its reachable maxima ({label}): {error}") from error
+                if len(payload["blocks"]) > policy["max_blocks"]:
+                    raise ValueError(
+                        f"message policy max_blocks cannot hold its required structure ({label}): "
+                        f"{len(payload['blocks'])} > {policy['max_blocks']}"
+                    )
+                environment_texts = [
+                    block["text"]["text"]
+                    for block in payload["blocks"]
+                    if isinstance(block.get("text"), dict)
+                    and block["text"].get("text", "").startswith("Potentially relevant: ")
+                ]
+                if not environment_texts:
+                    raise ValueError(f"message policy leaves no visible environment summary ({label})")
+                environment_text = environment_texts[0]
+                if not all(environment_id in environment_text for environment_id in audience.environment_ids) and not (
+                    " more)" in environment_text or "too many to list)" in environment_text
+                ):
+                    raise ValueError(f"message policy truncates the environment omission text ({label})")
 
 
 def validate_semantics(deployment, config, inventory):
@@ -293,6 +366,8 @@ def validate_semantics(deployment, config, inventory):
         projected_environments, key=lambda item: item["id"]
     ):
         raise ValueError("inventory environment projection differs from deployment.yaml")
+
+    validate_message_policy_capacity(config, inventory)
 
 
 def validate_manifest(root: Path, deployment, manifest):

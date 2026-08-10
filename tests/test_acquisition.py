@@ -95,6 +95,11 @@ class UrlPolicyTests(unittest.TestCase):
         self.assertEqual(target.port, 443)
         self.assertEqual(target.path_with_query, "/feed/?x=1")
 
+    def test_percent_encoded_path_and_query_characters_are_accepted(self):
+        target = validate_feed_url("https://aws.amazon.com/feed/caf%C3%A9?q=a%20b", APPROVED)
+
+        self.assertEqual(target.path_with_query, "/feed/caf%C3%A9?q=a%20b")
+
     def test_rejections(self):
         cases = {
             "http scheme": "http://aws.amazon.com/feed/",
@@ -105,6 +110,10 @@ class UrlPolicyTests(unittest.TestCase):
             "fragment": "https://aws.amazon.com/feed/#x",
             "long path": "https://aws.amazon.com/" + "a" * 600,
             "long query": "https://aws.amazon.com/feed/?" + "a" * 600,
+            "raw link delimiters": "https://aws.amazon.com/feed/> <https://evil.example|Click",
+            "malformed percent escape": "https://aws.amazon.com/feed/%ZZ",
+            "raw non-ASCII path": "https://aws.amazon.com/feed/café",
+            "malformed bracketed host": "https://[aws.amazon.com/feed/",
             "no host": "https:///feed/",
         }
         for label, url in cases.items():
@@ -460,6 +469,24 @@ class NormalizeItemUrlPolicyTests(unittest.TestCase):
         normalized = normalize_item(self.item("https://AWS.amazon.com/x"), "feed-a", OBSERVED, APPROVED)
         assert normalized is not None
         self.assertEqual(normalized.canonical_url, "https://aws.amazon.com/x")
+
+    def test_raw_item_spelling_that_cannot_be_preserved_safely_is_dropped(self):
+        cases = {
+            "whitespace": "https://aws.amazon.com/a b",
+            "control": "https://aws.amazon.com/a\tb",
+            "unencoded Unicode": "https://aws.amazon.com/café",
+            "malformed escape": "https://aws.amazon.com/%ZZ",
+            "malformed host": "https://[aws.amazon.com/x",
+        }
+        for label, url in cases.items():
+            with self.subTest(label=label):
+                self.assertIsNone(normalize_item(self.item(url), "feed-a", OBSERVED, APPROVED))
+
+    def test_default_port_is_accepted_and_removed_from_identity(self):
+        normalized = normalize_item(self.item("https://aws.amazon.com:443/x"), "feed-a", OBSERVED, APPROVED)
+        assert normalized is not None
+        self.assertEqual(normalized.canonical_url, "https://aws.amazon.com/x")
+        self.assertEqual(normalized.provenance[0].item_url, "https://aws.amazon.com:443/x")
 
 
 class CoalescingTests(unittest.TestCase):

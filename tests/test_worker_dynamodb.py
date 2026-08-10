@@ -279,7 +279,7 @@ class EndToEndOrderingTests(WorkerAgainstDynamoDB):
         )
 
         self.sender = FakeSlackSender(SlackResponse(status_code=200, latency_ms=40))
-        second = self.process(now=NOW.replace(minute=45))
+        second = self.process(clock=lambda: NOW.replace(minute=45))
 
         self.assertEqual(second.state, POSTED)
         record = self.record()

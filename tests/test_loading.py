@@ -50,7 +50,7 @@ PROMOTED = datetime(2026, 7, 13, 16, 30, tzinfo=UTC)
 # A promotion must record a time after the pointer it replaces, so later
 # promotions derive their stamps rather than repeating the first.
 LATER = PROMOTED + timedelta(minutes=1)
-APPLICATION_VERSION = "0.1.0-design-fixture"
+APPLICATION_VERSION = "sha256:afb17da26e5a527af74f93cb8305ae77e5368bdfd0a52cf6bee9cccfeb948566"
 
 
 class ReleaseFixture(unittest.TestCase):
