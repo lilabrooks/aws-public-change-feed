@@ -1,0 +1,17 @@
+# Complete, exact Python 3.12 Lambda dependency closure. The package builder
+# installs with --no-deps, so an unpinned transitive release cannot change the
+# deployable bytes while this file stays unchanged.
+attrs==26.1.0
+boto3==1.43.65
+botocore==1.43.67
+jmespath==1.1.0
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+python-dateutil==2.9.0.post0
+PyYAML==6.0.3
+referencing==0.37.0
+rpds-py==2026.6.3
+s3transfer==0.19.2
+six==1.17.0
+typing-extensions==4.16.0
+urllib3==2.7.0

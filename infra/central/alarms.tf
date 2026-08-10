@@ -266,6 +266,78 @@ resource "aws_cloudwatch_metric_alarm" "delivery_unknown" {
   tags                      = local.common_alarm_tags
 }
 
+resource "aws_cloudwatch_metric_alarm" "application_version_mismatch" {
+  alarm_name          = "apcf-${local.deployment_id}-application-version-mismatch"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApplicationVersionMismatch"
+  namespace           = local.metrics_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  alarm_description         = "Queued work requires another application package. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Application package rollout and rollback'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "artifact_unavailable" {
+  alarm_name          = "apcf-${local.deployment_id}-application-artifact-unavailable"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ArtifactUnavailable"
+  namespace           = local.metrics_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  alarm_description         = "Queued evidence references an unavailable application artifact. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Application package rollout and rollback'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "artifact_availability_check_failed" {
+  alarm_name          = "apcf-${local.deployment_id}-application-artifact-check-failed"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ArtifactAvailabilityCheckFailed"
+  namespace           = local.metrics_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  alarm_description         = "The worker could not determine whether a required application artifact is retained. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Application package rollout and rollback'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "worker_fault" {
+  alarm_name          = "apcf-${local.deployment_id}-worker-fault"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "WorkerFault"
+  namespace           = local.metrics_namespace
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 0
+  treat_missing_data  = "notBreaching"
+
+  alarm_description         = "The worker returned a FIFO suffix after an unexpected internal fault. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Outbox or queue backlog'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
 resource "aws_cloudwatch_metric_alarm" "dispatch_unknown_outcome" {
   alarm_name          = "apcf-${local.deployment_id}-dispatch-unknown-outcome"
   comparison_operator = "GreaterThanThreshold"

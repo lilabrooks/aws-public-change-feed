@@ -177,6 +177,18 @@ that record and every unprocessed record in `batchItemFailures`. The event sourc
 mapping enables `ReportBatchItemFailures` so successfully handled records are not
 retried.
 
+For actionable queued work, the queue body's exact request, the SQS message ID,
+and `MessageGroupId` must agree with the durable delivery record. A disagreement
+is returned unprocessed before a sending claim or Slack call. Keeping only the
+candidate ID would discard the fact that proves the record is executing under
+its own destination's FIFO stream.
+
+The canonical deployment uses a 300-second timeout, a zero-second batch window,
+a 30-second before-record safety reserve, a batch size of 10, and a sending lease
+equal to the function timeout. These are one capacity set: changing the timeout
+or batch behavior requires rechecking the lease, reserve, visibility, and
+concurrency together.
+
 The transport's timeout remains a per-operation socket limit. A Lambda hard
 timeout after the sending claim is an ambiguous network outcome; lease expiry and
 reconciliation move it to `delivery_unknown`. Automatic retry remains forbidden.

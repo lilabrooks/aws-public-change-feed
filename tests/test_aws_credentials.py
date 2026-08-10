@@ -22,7 +22,7 @@ import sys
 import unittest
 from contextlib import redirect_stderr
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import boto3
 from moto import mock_aws
@@ -132,7 +132,7 @@ class StoreCoverageTests(unittest.TestCase):
         for store in accepted:
             with self.subTest(store=store):
                 reader = credential_reader_for(store, clients[store](), kind=WEBHOOK)
-                self.assertEqual(reader.store, store)
+                self.assertEqual(cast(Any, reader).store, store)
 
     def test_an_unknown_store_is_refused(self):
         with self.assertRaisesRegex(ValueError, "unsupported secret_store"):

@@ -63,6 +63,64 @@ class TerraformContractTests(unittest.TestCase):
         table = (ROOT / "infra/central/dynamodb.tf").read_text(encoding="utf-8")
         self.assertIn('name = "next_action_at"\n    type = "N"', table)
 
+    def test_fifo_worker_capacity_and_partial_failure_contract_are_wired_together(self):
+        locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        queue_source = (ROOT / "infra/central/sqs.tf").read_text(encoding="utf-8")
+
+        self.assertIn("worker_timeout_seconds", locals_source)
+        self.assertIn(
+            "worker_visibility_seconds          = 6 * local.worker_timeout_seconds + local.worker_batch_window_seconds",
+            locals_source,
+        )
+        self.assertIn("visibility_timeout_seconds  = local.worker_visibility_seconds", queue_source)
+        self.assertIn('function_response_types = ["ReportBatchItemFailures"]', lambda_source)
+        self.assertIn("batch_size                         = local.worker_batch_size", lambda_source)
+        self.assertIn(
+            "maximum_batching_window_in_seconds = local.worker_batch_window_seconds",
+            lambda_source,
+        )
+        self.assertIn("maximum_concurrency = local.rate_control.worker_reserved_concurrency", lambda_source)
+
+    def test_worker_uses_one_content_address_for_s3_version_and_runtime_gate(self):
+        locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        publisher_policy = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+
+        self.assertIn(
+            'var.worker_artifact_sha256 == null ? null : "sha256:${var.worker_artifact_sha256}"', locals_source
+        )
+        self.assertIn("s3_key            = local.worker_artifact_key", lambda_source)
+        self.assertIn("s3_object_version = var.worker_artifact_version_id", lambda_source)
+        self.assertIn("APPLICATION_VERSION", lambda_source)
+        self.assertIn(
+            "(var.worker_artifact_sha256 == null) == (var.worker_artifact_version_id == null)",
+            variables,
+        )
+        artifact_statement = publisher_policy[publisher_policy.index('sid     = "PublishApplicationArtifacts"') :]
+        artifact_statement = artifact_statement[: artifact_statement.index("\n  }")]
+        self.assertIn('actions = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]', artifact_statement)
+        self.assertNotIn("s3:DeleteObject", artifact_statement)
+
+    def test_worker_metric_names_match_the_operator_alarms(self):
+        runtime = (ROOT / "src/aws_public_change_feed/slack_worker_runtime.py").read_text(encoding="utf-8")
+        alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
+        dashboard = (ROOT / "infra/central/dashboard.tf").read_text(encoding="utf-8")
+
+        for metric in (
+            "DeliveryUnknown",
+            "TerminalFailure",
+            "ApplicationVersionMismatch",
+            "ArtifactUnavailable",
+            "ArtifactAvailabilityCheckFailed",
+            "WorkerFault",
+        ):
+            with self.subTest(metric=metric):
+                self.assertIn(f'"{metric}"', runtime)
+                self.assertIn(f'metric_name         = "{metric}"', alarms)
+                self.assertIn(f'"{metric}"', dashboard)
+
 
 if __name__ == "__main__":
     unittest.main()

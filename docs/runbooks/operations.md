@@ -117,6 +117,19 @@ Automatic retry is forbidden because Slack may already contain the message.
 6. Confirm watcher, dispatcher, and worker can still load historical releases referenced by in-flight delivery records.
 7. Record the failed and restored release IDs.
 
+## Application package rollout and rollback
+
+1. Pause candidate creation at its event source. Record the current Lambda package digest and query actionable delivery records for every distinct embedded `application_version`.
+2. Drain work for the current digest within the approved rollout window. Record every version that remains in `pending_queue`, `queued`, `sending`, or `failed_retryable`; leave `delivery_unknown` as evidence.
+3. Run `python3 scripts/build_lambda_package.py --output build/slack-worker.zip`. Keep the reported `sha256:<digest>` with the change record. A second build from the same source and lock should produce the same digest; a different digest is a packaging change and must be reviewed as such.
+4. Publish with `python3 scripts/publish_lambda_artifact.py --bucket <config-bucket> --prefix <top-prefix>/application-artifacts --package build/slack-worker.zip`. Publication uses `If-None-Match: *`; an existing matching digest is adopted, and existing bytes are never replaced.
+5. Apply `infra/central` with both `worker_artifact_sha256=<digest>` and `worker_artifact_version_id=<version-id>` from the publisher. Terraform derives the digest key, deploys that exact S3 version, and injects `APPLICATION_VERSION=sha256:<digest>`.
+6. Before resuming candidate creation, read the Lambda configuration and event-source mapping. Confirm the injected digest, code S3 version, 300-second timeout, reserved concurrency, batch size 10, `ReportBatchItemFailures`, and 1,800-second queue visibility. Run one approved route preflight and confirm its durable outcome and dimensionless worker metrics.
+7. Resume candidate creation only after every producer composition root uses the same digest. Until the producer Lambda exists, do not describe the worker deployment as an end-to-end rollout.
+8. For rollback, pause candidate creation, select the retained digest required by queued work, locate its digest key, exact S3 version, and reviewed deployment input from that rollout, then deploy them together. The credential store and delivery mode are composition inputs and must still agree with the candidate's exact inventory release. Verify the configuration before redriving a small batch.
+9. If a delivery references a package absent from the artifact prefix, leave its record unchanged and record the bounded reason `artifact_unavailable`. Restore the approved package or make a documented manual closure; current code cannot reinterpret the candidate under another digest.
+10. Do not retire packages yet. The repository has no mechanism that proves both the 400-day age floor and the newest-10 floor, so the safe current behavior is accumulation.
+
 ## Manual source replay
 
 1. Name the retained raw snapshot or bounded time range, target release, purpose, operator, and expected route scope.
