@@ -167,6 +167,20 @@ starts from a fresh time read immediately before its conditional claim. Retry
 schedules, destination pacing, and terminal TTLs start from a fresh time after
 the Slack call returns or raises.
 
+## FIFO worker runtime
+
+The Lambda function timeout is the hard invocation bound used for queue capacity.
+Queue visibility is at least six times that timeout, plus any batch window. The
+handler reads its remaining invocation time before each record. If its safety
+reserve is unavailable, or after the first record failure, it stops and returns
+that record and every unprocessed record in `batchItemFailures`. The event source
+mapping enables `ReportBatchItemFailures` so successfully handled records are not
+retried.
+
+The transport's timeout remains a per-operation socket limit. A Lambda hard
+timeout after the sending claim is an ambiguous network outcome; lease expiry and
+reconciliation move it to `delivery_unknown`. Automatic retry remains forbidden.
+
 ## Worker-to-transport handoff
 
 The worker derives a typed destination from the exact inventory release and

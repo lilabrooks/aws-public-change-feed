@@ -398,8 +398,8 @@
               <li>Corpus coverage of end-of-support announcements from real feeds</li>
               <li>DynamoDB source-state operations and S3 snapshot storage behind the remaining ports</li>
               <li>Lambda packaging, schedules, and event source mappings for the four functions</li>
-              <li>Content-addressed application artifact injection, retention, and pause-and-drain rollout</li>
-              <li>An end-to-end request deadline, including bounded DNS, before timeout-derived worker capacity is called complete</li>
+              <li>Content-addressed application artifact injection with the accepted 400-day and 10-version retention floor</li>
+              <li>A FIFO worker using the accepted 300-second Lambda bound, 1,800-second queue visibility minimum, and partial batch responses</li>
               <li>Publisher-side retirement of superseded releases, which S3 lifecycle cannot express safely</li>
               <li>Deployed dispatcher and worker Lambda handling, FIFO batch responses, bounded metrics, and reconciliation</li>
               <li>Feed, delivery, recovery, load, and security tests</li>
