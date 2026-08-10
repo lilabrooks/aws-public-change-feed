@@ -2,13 +2,9 @@
 
 import argparse
 import hashlib
-import ipaddress
 import json
-import re
 import sys
-from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import yaml
 from jsonschema import Draft202012Validator, FormatChecker
@@ -19,19 +15,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 # Chapter 04 requires one framing helper for runtime and test vectors, so the
 # validator shares the runtime implementation rather than copying it.
 from aws_public_change_feed.identity import (  # noqa: E402
-    announcement_id,
-    audience_fingerprint,
-    candidate_id,
     canonical_public_url,
-    content_fingerprint,
     delivery_request_id,
-    evidence_order,
     identity_text,
     release_id,
-    revision_id,
 )
 from aws_public_change_feed.parsing import load_unique_json, load_unique_yaml  # noqa: E402
-from aws_public_change_feed.profiles import route_audiences  # noqa: E402
+from aws_public_change_feed.semantics import (  # noqa: E402
+    configured_feed_hosts,
+    parsed_timestamp,
+    serialized_size,
+    validate_candidate_against_release,
+    validate_host,
+    validate_public_url,
+)
 
 MINIMUM_PYTHON = (3, 12)
 GENERIC_ALIASES = {"cluster", "engine version", "runtime", "version"}
@@ -92,15 +89,6 @@ def validate_schema(schema_path: Path, document_path: Path, document):
         raise ValueError("\n".join(details))
 
 
-def serialized_size(value) -> int:
-    return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
-
-
-def parsed_timestamp(value: str) -> datetime:
-    normalized = f"{value[:-1]}+00:00" if value.endswith(("Z", "z")) else value
-    return datetime.fromisoformat(normalized)
-
-
 def walk_keys(value):
     if isinstance(value, dict):
         for key, child in value.items():
@@ -111,62 +99,8 @@ def walk_keys(value):
             yield from walk_keys(child)
 
 
-def validate_host(host: str, label: str):
-    try:
-        ipaddress.ip_address(host)
-    except ValueError:
-        pass
-    else:
-        raise ValueError(f"{label} cannot use an IP literal: {host}")
-    labels = host.split(".")
-    if not labels or any(
-        not value
-        or len(value) > 63
-        or not value[0].isalnum()
-        or not value[-1].isalnum()
-        or any(not character.isalnum() and character != "-" for character in value)
-        for value in labels
-    ):
-        raise ValueError(f"{label} is not a valid DNS hostname: {host}")
-
-
-def validate_public_url(raw_url: str, allowed_hosts: set[str], label: str, *, allow_fragment: bool = False):
-    """Apply the public URL policy to a configured or recorded link.
-
-    `allow_fragment` exists for one caller. Every other URL checked here is a
-    link the service publishes or fetches, and those carry no fragment. A
-    provenance `source_item_url` is different in kind: it records what a feed
-    said, and `validate_candidate_semantics` already requires only that the
-    sighting canonicalize to the announcement URL. Since fragment removal is
-    part of canonicalization, rejecting a fragment here contradicted that rule
-    and put an ordinary feed link outside the contract.
-    """
-
-    parsed = urlsplit(raw_url)
-    # `parsed.username` is falsy for an empty user-info component, so the
-    # netloc is checked directly; `https://@host/path` is not unauthenticated
-    # HTTPS just because the credentials it carries are blank.
-    if parsed.scheme != "https" or "@" in parsed.netloc:
-        raise ValueError(f"{label} must use unauthenticated HTTPS: {raw_url}")
-    if parsed.port not in (None, 443):
-        raise ValueError(f"{label} must use port 443: {raw_url}")
-    if parsed.fragment and not allow_fragment:
-        raise ValueError(f"{label} cannot contain a fragment: {raw_url}")
-    host = (parsed.hostname or "").casefold()
-    if host not in allowed_hosts:
-        raise ValueError(f"{label} host is not allowed: {host}")
-    validate_host(host, label)
-
-
 def validate_feed_url(raw_url: str, allowed_hosts: set[str]):
     validate_public_url(raw_url, allowed_hosts, "feed URL")
-
-
-def phrase_spans(text: str, phrase: str) -> list[tuple[int, int]]:
-    normalized_content = identity_text(text)
-    normalized_phrase = identity_text(phrase)
-    pattern = re.compile(rf"(?<!\w){re.escape(normalized_phrase)}(?!\w)")
-    return [(match.start(), match.end()) for match in pattern.finditer(normalized_content)]
 
 
 def validate_slack(deployment):
@@ -268,8 +202,12 @@ def validate_semantics(deployment, config, inventory):
         raise ValueError("feed URLs must be unique after normalization")
     for feed in config["feeds"]:
         validate_feed_url(feed["url"], allowed_hosts)
-    configured_feed_hosts = {(urlsplit(feed["url"]).hostname or "").casefold() for feed in config["feeds"]}
-    unused_allowed_hosts = sorted(allowed_hosts - configured_feed_hosts)
+    # These two rules together prove `allowed_feed_hosts` equal to the set
+    # `configured_feed_hosts` derives: the loop above requires every feed host
+    # to be allowed, and this requires every allowed host to be used. The
+    # delivery worker relies on that equality, since it reads the release but
+    # never the deployment document.
+    unused_allowed_hosts = sorted(allowed_hosts - configured_feed_hosts(config))
     if unused_allowed_hosts:
         raise ValueError(f"allowed feed hosts are unused: {unused_allowed_hosts}")
 
@@ -398,143 +336,27 @@ def expected_release(manifest, application_version: str):
 
 
 def validate_candidate_semantics(config, inventory, manifest, candidate):
-    announcement = candidate["announcement"]
-    feed_hosts = {(urlsplit(feed["url"]).hostname or "").casefold() for feed in config["feeds"]}
-    validate_public_url(announcement["url"], feed_hosts, "announcement URL")
-    expected_announcement_id = announcement_id(canonical_public_url(announcement["url"]))
-    if announcement["announcement_id"] != expected_announcement_id:
-        raise ValueError("announcement_id differs from the canonical announcement URL")
-    expected_fingerprint = content_fingerprint(announcement["title"], announcement["summary"])
-    if announcement["content_fingerprint"] != expected_fingerprint:
-        raise ValueError("content_fingerprint differs from normalized announcement content")
-    expected_revision_id = revision_id(announcement["announcement_id"], announcement["content_fingerprint"])
-    if announcement["revision_id"] != expected_revision_id:
-        raise ValueError("revision_id differs from announcement identity and content")
-    expected_audience_fingerprint = audience_fingerprint(candidate["environment_ids"])
-    if candidate["audience_fingerprint"] != expected_audience_fingerprint:
-        raise ValueError("audience_fingerprint differs from sorted candidate environment IDs")
-    expected_candidate_id = candidate_id(
-        announcement["revision_id"],
-        candidate["service"]["id"],
-        candidate["risk"]["risk_type"],
-        candidate["route_id"],
-        candidate["audience_fingerprint"],
-    )
-    if candidate["candidate_id"] != expected_candidate_id:
-        raise ValueError("candidate_id differs from its canonical identity fields")
-    if parsed_timestamp(candidate["created_at"]) < parsed_timestamp(announcement["observed_at"]):
-        raise ValueError("candidate creation predates announcement observation")
+    """Chapter 04's candidate rules, release-relative ones plus manifest ones.
+
+    The release-relative checks live in `aws_public_change_feed.semantics` so
+    the delivery worker applies exactly the same rules to a stored candidate
+    before rendering it. They ran only here for a while, which meant a request
+    edited in place after emission — identities and release hashes intact,
+    because none of them cover a display name, a priority, or a recommended
+    action — was rendered and posted as written.
+
+    The two checks that stay here are the two that need a manifest, which is a
+    thing the worker does not have. It gets the equivalent guarantee by
+    loading and hash-verifying the exact release the candidate names.
+    """
+
+    validate_candidate_against_release(config, inventory, candidate)
+
     if parsed_timestamp(candidate["created_at"]) < parsed_timestamp(manifest["promoted_at"]):
         raise ValueError("candidate creation predates its release promotion")
-
     application_version = candidate["release"]["application_version"]
     if candidate["release"] != expected_release(manifest, application_version):
         raise ValueError("candidate release differs from active manifest")
-
-    service_id = candidate["service"]["id"]
-    service = config["services"].get(service_id)
-    if not service:
-        raise ValueError(f"candidate references unknown service: {service_id}")
-    if candidate["service"]["display_name"] != service["display_name"]:
-        raise ValueError("candidate service display name differs from config")
-    if candidate["recommended_action"] != service["recommended_action"]:
-        raise ValueError("candidate recommended action differs from config")
-
-    rules = {rule["id"]: rule for rule in config["risk_rules"]}
-    rule = rules.get(candidate["risk"]["rule_id"])
-    if not rule:
-        raise ValueError("candidate references unknown risk rule")
-    for field in ("risk_type", "priority"):
-        if candidate["risk"][field] != rule[field]:
-            raise ValueError(f"candidate risk {field} differs from config")
-
-    fields = {field: announcement[field] for field in rule["fields"]}
-    matched_alias_values = sorted(
-        (alias for alias in service["aliases"] if any(phrase_spans(text, alias) for text in fields.values())),
-        key=evidence_order,
-    )
-    if candidate["explainability"]["matched_aliases"] != matched_alias_values:
-        raise ValueError("candidate matched aliases differ from announcement service evidence")
-
-    term_matches = {
-        group: {
-            term: {field: phrase_spans(text, term) for field, text in fields.items()} for term in rule["match"][group]
-        }
-        for group in ("any", "all", "none")
-    }
-    present_any = [term for term, locations in term_matches["any"].items() if any(locations.values())]
-    present_all = [term for term, locations in term_matches["all"].items() if any(locations.values())]
-    present_none = [term for term, locations in term_matches["none"].items() if any(locations.values())]
-    if (rule["match"]["any"] and not present_any) or len(present_all) != len(rule["match"]["all"]) or present_none:
-        raise ValueError("candidate announcement does not satisfy its risk rule")
-    matched_term_values = sorted(present_any + present_all, key=evidence_order)
-    if candidate["explainability"]["matched_terms"] != matched_term_values:
-        raise ValueError("candidate matched terms differ from announcement risk evidence")
-
-    evidence_fields = []
-    distinct_evidence = False
-    for field in rule["fields"]:
-        alias_spans = [span for alias in matched_alias_values for span in phrase_spans(fields[field], alias)]
-        risk_spans = [span for term in matched_term_values for span in phrase_spans(fields[field], term)]
-        if alias_spans or risk_spans:
-            evidence_fields.append(field)
-        if any(
-            alias_end <= risk_start or risk_end <= alias_start
-            for alias_start, alias_end in alias_spans
-            for risk_start, risk_end in risk_spans
-        ):
-            distinct_evidence = True
-    if not distinct_evidence:
-        alias_fields = {
-            field
-            for field in rule["fields"]
-            if any(phrase_spans(fields[field], value) for value in matched_alias_values)
-        }
-        risk_fields = {
-            field
-            for field in rule["fields"]
-            if any(phrase_spans(fields[field], value) for value in matched_term_values)
-        }
-        distinct_evidence = bool(alias_fields and risk_fields and alias_fields != risk_fields)
-    if not distinct_evidence:
-        raise ValueError("candidate service and risk evidence must be distinct")
-    if candidate["explainability"]["matched_fields"] != evidence_fields:
-        raise ValueError("candidate matched fields differ from announcement evidence")
-
-    if candidate["route_id"] not in inventory["slack"]["routes"]:
-        raise ValueError("candidate references unknown route")
-    # The mapping rule lives in the runtime, for the reason identity.py gives:
-    # a validator with its own copy can agree with the fixture while disagreeing
-    # with the code that builds candidates, and the fixture still passes.
-    audience = next(
-        (entry for entry in route_audiences(config, inventory, service_id) if entry.route_id == candidate["route_id"]),
-        None,
-    )
-    expected_environment_ids = list(audience.environment_ids) if audience else []
-    expected_profile_ids = list(audience.profile_ids) if audience else []
-    if candidate["environment_ids"] != expected_environment_ids:
-        raise ValueError("candidate environment IDs differ from the complete route and profile mapping")
-    if candidate["explainability"]["matched_profile_ids"] != expected_profile_ids:
-        raise ValueError("candidate matched profile IDs differ from the complete environment mapping")
-
-    feed_urls = {feed["name"]: canonical_public_url(feed["url"]) for feed in config["feeds"]}
-    provenance_order = [(item["feed_name"], item["source_item_id"]) for item in announcement["provenance"]]
-    if provenance_order != sorted(provenance_order):
-        raise ValueError("announcement provenance must use stable lexical order")
-    for item in announcement["provenance"]:
-        expected_url = feed_urls.get(item["feed_name"])
-        if expected_url is None:
-            raise ValueError(f"announcement provenance names an unknown feed: {item['feed_name']}")
-        if canonical_public_url(item["feed_url"]) != expected_url:
-            raise ValueError(f"announcement provenance URL differs from config: {item['feed_name']}")
-        if item.get("source_item_url"):
-            validate_public_url(item["source_item_url"], feed_hosts, "source item URL", allow_fragment=True)
-            if canonical_public_url(item["source_item_url"]) != canonical_public_url(announcement["url"]):
-                raise ValueError("announcement provenance item URL differs from the canonical announcement URL")
-
-    policy = config["message_policy"]
-    if serialized_size(candidate) > policy["max_candidate_bytes"]:
-        raise ValueError(f"alert candidate exceeds {policy['max_candidate_bytes']} UTF-8 JSON bytes")
 
 
 def validate_event_contract_semantics(config, inventory, manifest, candidate, delivery_request):

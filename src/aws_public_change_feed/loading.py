@@ -60,6 +60,7 @@ __all__ = [
     "LoadedRelease",
     "ReleaseIntegrityError",
     "load_active_release",
+    "load_release_reference",
     "load_release_version",
     "probe_release",
 ]
@@ -383,3 +384,61 @@ def probe_release(
             f"probe expected the pointer to name {expected_release_id}, found {loaded.release_id}"
         )
     return loaded
+
+
+def load_release_reference(
+    store: ObjectStore,
+    reference: Mapping[str, Any],
+    *,
+    application_version: str,
+) -> LoadedRelease:
+    """Load and verify the exact release a candidate embeds.
+
+    ADR-014: the worker "loads those exact object versions and verifies hashes
+    before rendering". A candidate carries the full release reference, so unlike
+    `load_active_release` and `load_release_version` there is no pointer to read:
+    this loads the config and inventory at the pinned versions, verifies each
+    hash, derives the release ID from those hashes and refuses a reference whose
+    ID contradicts its own objects, binds schema versions, and validates the
+    fetched bodies against their owned schemas. The refusals are the same typed
+    ones the pointer path raises, so an operator sees the same causes for the
+    same bytes whether the block came from the active pointer or a candidate.
+    """
+
+    config_ref = reference["config"]
+    inventory_ref = reference["inventory"]
+    supported = {
+        "config": SUPPORTED_CONFIG_SCHEMA_VERSIONS,
+        "inventory": SUPPORTED_INVENTORY_SCHEMA_VERSIONS,
+    }
+    for name, allowed in supported.items():
+        version = reference[name]["schema_version"]
+        if version not in allowed:
+            raise IncompatibleRelease(
+                f"{name} schema_version {version!r} is outside the supported set {sorted(allowed)}"
+            )
+
+    derived = release_id(config_ref["sha256"], inventory_ref["sha256"])
+    if reference["release_id"] != derived:
+        raise ReleaseIntegrityError(
+            f"candidate release names {reference['release_id']}, but its objects derive {derived}"
+        )
+
+    config_body = _load_pinned(store, config_ref, "config")
+    inventory_body = _load_pinned(store, inventory_ref, "inventory")
+    config = _parse(load_unique_yaml, config_body, "config")
+    inventory = _parse(load_unique_json, inventory_body, "inventory")
+    _require_document_version("config", config, config_ref)
+    _require_document_version("inventory", inventory, inventory_ref)
+
+    return LoadedRelease(
+        release_id=reference["release_id"],
+        config=config,
+        inventory=inventory,
+        reference={
+            "release_id": reference["release_id"],
+            "config": dict(config_ref),
+            "inventory": dict(inventory_ref),
+            "application_version": application_version,
+        },
+    )

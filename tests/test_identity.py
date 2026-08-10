@@ -174,12 +174,30 @@ class SingleImplementationTests(unittest.TestCase):
         "revision_id",
     )
 
-    def test_validator_uses_the_runtime_helpers(self):
-        import validate_config
+    # Where the candidate rules live. `validate_config` delegates the
+    # release-relative checks to `semantics`, which the delivery worker also
+    # calls, so both modules are inspected rather than only the validator: the
+    # invariant is that no module rebinds one of these names to its own
+    # implementation, and naming a single module would let a copy appear in
+    # whichever one the test does not look at.
+    CONSUMERS = ("validate_config", "aws_public_change_feed.semantics")
 
-        for name in self.SHARED:
-            with self.subTest(helper=name):
-                self.assertIs(getattr(validate_config, name), getattr(identity, name))
+    def test_every_consumer_uses_the_runtime_helpers(self):
+        import importlib
+
+        seen: set[str] = set()
+        for module_name in self.CONSUMERS:
+            module = importlib.import_module(module_name)
+            for name in self.SHARED:
+                if not hasattr(module, name):
+                    continue
+                seen.add(name)
+                with self.subTest(module=module_name, helper=name):
+                    self.assertIs(getattr(module, name), getattr(identity, name))
+
+        # Every shared helper must be accounted for somewhere, or a rename
+        # could quietly drop one out of both modules and still pass.
+        self.assertEqual(seen, set(self.SHARED))
 
     # The null-framed domain prefixes. Each must exist in exactly one place;
     # a second copy is how the runtime and the fixtures drift apart.
@@ -193,19 +211,30 @@ class SingleImplementationTests(unittest.TestCase):
         "release:v1",
     )
 
+    # Both files that recompute candidate identities. The candidate rules
+    # moved from the validator into `semantics`, and a source-scanning guard
+    # that still named only the validator would have stopped covering the code
+    # it was written to protect at the moment that code moved.
+    CONSUMER_SOURCES = (
+        "scripts/validate_config.py",
+        "src/aws_public_change_feed/semantics.py",
+    )
+
     def test_framing_prefixes_live_only_in_the_identity_module(self):
         identity_source = (ROOT / "src/aws_public_change_feed/identity.py").read_text(encoding="utf-8")
-        validator_source = (ROOT / "scripts/validate_config.py").read_text(encoding="utf-8")
         for prefix in self.FRAMING_PREFIXES:
             with self.subTest(prefix=prefix):
                 self.assertIn(prefix, identity_source)
-                self.assertNotIn(prefix, validator_source)
+                for relative in self.CONSUMER_SOURCES:
+                    with self.subTest(source=relative):
+                        self.assertNotIn(prefix, (ROOT / relative).read_text(encoding="utf-8"))
 
-    def test_the_validator_frames_no_digest_of_its_own(self):
+    def test_no_consumer_frames_a_digest_of_its_own(self):
         # Hashing release artifact bytes stays: that verifies a file against
         # its manifest entry and is not identity framing.
-        source = (ROOT / "scripts/validate_config.py").read_text(encoding="utf-8")
-        self.assertNotIn("digest_parts(", source)
+        for relative in self.CONSUMER_SOURCES:
+            with self.subTest(source=relative):
+                self.assertNotIn("digest_parts(", (ROOT / relative).read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

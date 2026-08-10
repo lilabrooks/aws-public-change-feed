@@ -368,6 +368,8 @@ class StoreTests(OutboxTestCase):
                     request=self.request,
                     status=status,
                     next_action_at=0 if status in ("pending_queue", "failed_retryable") else None,
+                    attempt_id="a1" if status == "sending" else None,
+                    lease_expires_at=999 if status == "sending" else None,
                 )
                 self.assertEqual(record.status, status)
 
