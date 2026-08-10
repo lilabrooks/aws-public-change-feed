@@ -54,12 +54,43 @@ policy the transport never sees.
 
 Both accepted `secret_store` values get an adapter. Which one a deployment uses
 is a composition-root choice, so neither the credential port nor the worker names
-a store, and the stored content is the whole credential with its kind supplied by
-configuration.
+a store, and the stored content is the whole credential.
+
+A credential read resolves to a delivery state by whether another identical read
+could succeed. Permanent conditions — absent, denied, missing, empty, binary, an
+SSM parameter that is not a `SecureString`, or a successful response whose shape
+is unusable — are configuration corrections and resolve terminally. Transient
+conditions — throttling, an outage, an internal provider failure, a connection
+failure, a read timeout — reschedule the record with a bounded delay, make no
+Slack call, leave the network-attempt budget unchanged, and do not advance
+destination pacing, because that destination was never called. The permanent set
+is an explicit allowlist and everything else is transient: a bounded retry is
+recoverable, and a terminally discarded alert is not.
+
+The configured kind and the stored content are two different checks. The kind
+records the mode the reader was built for and so detects a release-versus-wiring
+mismatch; it cannot establish what an operator actually stored. One shared content
+validator does that for bot tokens, called before the network-attempt counter
+moves and again at the network boundary.
+
+A received Slack status decides the outcome, and a body is read only where the
+status does not decide by itself. Reading first let a slow or oversized body
+replace a definite answer with a transport ambiguity, which turned an accepted
+webhook post into work an operator had to reconcile by hand.
 
 Address validation and the pinned TLS connection are shared with feed
 acquisition rather than reimplemented, so chapter 04's "the same anti-rebinding
 controls" is a property of one implementation instead of a claim about two.
+
+One capacity question is deliberately left open. `slack_request_timeout_seconds`
+currently reaches blocking socket operations separately and does not prove a
+complete wall-clock request deadline, because DNS resolution and several blocking
+phases each carry their own bound. Before the FIFO Lambda handler, its event
+source mapping, and the timeout-derived visibility and capacity figures are called
+complete, this repository must either enforce an end-to-end monotonic deadline
+including bounded DNS, or replace the capacity calculation with a provable upper
+bound. Until then no text here claims the adapter bounds a request's total
+duration.
 
 ## Consequences
 

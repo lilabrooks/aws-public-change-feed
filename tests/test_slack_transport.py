@@ -526,40 +526,68 @@ class WebhookRequestTests(unittest.TestCase):
 
         self.assertEqual(calls, [("hooks.slack.com", 443)])
 
-    def test_an_oversized_response_is_refused_as_unknown(self):
-        """A status arrived, so bytes went; the answer is unusable either way."""
+    def test_a_webhook_body_is_never_read(self):
+        """A webhook answers plain text, so the status is the whole outcome.
 
-        recorder = Recorder(response=FakeResponse(200, b"a" * (MAX_SLACK_RESPONSE_BYTES + 1)))
-        response, _ = post(recorder)
+        Not reading it is what makes the next test possible: a body that cannot
+        be read cannot discard a status that already decided the delivery.
+        """
 
-        self.assertIs(response.error_class, TransportError.READ_FAILED)
-        self.assertIs(response.bytes_sent, True)
-        self.assertEqual(_classify(response, max_retry_after_seconds=900)[0], DELIVERY_UNKNOWN)
-
-    def test_a_response_that_exactly_fills_the_limit_is_accepted(self):
-        recorder = Recorder(response=FakeResponse(200, b"a" * MAX_SLACK_RESPONSE_BYTES))
-        response, _ = post(recorder)
-
-        self.assertEqual(response.status_code, 200)
-
-    def test_the_body_read_is_bounded_by_one_byte_past_the_limit(self):
         recorder = Recorder(response=FakeResponse(200, b"ok"))
         post(recorder)
 
-        self.assertEqual(recorder.only.response.read_calls, [MAX_SLACK_RESPONSE_BYTES + 1])
+        self.assertEqual(recorder.only.response.read_calls, [])
 
-    def test_a_read_failure_after_the_status_reports_bytes_sent(self):
-        for error, expected in (
-            (TimeoutError("read timed out"), TransportError.TIMEOUT),
-            (ConnectionResetError("reset"), TransportError.CONNECTION_LOST),
-            (OSError("boom"), TransportError.READ_FAILED),
-        ):
-            with self.subTest(error=type(error).__name__):
-                recorder = Recorder(response=FakeResponse(200, read_error=error))
+    def test_a_definite_status_survives_an_unreadable_body(self):
+        """The repaired defect: a slow body used to erase a received status.
+
+        Every row here is a status Slack actually returned. Reading a body first
+        turned a webhook 200 into `delivery_unknown` — sending an operator to
+        inspect a message Slack had accepted — and stripped a 429 of its
+        `Retry-After` and its retryable classification.
+        """
+
+        failures = {
+            "timeout": TimeoutError("read timed out"),
+            "connection reset": ConnectionResetError("reset"),
+            "socket error": OSError("boom"),
+        }
+        statuses = {
+            200: POSTED,
+            429: FAILED_RETRYABLE,
+            500: FAILED_RETRYABLE,
+            503: FAILED_RETRYABLE,
+            403: FAILED_TERMINAL,
+        }
+        for status, expected_state in statuses.items():
+            for label, error in failures.items():
+                with self.subTest(status=status, failure=label):
+                    recorder = Recorder(response=FakeResponse(status, read_error=error))
+                    response, _ = post(recorder)
+
+                    self.assertEqual(response.status_code, status)
+                    self.assertIsNone(response.error_class)
+                    self.assertIs(response.bytes_sent, True)
+                    self.assertEqual(_classify(response, max_retry_after_seconds=900)[0], expected_state)
+
+    def test_a_definite_status_survives_an_oversized_body(self):
+        for status in (200, 429, 500, 403):
+            with self.subTest(status=status):
+                recorder = Recorder(response=FakeResponse(status, b"a" * (MAX_SLACK_RESPONSE_BYTES * 4)))
                 response, _ = post(recorder)
 
-                self.assertIs(response.error_class, expected)
-                self.assertIs(response.bytes_sent, True)
+                self.assertEqual(response.status_code, status)
+                self.assertIsNone(response.error_class)
+
+    def test_a_rate_limit_keeps_its_retry_after_despite_an_unreadable_body(self):
+        recorder = Recorder(
+            response=FakeResponse(429, b"", {"Retry-After": "45"}, read_error=TimeoutError("slow")),
+        )
+        response, _ = post(recorder)
+
+        self.assertEqual(response.status_code, 429)
+        self.assertEqual(response.retry_after_seconds, 45)
+        self.assertEqual(_classify(response, max_retry_after_seconds=900), (FAILED_RETRYABLE, "http_429", 45))
 
     def test_retry_after_is_reported_as_an_integer_fact(self):
         recorder = Recorder(response=FakeResponse(429, b"", {"Retry-After": "42"}))
@@ -593,15 +621,14 @@ class WebhookRequestTests(unittest.TestCase):
         self.assertEqual(response.retry_after_seconds, 0)
         self.assertIsNone(_classify(response, max_retry_after_seconds=900)[2])
 
-    def test_a_webhook_body_is_never_parsed_as_json(self):
-        """A webhook answers plain text, so the status is the whole outcome."""
-
-        recorder = Recorder(response=FakeResponse(200, b"ok"))
+    def test_a_webhook_outcome_carries_no_body_derived_fields(self):
+        recorder = Recorder(response=FakeResponse(200, b'{"ok":false,"error":"channel_not_found"}'))
         response, _ = post(recorder)
 
         self.assertEqual(response.status_code, 200)
         self.assertIsNone(response.slack_error)
         self.assertIsNone(response.message_ts)
+        self.assertEqual(_classify(response, max_retry_after_seconds=900)[0], POSTED)
 
 
 class BotRequestTests(unittest.TestCase):
@@ -663,9 +690,19 @@ class BotRequestTests(unittest.TestCase):
         other_headers = {name: value for name, value in request["headers"].items() if name != "Authorization"}
         self.assertNotIn(BOT_TOKEN_VALUE, json.dumps(other_headers))
 
-    def test_a_token_that_cannot_be_a_header_value_never_reaches_a_socket(self):
-        for token in ("has space\ttab\x00null", "line\rbreak", "curly’quote"):
-            with self.subTest(token="unsafe"):
+    def test_a_value_that_is_not_a_bot_token_never_reaches_a_socket(self):
+        """Defence at the boundary; `process_delivery` already refused it once."""
+
+        for token in (
+            "has space\ttab\x00null",
+            "line\rbreak",
+            "curly’quote",
+            WEBHOOK_URL,
+            "xoxp-123456789012-abcdef",
+            "xoxb-short",
+            "",
+        ):
+            with self.subTest(token=token[:16]):
                 recorder = Recorder()
                 client = sender(recorder)
                 response = client.post(
@@ -766,6 +803,43 @@ class BotRequestTests(unittest.TestCase):
                 self.assertIs(response.bytes_sent, True)
                 self.assertEqual(_classify(response, max_retry_after_seconds=900)[0], DELIVERY_UNKNOWN)
 
+    def test_the_body_read_is_bounded_by_one_byte_past_the_limit(self):
+        recorder = Recorder(response=FakeResponse(200, b'{"ok":true,"ts":"1.2"}'))
+        self.bot_post(recorder)
+
+        self.assertEqual(recorder.only.response.read_calls, [MAX_SLACK_RESPONSE_BYTES + 1])
+
+    def test_a_body_that_exactly_fills_the_limit_is_parsed(self):
+        padding = b"a" * (MAX_SLACK_RESPONSE_BYTES - len(b'{"ok":true,"ts":"1.2","pad":""}'))
+        body = b'{"ok":true,"ts":"1.2","pad":"' + padding + b'"}'
+        self.assertEqual(len(body), MAX_SLACK_RESPONSE_BYTES)
+
+        response, _ = self.bot_post(Recorder(response=FakeResponse(200, body)))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.message_ts, "1.2")
+
+    def test_a_read_failure_under_200_is_unknown_rather_than_posted(self):
+        """The one status whose body decides, so an unread body is ambiguous."""
+
+        for error in (TimeoutError("slow"), ConnectionResetError("reset"), OSError("boom")):
+            with self.subTest(error=type(error).__name__):
+                response, _ = self.bot_post(Recorder(response=FakeResponse(200, read_error=error)))
+
+                self.assertIsNotNone(response.error_class)
+                self.assertIs(response.bytes_sent, True)
+                self.assertEqual(_classify(response, max_retry_after_seconds=900)[0], DELIVERY_UNKNOWN)
+
+    def test_a_non_200_status_is_decided_without_reading_the_body(self):
+        for status in (429, 500, 403, 302):
+            with self.subTest(status=status):
+                recorder = Recorder(response=FakeResponse(status, read_error=TimeoutError("slow")))
+                response, _ = self.bot_post(recorder)
+
+                self.assertEqual(response.status_code, status)
+                self.assertIsNone(response.error_class)
+                self.assertEqual(recorder.only.response.read_calls, [])
+
     def test_an_oversized_body_under_200_is_unknown(self):
         body = b'{"ok":true,"ts":"1.2","pad":"' + b"a" * MAX_SLACK_RESPONSE_BYTES + b'"}'
         response, _ = self.bot_post(Recorder(response=FakeResponse(200, body)))
@@ -788,6 +862,136 @@ class BotRequestTests(unittest.TestCase):
 
         self.assertIs(response.error_class, TransportError.MALFORMED_URL)
         self.assertEqual(recorder.connections, [])
+
+
+class TransportSetupFailureTests(unittest.TestCase):
+    """Failures before a socket exists are reported, never raised.
+
+    Left uncaught these escaped `post`, and `process_delivery`'s blanket handler
+    recorded `sender_raised` and `delivery_unknown` — the state that tells an
+    operator to go and check Slack by hand for a request that never reached a
+    socket. Every row below must be a reported fact with `bytes_sent=False`.
+    """
+
+    def test_a_tls_context_failure_is_reported_as_tls_failed(self):
+        def broken_context():
+            raise ssl.SSLError("cannot load the trust store")
+
+        recorder = Recorder()
+        client = SlackHttpSender(
+            resolver=fixed_resolver(PUBLIC_ADDRESS),
+            connection_factory=recorder,
+            ssl_context_factory=broken_context,
+        )
+
+        response = client.post(
+            PAYLOAD, credential=WEBHOOK_CREDENTIAL, destination=WEBHOOK_DESTINATION, timeout_seconds=10.0
+        )
+
+        self.assertIs(response.error_class, TransportError.TLS_FAILED)
+        self.assertIs(response.bytes_sent, False)
+        self.assertIsNone(response.status_code)
+        self.assertEqual(recorder.connections, [], "no connection may be constructed without a context")
+
+    def test_a_certificate_store_failure_is_reported_as_tls_failed(self):
+        for error in (FileNotFoundError("no ca bundle"), OSError("permission denied"), ValueError("bad option")):
+            with self.subTest(error=type(error).__name__):
+
+                def broken_context(error=error):
+                    raise error
+
+                client = SlackHttpSender(
+                    resolver=fixed_resolver(PUBLIC_ADDRESS),
+                    connection_factory=Recorder(),
+                    ssl_context_factory=broken_context,
+                )
+
+                response = client.post(
+                    PAYLOAD, credential=WEBHOOK_CREDENTIAL, destination=WEBHOOK_DESTINATION, timeout_seconds=10.0
+                )
+
+                self.assertIs(response.error_class, TransportError.TLS_FAILED)
+                self.assertIs(response.bytes_sent, False)
+
+    def test_a_connection_construction_failure_is_reported_as_connect_failed(self):
+        def broken_factory(hostname, address, port, timeout, context):
+            raise OSError("cannot allocate a connection")
+
+        client = SlackHttpSender(
+            resolver=fixed_resolver(PUBLIC_ADDRESS),
+            connection_factory=broken_factory,
+            ssl_context_factory=ssl.create_default_context,
+        )
+
+        response = client.post(
+            PAYLOAD, credential=WEBHOOK_CREDENTIAL, destination=WEBHOOK_DESTINATION, timeout_seconds=10.0
+        )
+
+        self.assertIs(response.error_class, TransportError.CONNECT_FAILED)
+        self.assertIs(response.bytes_sent, False)
+        self.assertIsNone(response.status_code)
+
+    def test_setup_failures_carry_no_exception_detail(self):
+        marker = "TRUST-STORE-PATH-THAT-MUST-NOT-LEAK"
+
+        def broken_context():
+            raise ssl.SSLError(marker)
+
+        client = SlackHttpSender(
+            resolver=fixed_resolver(PUBLIC_ADDRESS),
+            connection_factory=Recorder(),
+            ssl_context_factory=broken_context,
+        )
+
+        response = client.post(
+            PAYLOAD, credential=WEBHOOK_CREDENTIAL, destination=WEBHOOK_DESTINATION, timeout_seconds=10.0
+        )
+
+        self.assertNotIn(marker, repr(response))
+
+    def test_setup_failures_never_raise(self):
+        for label, factory, context in (
+            ("tls", Recorder(), lambda: (_ for _ in ()).throw(ssl.SSLError("x"))),
+            ("connection", lambda *a: (_ for _ in ()).throw(OSError("x")), ssl.create_default_context),
+        ):
+            with self.subTest(label=label):
+                client = SlackHttpSender(
+                    resolver=fixed_resolver(PUBLIC_ADDRESS),
+                    connection_factory=factory,
+                    ssl_context_factory=context,
+                )
+                try:
+                    client.post(
+                        PAYLOAD,
+                        credential=WEBHOOK_CREDENTIAL,
+                        destination=WEBHOOK_DESTINATION,
+                        timeout_seconds=10.0,
+                    )
+                except Exception as error:  # pragma: no cover - a raise is the failure
+                    self.fail(f"{label} setup failure raised instead of reporting: {error!r}")
+
+    def test_a_close_failure_does_not_mask_the_outcome(self):
+        class UnclosableConnection(FakeConnection):
+            def close(self):
+                raise OSError("close failed")
+
+        class UnclosableRecorder(Recorder):
+            def __call__(self, hostname, address, port, timeout, context):
+                connection = UnclosableConnection(hostname, address, port, timeout, context)
+                for name, value in self.behaviour.items():
+                    setattr(connection, name, value)
+                self.connections.append(connection)
+                return connection
+
+        recorder = UnclosableRecorder(response=FakeResponse(200, b"ok"))
+        client = sender(recorder)
+
+        response = client.post(
+            PAYLOAD, credential=WEBHOOK_CREDENTIAL, destination=WEBHOOK_DESTINATION, timeout_seconds=10.0
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.error_class)
 
 
 class RedactionTests(unittest.TestCase):
@@ -955,6 +1159,73 @@ class WorkerBoundaryTests(WorkerFixture):
         self.assertEqual(result.state, DELIVERY_UNKNOWN)
         self.assertIs(self.record().slack_response["bytes_sent"], True)
         self.assertIsNone(self.record().expires_at)
+
+    def test_a_tls_setup_failure_is_not_sender_raised_or_unknown(self):
+        """Finding 5 at the boundary that made it matter.
+
+        Uncaught, this escaped `post` and `process_delivery`'s blanket handler
+        recorded `sender_raised` and `delivery_unknown` — the state that tells an
+        operator to inspect Slack by hand — for a request that never reached a
+        socket. It must be a reported no-bytes fact, and therefore retryable.
+        """
+
+        def broken_context():
+            raise ssl.SSLError("cannot load the trust store")
+
+        recorder = Recorder()
+        transport = SlackHttpSender(
+            resolver=fixed_resolver(PUBLIC_ADDRESS),
+            connection_factory=recorder,
+            ssl_context_factory=broken_context,
+        )
+        self.credentials = type(self.credentials)({self.route["credential_secret_id"]: WEBHOOK_CREDENTIAL})
+        self.queued_record()
+
+        result = self.process(sender=transport)
+
+        self.assertEqual(result.state, FAILED_RETRYABLE)
+        self.assertNotEqual(result.state, DELIVERY_UNKNOWN)
+        record = self.record()
+        self.assertEqual(record.slack_response["response_class"], "transport_tls_failed")
+        self.assertNotEqual(record.slack_response["response_class"], "sender_raised")
+        self.assertIs(record.slack_response["bytes_sent"], False)
+        self.assertEqual(recorder.connections, [])
+
+    def test_a_connection_construction_failure_is_not_sender_raised_or_unknown(self):
+        def broken_factory(hostname, address, port, timeout, context):
+            raise OSError("cannot allocate a connection")
+
+        transport = SlackHttpSender(
+            resolver=fixed_resolver(PUBLIC_ADDRESS),
+            connection_factory=broken_factory,
+            ssl_context_factory=ssl.create_default_context,
+        )
+        self.credentials = type(self.credentials)({self.route["credential_secret_id"]: WEBHOOK_CREDENTIAL})
+        self.queued_record()
+
+        result = self.process(sender=transport)
+
+        self.assertEqual(result.state, FAILED_RETRYABLE)
+        self.assertEqual(self.record().slack_response["response_class"], "transport_connect_failed")
+        self.assertIs(self.record().slack_response["bytes_sent"], False)
+
+    def test_a_webhook_status_survives_an_unreadable_body_end_to_end(self):
+        """Finding 2 through the worker: the definite status decides the state."""
+
+        for status, expected in ((200, POSTED), (429, FAILED_RETRYABLE), (403, FAILED_TERMINAL)):
+            with self.subTest(status=status):
+                self.store = type(self.store)()
+                recorder = Recorder(
+                    response=FakeResponse(status, b"", {"Retry-After": "30"}, read_error=TimeoutError("slow")),
+                )
+                self.credentials = type(self.credentials)({self.route["credential_secret_id"]: WEBHOOK_CREDENTIAL})
+                self.queued_record()
+
+                result = self.process(sender=self.transport(recorder))
+
+                self.assertEqual(result.state, expected)
+                self.assertEqual(self.record().slack_response["response_class"], f"http_{status}")
+                self.assertEqual(self.record().network_attempt_count, 1)
 
     def bot_release(self):
         """Publish a bot-mode release and rebuild the record against it."""

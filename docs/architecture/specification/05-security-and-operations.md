@@ -46,17 +46,42 @@ read always requests decryption, because a ciphertext returned without it would
 reach the webhook policy or an authorization header as an opaque wrong value
 rather than as a read failure.
 
+An SSM read additionally requires the returned parameter `Type` to be
+`SecureString`. Requesting decryption does not establish it: the API ignores
+`WithDecryption` for a plaintext `String` or `StringList` and returns the value,
+so without checking the type a credential stored unencrypted reads back correctly
+and the encryption this chapter requires is silently absent.
+
 The stored content is the whole credential. No structured stored-secret format
 exists, so no reader may extract a field from one; surrounding whitespace is
-removed and the remainder is opaque. The credential's kind is configured from the
-release's delivery mode and never inferred from the value, so a value placed in
-the wrong container is caught by the worker's kind check instead of being
-described by it.
+removed and the remainder is opaque.
+
+Two separate checks establish what a credential is, and the first cannot do the
+second's job. The configured kind records the delivery mode the reader was built
+for, so comparing it to the release detects a mode mismatch between the release
+and the deployment's wiring. It is metadata the runtime chose, and it proves
+nothing about what an operator stored: a webhook URL pasted into the bot-token
+container passes it. A content check on the value itself is what establishes the
+stored kind, and each mode has one — the webhook policy for a URL, and the
+documented prefix, bounded length, and single-line printable shape for a bot
+token.
+
+Credential read failures divide by whether another identical read could succeed.
+A permanent failure — an absent identifier, a denied grant, a missing container,
+an empty value, a binary secret, a parameter that is not a `SecureString`, or a
+successful response whose shape is unusable — is a configuration correction and
+resolves delivery terminally. A transient failure — throttling, a service outage,
+an internal provider failure, an endpoint connection failure, a read timeout — is
+rescheduled with a bounded delay, makes no Slack call, leaves the network-attempt
+budget unchanged, and does not advance destination pacing. A provider error code
+outside the reviewed permanent set is treated as transient, so an unclassified
+failure preserves deliverable work instead of discarding it.
 
 A credential value never appears in a log, a durable record, a fixture, an
 exception message, or an object's `repr`. A read failure carries the store, the
-condition, and at most a bounded provider error code — never the value, the
-identifier, the provider message, or a response body, and with no provider
+condition, and at most a bounded provider error code — a short ASCII alphanumeric
+identifier, with anything else replaced by a fixed placeholder — never the value,
+the identifier, the provider message, or a response body, and with no provider
 exception attached for a chain walker to reach.
 
 ## IAM roles
