@@ -45,6 +45,7 @@ from moto import mock_aws
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from aws_public_change_feed.aws_credentials import SecretsManagerCredentialReader  # noqa: E402
 from aws_public_change_feed.credentials import (  # noqa: E402
     BOT_TOKEN,
     WEBHOOK,
@@ -206,6 +207,26 @@ class RecordingCredentials(StaticCredentialReader):
         if self._fail_on is not None and secret_id == self._fail_on:
             raise CredentialNotFound(f"no credential under {secret_id}")
         return super().read(secret_id)
+
+
+class AwsCredentialClientError(Exception):
+    """A provider error carrying only the AWS code the adapter classifies."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.response = {"Error": {"Code": code, "Message": "provider detail must not survive"}}
+
+
+class FailingSecretsManager:
+    """A Secrets Manager client whose configured AWS code is its only outcome."""
+
+    def __init__(self, code: str) -> None:
+        self.code = code
+        self.calls: list[dict[str, str]] = []
+
+    def get_secret_value(self, **kwargs: str) -> Any:
+        self.calls.append(kwargs)
+        raise AwsCredentialClientError(self.code)
 
 
 class WorkerFixture(unittest.TestCase):
@@ -1369,6 +1390,58 @@ class TransientCredentialTests(WorkerFixture):
         result = self.process(store=LosingStore(), credentials=self.UnavailableCredentials())
 
         self.assertFalse(result.performed_network_call)
+
+
+class AwsCredentialClassificationIntegrationTests(WorkerFixture):
+    """One AWS reader outcome traced through the worker, with its permanent pair."""
+
+    def reader(self, code: str) -> tuple[SecretsManagerCredentialReader, FailingSecretsManager]:
+        client = FailingSecretsManager(code)
+        return SecretsManagerCredentialReader(client, kind=WEBHOOK), client
+
+    def test_an_expired_aws_session_token_preserves_the_delivery(self):
+        generation = 2
+        self.queued_record(
+            network_attempt_count=3,
+            dispatch_generation=generation,
+            dispatch_id=queue_dispatch_id(self.request["request_id"], generation),
+        )
+        credentials, client = self.reader("ExpiredTokenException")
+
+        result = self.process(credentials=credentials)
+
+        record = self.record()
+        self.assertTrue(result.handled)
+        self.assertEqual(result.state, FAILED_RETRYABLE)
+        self.assertFalse(result.performed_network_call)
+        self.assertEqual(client.calls, [{"SecretId": self.route["credential_secret_id"]}])
+        self.assertEqual(self.sender.calls, [])
+        self.assertEqual(record.network_attempt_count, 3)
+        self.assertEqual(record.slack_response, {"response_class": "credential_unavailable"})
+        self.assertIsNone(record.expires_at)
+        self.assertIsNone(record.dispatch_id)
+        self.assertIsNone(self.store.get_pace(self.destination_key))
+        assert record.next_action_at is not None
+        delay = record.next_action_at - NOW_TS
+        self.assertGreater(delay, 0)
+        self.assertLessEqual(delay, self.inventory["slack"]["rate_control"]["max_retry_after_seconds"])
+
+    def test_an_iam_denial_remains_terminal(self):
+        self.queued_record(network_attempt_count=3)
+        credentials, client = self.reader("AccessDeniedException")
+
+        result = self.process(credentials=credentials)
+
+        record = self.record()
+        self.assertTrue(result.handled)
+        self.assertEqual(result.state, FAILED_TERMINAL)
+        self.assertFalse(result.performed_network_call)
+        self.assertEqual(client.calls, [{"SecretId": self.route["credential_secret_id"]}])
+        self.assertEqual(self.sender.calls, [])
+        self.assertEqual(record.network_attempt_count, 3)
+        self.assertEqual(record.slack_response, {"response_class": "credential_read_error"})
+        self.assertIsNone(record.next_action_at)
+        self.assertIsNotNone(record.expires_at)
 
 
 class BotTokenContentTests(WorkerFixture):

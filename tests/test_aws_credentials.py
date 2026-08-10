@@ -269,7 +269,7 @@ class SecretsManagerTests(unittest.TestCase):
             reader.read(SECRET_ID)
 
     def test_a_denial_is_reported_as_a_denial(self):
-        for code in ("AccessDeniedException", "UnrecognizedClientException"):
+        for code in ("AccessDeniedException", "AccessDenied", "UnauthorizedOperation"):
             with self.subTest(code=code):
                 reader, _ = secrets_reader(error=FakeClientError(code))
                 with self.assertRaises(CredentialAccessDenied):
@@ -374,8 +374,8 @@ class IdentifierTests(unittest.TestCase):
             reader.read("a" * (MAX_SECRET_ID_CHARACTERS + 1))
         self.assertEqual(client.calls, [])
 
-    def test_every_failure_is_a_credential_read_error(self):
-        """The worker branches on the base class only, so all of them must be one."""
+    def test_every_permanent_failure_is_a_credential_read_error(self):
+        """The worker resolves this half terminally, so every member shares the base."""
 
         for subclass in (CredentialNotFound, CredentialAccessDenied, CredentialEmpty, CredentialUnreadable):
             with self.subTest(subclass=subclass.__name__):
@@ -477,9 +477,9 @@ class TransientVersusPermanentTests(unittest.TestCase):
     """Which failures may destroy deliverable work, and which must preserve it.
 
     The permanent set is an allowlist, so the interesting assertion is the
-    default: an unclassified code preserves the delivery. Getting this wrong
-    towards transient costs one bounded retry; getting it wrong towards permanent
-    discards an alert, and only the second cannot be undone.
+    default: an unclassified code preserves the delivery on a bounded delay.
+    Getting this wrong towards transient leaves work scheduled; getting it wrong
+    towards permanent discards an alert, and only the second cannot be undone.
     """
 
     PERMANENT = {
@@ -490,8 +490,6 @@ class TransientVersusPermanentTests(unittest.TestCase):
         "denied short form": "AccessDenied",
         "kms denied": "KMSAccessDeniedException",
         "kms disabled": "KMSInvalidStateException",
-        "expired token": "ExpiredTokenException",
-        "bad signature": "InvalidSignatureException",
         "validation": "ValidationException",
         "invalid parameter": "InvalidParameterException",
         "decryption failure": "DecryptionFailure",
@@ -509,6 +507,9 @@ class TransientVersusPermanentTests(unittest.TestCase):
         "endpoint connection": "EndpointConnectionError",
         "connect timeout": "ConnectTimeoutError",
         "read timeout": "ReadTimeoutError",
+        "expired session token": "ExpiredTokenException",
+        "unrecognized or expired client credential": "UnrecognizedClientException",
+        "unproven permanent signature failure": "InvalidSignatureException",
         "never reviewed": "SomeFutureCodeNobodyClassified",
         "empty code": "",
     }
