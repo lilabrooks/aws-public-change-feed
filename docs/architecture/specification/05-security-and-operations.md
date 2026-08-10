@@ -124,6 +124,14 @@ exception attached for a chain walker to reach.
 - Send eligible work to the exact FIFO queue when recovery requires it.
 - No secret access or external HTTP.
 
+The scheduled reconciler uses its own exact content-addressed package inputs,
+runs every five minutes with reserved concurrency one, and performs no table
+scan. EventBridge retries a failed target at most twice while the event is no
+more than 300 seconds old. Exhausted events enter an encrypted standard
+runtime-failure queue whose policy permits only the exact schedule rule. This
+queue is separate from the FIFO delivery DLQ because it carries invocation
+evidence rather than delivery requests.
+
 ### Terraform and backend
 
 Deployment roles follow least privilege for provisioned resources. Backend access includes exact state and `.tflock` object actions, prefix-conditioned `s3:ListBucket`, and KMS access only when the state bucket uses a customer-managed key.
@@ -166,6 +174,8 @@ S3 lifecycle enforces the manifest history, the log groups, and the raw-snapshot
 - SQS age, receives, redrives, and DLQ depth.
 - Slack network attempts, response classes, `Retry-After`, latency, and terminal states.
 - Unknown outcomes, manual replays, stale leases, and reconciler repairs.
+- Bounded state-observation saturation, repair-limit exhaustion, stale queued
+  records, reconciler faults, and scheduled-runtime failure-queue depth.
 
 Use bounded dimensions. Do not use announcement URLs, titles, candidate IDs, customer names, or error messages as metric dimensions.
 

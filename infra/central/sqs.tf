@@ -33,3 +33,43 @@ resource "aws_sqs_queue_redrive_allow_policy" "delivery_dlq" {
     sourceQueueArns   = [aws_sqs_queue.delivery.arn]
   })
 }
+
+resource "aws_sqs_queue" "runtime_failures" {
+  name                      = local.runtime_failure_queue_name
+  message_retention_seconds = 1209600
+  sqs_managed_sse_enabled   = true
+
+  tags = local.tags
+}
+
+data "aws_iam_policy_document" "runtime_failure_queue" {
+  statement {
+    sid     = "AllowExactReconcilerSchedule"
+    actions = ["sqs:SendMessage"]
+    resources = [
+      aws_sqs_queue.runtime_failures.arn,
+    ]
+
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_cloudwatch_event_rule.reconciler.arn]
+    }
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
+resource "aws_sqs_queue_policy" "runtime_failures" {
+  queue_url = aws_sqs_queue.runtime_failures.id
+  policy    = data.aws_iam_policy_document.runtime_failure_queue.json
+}

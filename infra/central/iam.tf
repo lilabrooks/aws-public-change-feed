@@ -196,7 +196,7 @@ data "aws_iam_policy_document" "slack_worker" {
 data "aws_iam_policy_document" "recovery_reconciler" {
   statement {
     sid     = "QueryDeliveryIndex"
-    actions = ["dynamodb:Query", "dynamodb:Scan"]
+    actions = ["dynamodb:Query"]
     resources = [
       aws_dynamodb_table.delivery.arn,
       local.delivery_index_arn,
@@ -213,7 +213,7 @@ data "aws_iam_policy_document" "recovery_reconciler" {
 
   statement {
     sid     = "RepairDeliveryState"
-    actions = ["dynamodb:UpdateItem", "dynamodb:PutItem"]
+    actions = ["dynamodb:UpdateItem"]
     resources = [
       aws_dynamodb_table.delivery.arn,
     ]

@@ -362,6 +362,17 @@ class OutboxStore(Protocol):
         """
         ...
 
+    def query_state(self, status: str, *, limit: int) -> Sequence[tuple[int, str]]:
+        """Return the oldest indexed records in one delivery state.
+
+        Recovery uses this bounded observation path for `pending_queue`,
+        `failed_retryable`, `queued`, and `sending`. All four carry
+        `next_action_at`, so the existing status/next-action GSI supplies the
+        ordering without a table scan. `limit` is the hard read ceiling, not a
+        page size that the implementation may silently paginate past.
+        """
+        ...
+
     def claim_dispatch(
         self,
         candidate: str,
@@ -452,6 +463,26 @@ class OutboxStore(Protocol):
         """
         ...
 
+    def mark_expired_sending_unknown(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        attempt_id: str,
+        lease_expires_at: int,
+        due_before: int,
+        network_attempt_count: int,
+        slack_response: Mapping[str, Any] | None,
+    ) -> bool:
+        """Resolve the exact expired sending claim to `delivery_unknown`.
+
+        The transition succeeds only while status, state version, attempt ID,
+        durable lease, and indexed next action still match the caller's
+        observation and the lease is due. It preserves attempt and response
+        evidence, clears the active lease and dispatch claim, and writes no TTL.
+        """
+        ...
+
     def schedule_retry(
         self,
         candidate: str,
@@ -520,6 +551,19 @@ class InMemoryOutboxStore:
         ]
         due.sort(key=lambda entry: entry[0])
         return tuple(due[:limit])
+
+    def query_state(self, status: str, *, limit: int) -> tuple[tuple[int, str], ...]:
+        if status not in DELIVERY_STATES:
+            raise ValueError(f"unknown delivery state: {status}")
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        observed = [
+            (record.next_action_at, record.candidate_id)
+            for record in self._deliveries.values()
+            if record.status == status and record.next_action_at is not None
+        ]
+        observed.sort(key=lambda entry: entry[0])
+        return tuple(observed[:limit])
 
     def claim_dispatch(
         self,
@@ -642,6 +686,49 @@ class InMemoryOutboxStore:
             next_action_at=next_action_at,
             slack_response=slack_response,
             expires_at=expires_at,
+            dispatch_id=None,
+            state_version=record.state_version + 1,
+        )
+        return True
+
+    def mark_expired_sending_unknown(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        attempt_id: str,
+        lease_expires_at: int,
+        due_before: int,
+        network_attempt_count: int,
+        slack_response: Mapping[str, Any] | None,
+    ) -> bool:
+        validate_delivery_transition(
+            status="delivery_unknown",
+            next_action_at=None,
+            network_attempt_count=network_attempt_count,
+            slack_response=slack_response,
+            expires_at=None,
+        )
+        record = self._deliveries.get(candidate)
+        if (
+            record is None
+            or record.status != "sending"
+            or record.state_version != expected_state_version
+            or record.attempt_id != attempt_id
+            or record.lease_expires_at != lease_expires_at
+            or record.next_action_at != lease_expires_at
+            or lease_expires_at > due_before
+            or record.network_attempt_count != network_attempt_count
+            or record.slack_response != slack_response
+            or record.expires_at is not None
+        ):
+            return False
+        self._deliveries[candidate] = replace(
+            record,
+            status="delivery_unknown",
+            attempt_id=None,
+            lease_expires_at=None,
+            next_action_at=None,
             dispatch_id=None,
             state_version=record.state_version + 1,
         )
@@ -837,6 +924,26 @@ class DynamoDBDeliveryStore:
             Limit=limit,
             ProjectionExpression="PK, next_action_at",
         )
+        prefix = len(CANDIDATE_KEY_PREFIX)
+        return tuple((int(item["next_action_at"]["N"]), item["PK"]["S"][prefix:]) for item in response["Items"])
+
+    def query_state(self, status: str, *, limit: int) -> tuple[tuple[int, str], ...]:
+        if status not in DELIVERY_STATES:
+            raise ValueError(f"unknown delivery state: {status}")
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("limit must be a positive integer")
+        response = self._client.query(
+            TableName=self._table,
+            IndexName=self._index,
+            KeyConditionExpression="#status = :status",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={":status": {"S": status}},
+            Limit=limit,
+            ScanIndexForward=True,
+            ProjectionExpression="PK, next_action_at, expires_at",
+        )
+        if status not in TTL_ELIGIBLE_STATES and any("expires_at" in item for item in response["Items"]):
+            raise ValueError(f"unresolved delivery state {status} cannot carry expires_at")
         prefix = len(CANDIDATE_KEY_PREFIX)
         return tuple((int(item["next_action_at"]["N"]), item["PK"]["S"][prefix:]) for item in response["Items"])
 
@@ -1097,6 +1204,64 @@ class DynamoDBDeliveryStore:
                     ":sending": {"S": "sending"},
                     ":version": {"N": str(expected_state_version)},
                     ":attempt": {"S": attempt_id},
+                },
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
+
+    def mark_expired_sending_unknown(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        attempt_id: str,
+        lease_expires_at: int,
+        due_before: int,
+        network_attempt_count: int,
+        slack_response: Mapping[str, Any] | None,
+    ) -> bool:
+        from botocore.exceptions import ClientError
+
+        validate_delivery_transition(
+            status="delivery_unknown",
+            next_action_at=None,
+            network_attempt_count=network_attempt_count,
+            slack_response=slack_response,
+            expires_at=None,
+        )
+        if isinstance(expected_state_version, bool) or not isinstance(expected_state_version, int):
+            raise ValueError("expected_state_version must be an integer")
+        if not isinstance(attempt_id, str) or not attempt_id:
+            raise ValueError("attempt_id must be a nonempty string")
+        for name, value in (("lease_expires_at", lease_expires_at), ("due_before", due_before)):
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{name} must be a non-negative integer Unix timestamp")
+
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key=self._key(candidate),
+                UpdateExpression=(
+                    "SET #status = :unknown, state_version = state_version + :one "
+                    "REMOVE attempt_id, lease_expires_at, next_action_at, dispatch_id"
+                ),
+                ConditionExpression=(
+                    "#status = :sending AND state_version = :version AND attempt_id = :attempt "
+                    "AND lease_expires_at = :lease AND next_action_at = :lease "
+                    "AND lease_expires_at <= :due AND attribute_not_exists(expires_at)"
+                ),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":unknown": {"S": "delivery_unknown"},
+                    ":sending": {"S": "sending"},
+                    ":version": {"N": str(expected_state_version)},
+                    ":attempt": {"S": attempt_id},
+                    ":lease": {"N": str(lease_expires_at)},
+                    ":due": {"N": str(due_before)},
+                    ":one": {"N": "1"},
                 },
             )
         except ClientError as error:

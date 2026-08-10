@@ -23,6 +23,11 @@ output "worker_application_version" {
   value       = local.application_version
 }
 
+output "reconciler_application_version" {
+  description = "Exact sha256 package version selected for the recovery reconciler, or null when undeployed."
+  value       = local.reconciler_application_version
+}
+
 output "release_prefix" {
   description = "Key prefix holding write-once release objects."
   value       = "${local.release_prefix}/"
@@ -58,6 +63,11 @@ output "delivery_dlq" {
   value       = aws_sqs_queue.delivery_dlq.name
 }
 
+output "runtime_failure_queue" {
+  description = "Encrypted standard queue holding exhausted scheduled-runtime target events."
+  value       = aws_sqs_queue.runtime_failures.name
+}
+
 output "operational_sns_topic_arn" {
   description = "ARN of the operational notification topic."
   value       = aws_sns_topic.operations.arn
@@ -80,7 +90,7 @@ output "roles" {
 }
 
 output "function_names" {
-  description = "Lambda names; the Slack worker exists when exact artifact inputs are supplied, while the other handlers remain planned."
+  description = "Lambda names; the Slack worker and reconciler exist when their own exact artifact inputs are supplied, while the other handlers remain planned."
   value       = local.function_names
 }
 

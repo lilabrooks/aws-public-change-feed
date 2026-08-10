@@ -46,6 +46,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
           metrics = [
             ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.delivery_dlq_name, { "stat" : "Maximum", "id" : "m1", "label" : "dlq visible" }],
             ["AWS/SQS", "NumberOfMessagesReceived", "QueueName", local.delivery_dlq_name, { "stat" : "Sum", "id" : "m2", "label" : "dlq receives", "yAxis" : "right" }],
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", local.runtime_failure_queue_name, { "stat" : "Maximum", "id" : "m3", "label" : "runtime failures" }],
           ]
         }
       },
@@ -127,6 +128,29 @@ resource "aws_cloudwatch_dashboard" "operations" {
             [local.metrics_namespace, "ArtifactAvailabilityCheckFailed", { "stat" : "Sum", "id" : "ac", "label" : "artifact check failed", "yAxis" : "right" }],
             [local.metrics_namespace, "WorkerFault", { "stat" : "Sum", "id" : "wf", "label" : "worker fault", "yAxis" : "right" }],
             [local.metrics_namespace, "DispatchUnknownOutcome", { "stat" : "Sum", "id" : "uo", "label" : "dispatch unknown", "yAxis" : "right" }],
+            [local.metrics_namespace, "ExpiredLeaseUnknown", { "stat" : "Sum", "id" : "elu", "label" : "expired leases", "yAxis" : "right" }],
+            [local.metrics_namespace, "StaleQueued", { "stat" : "Sum", "id" : "sq", "label" : "stale queued", "yAxis" : "right" }],
+            [local.metrics_namespace, "RecoveryRepairLimitReached", { "stat" : "Sum", "id" : "rr", "label" : "repair cap", "yAxis" : "right" }],
+            [local.metrics_namespace, "StateObservationSaturated", { "stat" : "Sum", "id" : "os", "label" : "observation cap", "yAxis" : "right" }],
+            [local.metrics_namespace, "ReconcilerFault", { "stat" : "Sum", "id" : "rf", "label" : "reconciler fault", "yAxis" : "right" }],
+          ]
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 22
+        width  = 24
+        height = 6
+        properties = {
+          title       = "Bounded delivery-state observations"
+          view        = "timeSeries"
+          stacked     = false
+          region      = local.region
+          annotations = {}
+          metrics = [
+            [{ "expression" : "SEARCH('{${local.metrics_namespace},State} MetricName=\"ObservedDeliveryCount\"', 'Maximum', 300)", "id" : "counts", "label" : "", "region" : local.region }],
+            [{ "expression" : "SEARCH('{${local.metrics_namespace},State} MetricName=\"OldestDeliveryAgeSeconds\"', 'Maximum', 300)", "id" : "ages", "label" : "", "region" : local.region }],
           ]
         }
       },

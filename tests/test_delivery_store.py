@@ -259,6 +259,34 @@ class DynamoDeliveryStoreTests(unittest.TestCase):
         )
         self.assertEqual(self.store.query_due("pending_queue", due_before=300, limit=1), ((100, self.key),))
 
+    def test_query_state_includes_future_records_and_respects_the_hard_limit(self):
+        self.store.put_delivery_if_absent(self.record(next_action_at=200))
+        self.store.put_delivery_if_absent(
+            DeliveryRecord(
+                candidate_id="older",
+                destination_key="shared-aws-change-alerts",
+                request=self.request,
+                next_action_at=100,
+            )
+        )
+        self.assertEqual(self.store.query_state("pending_queue", limit=1), ((100, "older"),))
+        self.assertEqual(
+            self.store.query_state("pending_queue", limit=10),
+            ((100, "older"), (200, self.key)),
+        )
+
+    def test_query_state_refuses_a_corrupt_ttl_on_an_unresolved_record(self):
+        self.store.put_delivery_if_absent(self.record(next_action_at=100))
+        self.client.update_item(
+            TableName=TABLE,
+            Key={"PK": {"S": f"CANDIDATE#{self.key}"}, "SK": {"S": "DELIVERY"}},
+            UpdateExpression="SET expires_at = :expiry",
+            ExpressionAttributeValues={":expiry": {"N": "99999"}},
+        )
+
+        with self.assertRaisesRegex(ValueError, "cannot carry expires_at"):
+            self.store.query_state("pending_queue", limit=10)
+
     def test_request_roundtrips_through_the_json_document(self):
         self.store.put_delivery_if_absent(self.record())
         record = delivery(self.store, self.key)
@@ -400,6 +428,127 @@ class DynamoWorkerTransitionTests(DynamoDeliveryStoreTests):
                 expires_at=99999,
             )
         )
+
+    def test_expired_sending_recovery_has_store_parity_and_exact_conditions(self):
+        response = {"response_class": "connect_failed", "bytes_sent": False}
+
+        for label, changes in (
+            ("state version", {"expected_state_version": 99}),
+            ("attempt", {"attempt_id": "wrong"}),
+            ("lease identity", {"lease_expires_at": 999}),
+            ("not due", {"due_before": 1029}),
+        ):
+            with self.subTest(label=label):
+                self.client.delete_table(TableName=TABLE)
+                self.setUp()
+                self.store.put_delivery_if_absent(
+                    self.record(
+                        status="sending",
+                        next_action_at=1030,
+                        state_version=4,
+                        attempt_id="attempt-4",
+                        lease_expires_at=1030,
+                        network_attempt_count=2,
+                        slack_response=response,
+                    )
+                )
+                arguments: dict[str, Any] = {
+                    "expected_state_version": 4,
+                    "attempt_id": "attempt-4",
+                    "lease_expires_at": 1030,
+                    "due_before": 1030,
+                    "network_attempt_count": 2,
+                    "slack_response": response,
+                    **changes,
+                }
+                self.assertFalse(self.store.mark_expired_sending_unknown(self.key, **arguments))
+                self.assertEqual(delivery(self.store, self.key).status, "sending")
+
+        self.client.delete_table(TableName=TABLE)
+        self.setUp()
+        self.store.put_delivery_if_absent(
+            self.record(
+                status="sending",
+                next_action_at=1030,
+                state_version=4,
+                attempt_id="attempt-4",
+                lease_expires_at=1030,
+                network_attempt_count=2,
+                slack_response=response,
+            )
+        )
+        self.assertTrue(
+            self.store.mark_expired_sending_unknown(
+                self.key,
+                expected_state_version=4,
+                attempt_id="attempt-4",
+                lease_expires_at=1030,
+                due_before=1030,
+                network_attempt_count=2,
+                slack_response=response,
+            )
+        )
+        recovered = delivery(self.store, self.key)
+        self.assertEqual(recovered.status, "delivery_unknown")
+        self.assertEqual(recovered.network_attempt_count, 2)
+        self.assertEqual(recovered.slack_response, response)
+        self.assertIsNone(recovered.expires_at)
+
+    def test_expired_sending_recovery_refuses_corrupt_durable_condition_fields(self):
+        for label, update, names, values in (
+            (
+                "status",
+                "SET #status = :value",
+                {"#status": "status"},
+                {":value": {"S": "queued"}},
+            ),
+            (
+                "next action",
+                "SET next_action_at = :value",
+                None,
+                {":value": {"N": "1031"}},
+            ),
+            (
+                "unexpected ttl",
+                "SET expires_at = :value",
+                None,
+                {":value": {"N": "99999"}},
+            ),
+        ):
+            with self.subTest(label=label):
+                self.client.delete_table(TableName=TABLE)
+                self.setUp()
+                self.store.put_delivery_if_absent(
+                    self.record(
+                        status="sending",
+                        next_action_at=1030,
+                        state_version=4,
+                        attempt_id="attempt-4",
+                        lease_expires_at=1030,
+                        network_attempt_count=2,
+                    )
+                )
+                arguments = {
+                    "TableName": TABLE,
+                    "Key": {"PK": {"S": f"CANDIDATE#{self.key}"}, "SK": {"S": "DELIVERY"}},
+                    "UpdateExpression": update,
+                    "ExpressionAttributeValues": values,
+                }
+                if names is not None:
+                    arguments["ExpressionAttributeNames"] = names
+                self.client.update_item(**arguments)
+
+                self.assertFalse(
+                    self.store.mark_expired_sending_unknown(
+                        self.key,
+                        expected_state_version=4,
+                        attempt_id="attempt-4",
+                        lease_expires_at=1030,
+                        due_before=1030,
+                        network_attempt_count=2,
+                        slack_response=None,
+                    )
+                )
 
     def test_a_retryable_outcome_carries_a_next_action_and_no_ttl(self):
         record = self.queued()

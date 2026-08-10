@@ -85,7 +85,9 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 
 - Given overdue pending work, the reconciler makes it dispatchable or raises a bounded-age alarm.
 - Given an expired sending lease, the reconciler marks it unknown.
-- Given a missing queue message and eligible known-safe state, the reconciler re-enqueues it.
+- Given due pending or retryable work, the reconciler uses the dispatcher's existing claim and FIFO send path.
+- Given an old queued record, the reconciler reports it without enqueuing another message because age does not prove absence from SQS.
+- Given more recovery work than one bounded run may inspect or repair, the reconciler emits saturation and leaves the remainder durable for a later run.
 - Given a DLQ item, the runbook can trace request, candidate, release, destination, and last state.
 - Given an operator-approved unknown replay, audit history records operator, reason, old attempt, and new attempt before another call.
 

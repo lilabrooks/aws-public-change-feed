@@ -55,3 +55,79 @@ resource "aws_lambda_event_source_mapping" "slack_worker" {
     maximum_concurrency = local.rate_control.worker_reserved_concurrency
   }
 }
+
+resource "aws_lambda_function" "reconciler" {
+  count = local.reconciler_runtime_enabled ? 1 : 0
+
+  function_name = local.function_names.reconciler
+  role          = aws_iam_role.recovery_reconciler.arn
+  runtime       = "python3.12"
+  architectures = ["x86_64"]
+  handler       = "aws_public_change_feed.recovery_runtime.lambda_handler"
+
+  s3_bucket         = aws_s3_bucket.config.id
+  s3_key            = local.reconciler_artifact_key
+  s3_object_version = var.reconciler_artifact_version_id
+
+  timeout                        = local.reconciler_timeout_seconds
+  reserved_concurrent_executions = local.reconciler_reserved_concurrency
+  memory_size                    = 256
+
+  environment {
+    variables = {
+      DELIVERY_INDEX_NAME           = local.delivery_index_name
+      DELIVERY_QUEUE_URL            = aws_sqs_queue.delivery.id
+      DELIVERY_TABLE_NAME           = aws_dynamodb_table.delivery.name
+      MAX_DELIVERY_REQUEST_BYTES    = tostring(local.max_delivery_request_bytes)
+      METRICS_NAMESPACE             = local.metrics_namespace
+      RECOVERY_OBSERVATION_LIMIT    = tostring(local.reconciler_observation_limit)
+      RECOVERY_REPAIR_LIMIT         = tostring(local.reconciler_repair_limit)
+      RECOVERY_STALE_QUEUED_SECONDS = tostring(local.reconciler_stale_queued_seconds)
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.reconciler,
+    aws_iam_role_policy.recovery_reconciler,
+    aws_iam_role_policy.reconciler_logs,
+  ]
+
+  tags = local.tags
+}
+
+resource "aws_cloudwatch_event_rule" "reconciler" {
+  name                = local.function_names.reconciler
+  description         = "Run bounded delivery recovery every five minutes."
+  schedule_expression = local.reconciler_schedule_expression
+  state               = local.reconciler_runtime_enabled ? "ENABLED" : "DISABLED"
+
+  tags = local.tags
+}
+
+resource "aws_cloudwatch_event_target" "reconciler" {
+  count = local.reconciler_runtime_enabled ? 1 : 0
+
+  rule = aws_cloudwatch_event_rule.reconciler.name
+  arn  = aws_lambda_function.reconciler[0].arn
+
+  retry_policy {
+    maximum_event_age_in_seconds = local.reconciler_maximum_event_age
+    maximum_retry_attempts       = local.reconciler_maximum_retry_attempts
+  }
+
+  dead_letter_config {
+    arn = aws_sqs_queue.runtime_failures.arn
+  }
+
+  depends_on = [aws_sqs_queue_policy.runtime_failures]
+}
+
+resource "aws_lambda_permission" "reconciler_schedule" {
+  count = local.reconciler_runtime_enabled ? 1 : 0
+
+  statement_id  = "AllowExactReconcilerSchedule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.reconciler[0].function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.reconciler.arn
+}

@@ -101,14 +101,26 @@ An SQS redelivery for `posted` is acknowledged. A message whose record still has
 
 Run at least every five minutes. It:
 
-- Dispatches or signals overdue `pending_queue` records.
-- Re-enqueues due retryable records when no valid queue claim remains.
-- Marks expired `sending` leases as `delivery_unknown`.
-- Detects `queued` records older than the maximum expected queue age.
-- Extends unresolved state retention.
-- Emits counts and oldest age for every nonterminal state.
+- Sends due `pending_queue` and `failed_retryable` records through the existing
+  dispatcher path and its dispatch-claim protocol.
+- Marks an expired `sending` lease as `delivery_unknown` only while a
+  conditional write still owns the observed state version and attempt ID.
+- Detects `queued` records at least 600 seconds old and emits age and stale-work
+  signals without enqueuing them again, because queue age is not proof that SQS
+  lost a message.
+- Preserves unresolved evidence by keeping TTL absent on every unresolved
+  record it reads or transitions; it performs no periodic TTL-extension write.
+- Observes bounded counts and oldest age for automatically actionable states,
+  with an explicit saturation signal when the observation cap is exceeded.
 
 The reconciler never automatically retries `delivery_unknown`.
+
+The canonical reconciler runs every five minutes with a 60-second function
+timeout, reserved concurrency one, and at most 100 repairs per invocation. It
+reads at most 101 records per observed state, reports the first 100, and emits
+`StateObservationSaturated` when more exist. Its scheduled target gets two
+retries within a 300-second maximum event age before the event enters the
+separate standard runtime-failure queue.
 
 ## SQS configuration
 

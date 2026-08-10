@@ -41,8 +41,9 @@ locals {
   delivery_index_name = "status-next-action-index"
   delivery_index_arn  = "${aws_dynamodb_table.delivery.arn}/index/${local.delivery_index_name}"
 
-  delivery_queue_name = "apcf-delivery-${local.deployment_id}.fifo"
-  delivery_dlq_name   = "apcf-delivery-dlq-${local.deployment_id}.fifo"
+  delivery_queue_name        = "apcf-delivery-${local.deployment_id}.fifo"
+  delivery_dlq_name          = "apcf-delivery-dlq-${local.deployment_id}.fifo"
+  runtime_failure_queue_name = "apcf-runtime-failures-${local.deployment_id}"
 
   function_names = {
     watcher    = "apcf-${local.deployment_id}-feed-watcher"
@@ -69,6 +70,18 @@ locals {
   worker_runtime_enabled             = var.worker_artifact_sha256 != null && var.worker_artifact_version_id != null
   worker_artifact_key                = var.worker_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.worker_artifact_sha256}.zip"
   application_version                = var.worker_artifact_sha256 == null ? null : "sha256:${var.worker_artifact_sha256}"
+
+  reconciler_timeout_seconds        = 60
+  reconciler_reserved_concurrency   = 1
+  reconciler_repair_limit           = 100
+  reconciler_observation_limit      = 101
+  reconciler_stale_queued_seconds   = 600
+  reconciler_schedule_expression    = "rate(5 minutes)"
+  reconciler_maximum_retry_attempts = 2
+  reconciler_maximum_event_age      = 300
+  reconciler_runtime_enabled        = var.reconciler_artifact_sha256 != null && var.reconciler_artifact_version_id != null
+  reconciler_artifact_key           = var.reconciler_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.reconciler_artifact_sha256}.zip"
+  reconciler_application_version    = var.reconciler_artifact_sha256 == null ? null : "sha256:${var.reconciler_artifact_sha256}"
 
   metrics_namespace = "AWSPublicChangeFeed/${local.deployment_id}"
 }

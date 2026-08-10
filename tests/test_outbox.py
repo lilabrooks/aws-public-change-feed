@@ -16,7 +16,7 @@ import sys
 import unittest
 from datetime import datetime
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import yaml
 
@@ -483,6 +483,81 @@ class DispatchStoreTests(OutboxTestCase):
             )
         )
         self.assertEqual(self.store.query_due("pending_queue", due_before=300, limit=1), ((100, self.key),))
+
+    def test_query_state_returns_future_and_due_records_oldest_first_with_a_hard_limit(self):
+        self.seed(next_action_at=200)
+        self.store.put_delivery_if_absent(
+            DeliveryRecord(
+                candidate_id="older",
+                destination_key="shared-aws-change-alerts",
+                request=self.request,
+                next_action_at=100,
+            )
+        )
+        self.assertEqual(self.store.query_state("pending_queue", limit=1), ((100, "older"),))
+        self.assertEqual(
+            self.store.query_state("pending_queue", limit=10),
+            ((100, "older"), (200, self.key)),
+        )
+
+    def test_expired_sending_recovery_preserves_evidence_and_refuses_every_stale_guard(self):
+        response = {"response_class": "connect_failed", "bytes_sent": False}
+
+        for label, changes in (
+            ("state version", {"expected_state_version": 99}),
+            ("attempt", {"attempt_id": "wrong"}),
+            ("lease identity", {"lease_expires_at": 999}),
+            ("not due", {"due_before": 1029}),
+        ):
+            with self.subTest(label=label):
+                self.store = InMemoryOutboxStore()
+                self.seed(
+                    status="sending",
+                    next_action_at=1030,
+                    state_version=4,
+                    attempt_id="attempt-4",
+                    lease_expires_at=1030,
+                    network_attempt_count=2,
+                    slack_response=response,
+                )
+                arguments: dict[str, Any] = {
+                    "expected_state_version": 4,
+                    "attempt_id": "attempt-4",
+                    "lease_expires_at": 1030,
+                    "due_before": 1030,
+                    "network_attempt_count": 2,
+                    "slack_response": response,
+                    **changes,
+                }
+                self.assertFalse(self.store.mark_expired_sending_unknown(self.key, **arguments))
+                self.assertEqual(delivery(self.store, self.key).status, "sending")
+
+        self.store = InMemoryOutboxStore()
+        self.seed(
+            status="sending",
+            next_action_at=1030,
+            state_version=4,
+            attempt_id="attempt-4",
+            lease_expires_at=1030,
+            network_attempt_count=2,
+            slack_response=response,
+        )
+        self.assertTrue(
+            self.store.mark_expired_sending_unknown(
+                self.key,
+                expected_state_version=4,
+                attempt_id="attempt-4",
+                lease_expires_at=1030,
+                due_before=1030,
+                network_attempt_count=2,
+                slack_response=response,
+            )
+        )
+        recovered = delivery(self.store, self.key)
+        self.assertEqual(recovered.status, "delivery_unknown")
+        self.assertEqual(recovered.network_attempt_count, 2)
+        self.assertEqual(recovered.slack_response, response)
+        self.assertIsNone(recovered.expires_at)
 
     def test_claim_succeeds_once_and_refuses_a_second_claim(self):
         initial = self.seed()
