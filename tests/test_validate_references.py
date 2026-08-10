@@ -15,7 +15,7 @@ import validate_references as validator  # noqa: E402
 # A fixed clock keeps the committed-reference assertions deterministic. Move it
 # forward when a document is verified on a later date; the 180-day warning and
 # 365-day maximum leave ample room before older markers need re-verification.
-AS_OF = date(2026, 8, 7)
+AS_OF = date(2026, 8, 10)
 VALID_LYCHEE_CONFIG = (ROOT / "lychee.toml").read_text(encoding="utf-8")
 
 # Fixture dates are derived from AS_OF so each one states the condition it

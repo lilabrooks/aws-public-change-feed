@@ -205,6 +205,17 @@ These are deployment acceptance values, not universal claims in the codebase.
 
 Promote policy releases separately from application deployments. Shadow evaluation can compare a candidate release against a historical corpus and live feed snapshot without creating outbox work. Rollback promotes an earlier immutable manifest or application version. Candidate history records which combination produced each result.
 
+Application packages are content-addressed by the SHA-256 digest of the exact
+deployable bytes. Retain them for at least 400 days and keep at least the newest
+10 versions. Before application rollout, pause candidate creation, drain
+actionable work from the current package, record any remaining package versions,
+deploy producer and worker roots with one identical digest, and then resume.
+
+Evidence can outlive its runnable package. When that happens, automatic delivery
+leaves the record unchanged and reports `artifact_unavailable`; an operator must
+restore the approved package or record a manual closure. Package retirement must
+prove the age and version-count floors before deletion.
+
 ## References
 
 References verified: 2026-07-13.

@@ -93,6 +93,40 @@ including bounded DNS, or replace the capacity calculation with a provable upper
 bound. Until then no text here claims the adapter bounds a request's total
 duration.
 
+## Revision: Lambda timeout is the worker capacity bound
+
+- Status: Accepted
+- Date: 2026-08-10
+- Accepted: 2026-08-10
+
+This revision replaces the preceding visibility calculation and resolves the
+capacity question left by the worker-transport revision.
+
+The configured Lambda timeout is the hard outer bound for one worker invocation.
+The FIFO queue visibility timeout is at least six times that function timeout,
+plus any configured batch window. With the canonical 300-second worker timeout,
+the minimum queue visibility is therefore 1,800 seconds. The earlier 420-second
+calculation does not satisfy this rule and must be replaced before the event
+source mapping is created.
+
+Before starting each record, the FIFO handler reads the Lambda context's remaining
+time. When its configured safety reserve is unavailable, it stops and returns the
+current and every unprocessed record in `batchItemFailures`. After any record
+failure it does the same, preserving FIFO order. Successfully handled records stay
+acknowledged through the partial-batch response.
+
+The Slack transport timeout covers each blocking socket operation separately;
+DNS, connect, write, and read remain separate phases. If Lambda reaches its hard timeout after a sending claim,
+the request may have reached Slack. The record remains `sending` until the
+reconciler converts the expired lease to `delivery_unknown`; automatic retry is
+still forbidden.
+
+Revisit the capacity choice before increasing worker batch size or function
+timeout, after any Lambda timeout produces `delivery_unknown`, when measured p99
+batch duration exceeds half the configured function timeout, or when bounded DNS
+and one monotonic request deadline can be added without weakening the shared
+anti-rebinding controls.
+
 ## Consequences
 
 - Feed checkpoints cannot pass undurable delivery work.
@@ -102,10 +136,12 @@ duration.
 
 ## References
 
-References verified: 2026-07-13.
+References verified: 2026-08-10.
 
 - [Lambda with SQS](https://docs.aws.amazon.com/lambda/latest/dg/with-sqs.html)
 - [SQS FIFO delivery logic](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/FIFO-queues-understanding-logic.html)
 - [Lambda partial batch responses](https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-errorhandling.html)
 - [SQS message deduplication IDs](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/using-messagededuplicationid-property.html)
 - [Secrets Manager with Lambda](https://docs.aws.amazon.com/secretsmanager/latest/userguide/retrieving-secrets_lambda.html)
+- [Configure an SQS event source mapping](https://docs.aws.amazon.com/lambda/latest/dg/services-sqs-configure.html)
+- [Lambda Python context](https://docs.aws.amazon.com/lambda/latest/dg/python-context.html)
