@@ -85,4 +85,4 @@ The canonical deployment declares 100 accounts as metadata, 500 environments, 25
 
 ## Current status
 
-The architecture, contracts, examples, validators, and tests are present. The Terraform data plane is provisioned. The watcher, Slack worker, and recovery reconciler have conditional Lambda composition roots and service-mock coverage; none of those new runtimes has been applied from this source. The regular dispatcher Lambda, operator recovery tools, load evidence, and production preflight remain implementation milestones. Acceptance language distinguishes source validation from deployed evidence.
+The architecture, contracts, examples, validators, and tests are present. The Terraform data plane is provisioned. The watcher, regular dispatcher, Slack worker, and recovery reconciler have conditional Lambda composition roots and service-mock coverage; none of those new runtimes has been applied from this source. Operator recovery tools, load evidence, and production preflight remain implementation milestones. Acceptance language distinguishes source validation from deployed evidence.

@@ -9,7 +9,7 @@ The `infra/central` root creates:
 - A DynamoDB source-state table for feed checkpoints and announcement records.
 - A DynamoDB delivery table for candidates, outbox work, destination pacing, and delivery outcomes.
 - An encrypted SQS FIFO queue and FIFO DLQ.
-- An outbox dispatcher role, plus conditional Slack worker and recovery reconciler Lambdas. The regular dispatcher handler remains planned.
+- Conditional outbox dispatcher, Slack worker, and recovery reconciler Lambdas, plus their least-privilege roles.
 - Secrets Manager secrets or SecureString parameters referenced by exact identifier.
 - CloudWatch logs, metrics, dashboard, alarms, and an operational SNS topic.
 
@@ -82,6 +82,12 @@ Use:
 
 If the send result is unknown or the following state update fails, leave the claimed generation on the delivery record and reuse its dispatch ID. FIFO dedupe suppresses duplicate sends of that queue attempt; the worker's DynamoDB claim handles the lasting case. When the worker schedules a future retry, it clears the active dispatch claim. The next due dispatch conditionally increments the generation and uses a new dispatch ID so SQS does not suppress valid retry work during its deduplication window.
 
+The canonical regular dispatcher runs every minute with a 60-second function
+timeout, reserved concurrency one, and a 100-record cap across both due states.
+Its EventBridge target gets two retries while the event is no more than 300
+seconds old. Exhausted events enter the encrypted standard runtime-failure
+queue under a policy scoped to the exact dispatcher schedule ARN and account.
+
 ## Slack worker
 
 The Lambda event source mapping uses partial batch responses. For a FIFO batch, processing stops after the first failed record, and the response lists that record plus every record not yet processed in the batch. This follows the Lambda FIFO partial-batch rule and preserves queue ordering. The worker:
@@ -132,11 +138,11 @@ The visibility timeout must exceed Lambda timeout plus the maximum work duration
 ## Scheduling and concurrency
 
 - Feed watcher: every 15 minutes, with a 300-second timeout, reserved concurrency one, deployment-controlled fetch concurrency, and 360-second per-feed leases. It stops claiming new feeds below a 60-second remaining-time reserve.
-- Dispatcher: event-driven where practical plus a scheduled recovery scan.
+- Dispatcher: every minute, with a 60-second timeout, reserved concurrency one, and a 100-record invocation cap.
 - Slack worker: SQS event source, reserved concurrency from deployment configuration.
 - Reconciler: every five minutes.
 
-The watcher target receives at most two retries while its event is no more than 900 seconds old. Exhausted events enter the encrypted standard runtime-failure queue under a policy scoped to the exact watcher schedule ARN. Heartbeat alarms distinguish a quiet source from a scheduler failure.
+The watcher target receives at most two retries while its event is no more than 900 seconds old. The dispatcher target receives at most two retries while its event is no more than 300 seconds old. Exhausted events enter the encrypted standard runtime-failure queue under policies scoped to each exact schedule ARN and the current account. Heartbeat alarms distinguish a quiet or empty pass from a scheduler failure.
 
 ## Terraform state
 

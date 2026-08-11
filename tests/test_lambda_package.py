@@ -89,9 +89,20 @@ class LambdaPackageTests(unittest.TestCase):
                 names = set(archive.namelist())
             self.assertIn("aws_public_change_feed/recovery.py", names)
             self.assertIn("aws_public_change_feed/recovery_runtime.py", names)
+            self.assertIn("aws_public_change_feed/dispatcher_runtime.py", names)
+            self.assertIn("aws_public_change_feed/slack_worker_runtime.py", names)
             self.assertIn("aws_public_change_feed/watcher.py", names)
             self.assertIn("aws_public_change_feed/watcher_runtime.py", names)
             self.assertIn("aws_public_change_feed/source_store.py", names)
+            for schema in (
+                "active-versions.schema.json",
+                "alert-candidate.schema.json",
+                "config.schema.json",
+                "delivery-request.schema.json",
+                "inventory.schema.json",
+            ):
+                with self.subTest(schema=schema):
+                    self.assertIn(f"aws_public_change_feed/schemas/{schema}", names)
 
 
 class ArtifactPublicationTests(unittest.TestCase):

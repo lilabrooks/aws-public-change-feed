@@ -117,6 +117,14 @@ watcher schedule ARN.
 - Send to the exact FIFO queue.
 - No feed writes or Slack secret access.
 
+The scheduled dispatcher uses the same exact content-addressed package digest
+and S3 object version as the enabled watcher and worker. It runs every minute
+with a 60-second timeout, reserved concurrency one, and the dispatcher's
+100-record cap. EventBridge retries a failed target at most twice while the
+event is no more than 300 seconds old. Exhausted events enter the encrypted
+standard runtime-failure queue under a policy scoped to the exact dispatcher
+schedule ARN and account.
+
 ### Slack worker
 
 - Consume and delete from the exact FIFO queue.
@@ -192,6 +200,7 @@ is enabled.
 
 - Outbox records by state and oldest age.
 - Dispatch attempts, accepted queue messages, and unknown send results.
+- A function-scoped dispatcher heartbeat after strict event and environment validation.
 - SQS age, receives, redrives, and DLQ depth.
 - Slack network attempts, response classes, `Retry-After`, latency, and terminal states.
 - Unknown outcomes, manual replays, stale leases, and reconciler repairs.
@@ -216,6 +225,7 @@ Production alarms include:
 - Oldest `pending_queue`, `queued`, or retryable work beyond the service objective.
 - Queue age, worker errors, throttles, and DLQ depth.
 - Any `delivery_unknown` or sustained terminal delivery failures.
+- No dispatcher heartbeat and dispatcher AWS/Lambda errors, only when the dispatcher runtime is enabled.
 - No reconciler heartbeat, only when the reconciler runtime is enabled.
 - Raw-snapshot or immutable-release verification failures.
 - Operational notification delivery test unconfirmed.
@@ -246,7 +256,9 @@ Application packages are content-addressed by the SHA-256 digest of the exact
 deployable bytes. Retain them for at least 400 days and keep at least the newest
 10 versions. Before application rollout, pause candidate creation, drain
 actionable work from the current package, record any remaining package versions,
-deploy producer and worker roots with one identical digest, and then resume.
+deploy the watcher, regular dispatcher, and worker roots with one identical
+digest and exact S3 object version, and then resume. The reconciler consumes the
+same package bytes through an independent artifact input pair.
 
 The package builder uses a complete exact dependency lock and deterministic ZIP
 metadata. Publication conditionally creates
@@ -256,6 +268,12 @@ digest, and records that version. Terraform deploys that exact key and version
 and injects `sha256:<digest>` into the composition root. Publication has no
 delete grant. No lifecycle rule covers this prefix; packages accumulate until a
 retirement tool can prove both the age and version-count conditions.
+
+Build the package twice with the same Python and pip toolchain whenever runtime
+source, production dependencies or their lock, packaged schemas or assets, or
+package-builder inputs change. Compare the exact bytes or SHA-256 digests before
+handoff. Documentation, site, test-only, and Terraform-only changes do not
+trigger this double build by themselves because they do not enter the archive.
 
 Evidence can outlive its runnable package. When that happens, automatic delivery
 leaves the record unchanged and reports `artifact_unavailable`; an operator must

@@ -28,6 +28,11 @@ output "watcher_application_version" {
   value       = local.watcher_application_version
 }
 
+output "dispatcher_application_version" {
+  description = "Exact sha256 package version selected for the outbox dispatcher, or null when undeployed."
+  value       = local.dispatcher_application_version
+}
+
 output "reconciler_application_version" {
   description = "Exact sha256 package version selected for the recovery reconciler, or null when undeployed."
   value       = local.reconciler_application_version
@@ -95,7 +100,7 @@ output "roles" {
 }
 
 output "function_names" {
-  description = "Lambda names; the watcher, Slack worker, and reconciler exist when their exact artifact inputs are supplied, while the dispatcher remains planned."
+  description = "Lambda names; the watcher, dispatcher, Slack worker, and reconciler exist when their exact artifact inputs are supplied."
   value       = local.function_names
 }
 

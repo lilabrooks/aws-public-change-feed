@@ -85,6 +85,81 @@ resource "aws_lambda_permission" "watcher_schedule" {
   source_arn    = aws_cloudwatch_event_rule.watcher[0].arn
 }
 
+resource "aws_lambda_function" "dispatcher" {
+  count = local.dispatcher_runtime_enabled ? 1 : 0
+
+  function_name = local.function_names.dispatcher
+  role          = aws_iam_role.outbox_dispatcher.arn
+  runtime       = "python3.12"
+  architectures = ["x86_64"]
+  handler       = "aws_public_change_feed.dispatcher_runtime.lambda_handler"
+
+  s3_bucket         = aws_s3_bucket.config.id
+  s3_key            = local.dispatcher_artifact_key
+  s3_object_version = var.dispatcher_artifact_version_id
+
+  timeout                        = local.dispatcher_timeout_seconds
+  reserved_concurrent_executions = local.dispatcher_reserved_concurrency
+  memory_size                    = 256
+
+  environment {
+    variables = {
+      DELIVERY_INDEX_NAME        = local.delivery_index_name
+      DELIVERY_QUEUE_URL         = aws_sqs_queue.delivery.id
+      DELIVERY_TABLE_NAME        = aws_dynamodb_table.delivery.name
+      MAX_DELIVERY_REQUEST_BYTES = tostring(local.max_delivery_request_bytes)
+      METRICS_NAMESPACE          = local.metrics_namespace
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.dispatcher,
+    aws_iam_role_policy.outbox_dispatcher,
+    aws_iam_role_policy.dispatcher_logs,
+  ]
+
+  tags = local.tags
+}
+
+resource "aws_cloudwatch_event_rule" "dispatcher" {
+  count = local.dispatcher_runtime_enabled ? 1 : 0
+
+  name                = local.function_names.dispatcher
+  description         = "Run the durable outbox dispatcher every minute."
+  schedule_expression = local.dispatcher_schedule_expression
+  state               = "ENABLED"
+
+  tags = local.tags
+}
+
+resource "aws_cloudwatch_event_target" "dispatcher" {
+  count = local.dispatcher_runtime_enabled ? 1 : 0
+
+  rule = aws_cloudwatch_event_rule.dispatcher[0].name
+  arn  = aws_lambda_function.dispatcher[0].arn
+
+  retry_policy {
+    maximum_event_age_in_seconds = local.dispatcher_maximum_event_age
+    maximum_retry_attempts       = local.dispatcher_maximum_retry_attempts
+  }
+
+  dead_letter_config {
+    arn = aws_sqs_queue.runtime_failures.arn
+  }
+
+  depends_on = [aws_sqs_queue_policy.runtime_failures]
+}
+
+resource "aws_lambda_permission" "dispatcher_schedule" {
+  count = local.dispatcher_runtime_enabled ? 1 : 0
+
+  statement_id  = "AllowExactDispatcherSchedule"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.dispatcher[0].function_name
+  principal     = "events.amazonaws.com"
+  source_arn    = aws_cloudwatch_event_rule.dispatcher[0].arn
+}
+
 resource "aws_lambda_function" "slack_worker" {
   count = local.worker_runtime_enabled ? 1 : 0
 

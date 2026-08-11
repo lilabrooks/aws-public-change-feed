@@ -379,6 +379,7 @@
               <li>Durable outbox holding the feed checkpoint until candidate and delivery records exist</li>
               <li>Due-work dispatch with state-version claims, FIFO dedupe reuse, cross-state batch limits, and explicit unknown-send evidence</li>
               <li>DynamoDB delivery and SQS FIFO producer adapters exercised against service mocks</li>
+              <li>A one-minute dispatcher Lambda composition root with strict schedule validation, bounded results, function-scoped heartbeat, reserved concurrency one, and source-scoped exhausted-event handling</li>
               <li>Slack delivery worker with exact release and application-artifact checks, release-bound candidate semantics, bounded plain-text rendering, conditional outcomes, pacing state, and retry-safe response classification</li>
               <li>FIFO Lambda handling with strict queue-body validation, remaining-time checks, ordered partial-batch failures, and fixed-name, dimensionless embedded metrics</li>
               <li>Bounded recovery with exact expired-lease conditions, no automatic replay of unknown or unproven queued work, fixed state dimensions, and a scheduled Lambda composition root</li>
@@ -403,10 +404,9 @@
             <h3>Required implementation evidence</h3>
             <ul class="site-list">
               <li>Corpus coverage of end-of-support announcements from real feeds</li>
-              <li>A Lambda handler and schedule for the regular dispatcher</li>
               <li>A package-retirement tool that proves both the accepted 400-day and 10-version floors; packages accumulate until it exists</li>
               <li>Publisher-side retirement of superseded releases, which S3 lifecycle cannot express safely</li>
-              <li>Applied watcher, worker, and reconciler infrastructure; controlled feed, Slack, and recovery evidence; and deployed regular dispatch</li>
+              <li>Applied watcher, dispatcher, worker, and reconciler infrastructure, plus controlled feed, dispatch, Slack, and recovery evidence</li>
               <li>Feed, delivery, recovery, load, and security tests</li>
               <li>Production preflight and confirmed Slack destination checks</li>
               <li>A rendered Slack message sample on this page, produced by the delivery renderer</li>

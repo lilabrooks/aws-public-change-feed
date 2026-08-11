@@ -126,8 +126,9 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - Queue visibility, receive threshold, retry delay, network attempts, and reserved concurrency satisfy the tested timing model.
 - Shadow mode evaluates live snapshots without candidate or delivery writes.
 - Release rollback and application rollback exercises preserve historical replay.
-- The watcher and worker package inputs carry one identical digest and exact S3 object version; a mismatch cannot enable either runtime.
-- Every custom alarm metric either has a runtime producer or is explicitly recorded as planned, and changing or removing a producer fails the reverse alarm-contract test.
+- The watcher, dispatcher, and worker package inputs carry one identical digest and exact S3 object version; a mismatch cannot enable any of those runtimes.
+- Every custom alarm declares its metric, dimension shape, and eligible runtime producer set; adding an unregistered alarm, changing its dimensions, or removing an eligible producer fails the reverse alarm-contract test.
+- A shared-package input change triggers two same-toolchain builds with byte or SHA-256 comparison. Runtime source, production dependencies or lock, packaged schemas or assets, and package-builder inputs are shared-package inputs; documentation, site, tests, and Terraform alone are not.
 
 ## Implementation order
 
