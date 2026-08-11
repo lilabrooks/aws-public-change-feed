@@ -120,6 +120,7 @@ resource "aws_cloudwatch_dashboard" "operations" {
           annotations = {}
           metrics = [
             [local.metrics_namespace, "Heartbeat", "Function", local.function_names.watcher, { "stat" : "Maximum", "id" : "hw", "label" : "watcher heartbeat" }],
+            [local.metrics_namespace, "Heartbeat", "Function", local.function_names.dispatcher, { "stat" : "Maximum", "id" : "hd", "label" : "dispatcher heartbeat" }],
             [local.metrics_namespace, "Heartbeat", "Function", local.function_names.reconciler, { "stat" : "Maximum", "id" : "hr", "label" : "reconciler heartbeat" }],
             [local.metrics_namespace, "DeliveryUnknown", { "stat" : "Sum", "id" : "du", "label" : "delivery unknown", "yAxis" : "right" }],
             [local.metrics_namespace, "TerminalFailure", { "stat" : "Sum", "id" : "tf", "label" : "terminal delivery", "yAxis" : "right" }],

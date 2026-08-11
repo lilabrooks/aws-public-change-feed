@@ -137,13 +137,17 @@ not delivery requests. Never redrive it into the delivery FIFO queue.
 
 1. Identify the exact schedule rule, target Lambda, event ID, and event time.
 2. For a watcher event, use `WatcherFaults`, `IncompleteRuns`, AWS/Lambda
-   `Errors`, durable feed state, and snapshot evidence. For a reconciler event,
-   use the reconciler Lambda error, `ReconcilerFault`, observation saturation,
-   repair limit, DynamoDB throttling, and SQS send evidence for that invocation.
+   `Errors`, durable feed state, and snapshot evidence. For a dispatcher event,
+   use its function-scoped heartbeat, Lambda error, dimensionless dispatch
+   counts, delivery-record claim, DynamoDB throttling, and exact SQS send
+   evidence. For a reconciler event, use the reconciler Lambda error,
+   `ReconcilerFault`, observation saturation, repair limit, DynamoDB throttling,
+   and SQS send evidence for that invocation.
 3. Confirm whether later scheduled runs completed the durable work. The watcher
-   runs every 15 minutes and the reconciler every five minutes. Conditional
-   operations make a repeated schedule event safe, but a failed invocation may
-   already have made part of its bounded durable progress.
+   runs every 15 minutes, the dispatcher every minute, and the reconciler every
+   five minutes. Conditional operations make a repeated schedule event safe,
+   but a failed invocation may already have made part of its bounded durable
+   progress.
 4. Fix the source-level or permission failure and invoke one reviewed schedule
    event against the same deployed package before deleting the failure message.
 5. Preserve messages whose durable outcome is still unexplained.
@@ -162,11 +166,11 @@ not delivery requests. Never redrive it into the delivery FIFO queue.
 
 1. Pause candidate creation at its event source. Record the current Lambda package digest and query actionable delivery records for every distinct embedded `application_version`.
 2. Drain work for the current digest within the approved rollout window. Record every version that remains in `pending_queue`, `queued`, `sending`, or `failed_retryable`; leave `delivery_unknown` as evidence.
-3. Run `python3 scripts/build_lambda_package.py --output build/slack-worker.zip`. Keep the reported `sha256:<digest>` with the change record. A second build from the same source and lock should produce the same digest; a different digest is a packaging change and must be reviewed as such.
+3. Run `python3 scripts/build_lambda_package.py --output build/slack-worker.zip`. Keep the reported `sha256:<digest>` with the change record. Build twice with the same Python and pip toolchain when runtime source, production dependencies or their lock, packaged schemas or assets, or package-builder inputs changed. Compare the exact bytes or SHA-256 digests. Documentation, site, test-only, and Terraform-only changes do not trigger this double build by themselves. A mismatch is a packaging change and must be reviewed as such.
 4. Publish with `python3 scripts/publish_lambda_artifact.py --bucket <config-bucket> --prefix <top-prefix>/application-artifacts --package build/slack-worker.zip`. Publication uses `If-None-Match: *`; an existing matching digest is adopted, and existing bytes are never replaced.
-5. Apply `infra/central` with the worker and watcher digest and VersionId pairs from the publisher. Terraform refuses the watcher unless both pairs are exactly equal, derives one digest key, deploys that exact S3 version to both functions, and injects `APPLICATION_VERSION=sha256:<digest>`.
-6. Before enabling the watcher schedule, read both Lambda configurations. Confirm their identical digest and code S3 version; the watcher's 300-second timeout, concurrency one, 360-second lease, and 15-minute rule; and the worker's 300-second timeout, FIFO event-source mapping, batch size 10, `ReportBatchItemFailures`, and 1,800-second queue visibility. Run approved feed and route preflights and confirm their durable outcomes and dimensionless metrics.
-7. Resume candidate creation only after every producer composition root uses the same digest. The watcher and worker can now form that package-identity chain, but the absent regular dispatcher still prevents an end-to-end deployment claim.
+5. Apply `infra/central` with the worker, watcher, and dispatcher digest and VersionId pairs from the publisher. Terraform refuses the watcher or dispatcher unless each pair exactly equals the worker pair, derives one digest key, deploys that exact S3 version to all three functions, and injects `APPLICATION_VERSION=sha256:<digest>` where the runtime consumes it.
+6. Before enabling schedules, read all three Lambda configurations. Confirm their identical digest and code S3 version; the watcher's 300-second timeout, concurrency one, 360-second lease, and 15-minute rule; the dispatcher's 60-second timeout, concurrency one, one-minute rule, two retries, 300-second event age, and exact failure-queue source policy; and the worker's 300-second timeout, FIFO event-source mapping, batch size 10, `ReportBatchItemFailures`, and 1,800-second queue visibility. Run approved feed, dispatch, and route preflights and confirm their durable outcomes and bounded metrics.
+7. Resume candidate creation only after the watcher, dispatcher, and worker composition roots use the same digest and exact S3 version.
 8. For rollback, pause candidate creation, select the retained digest required by queued work, locate its digest key, exact S3 version, and reviewed deployment input from that rollout, then deploy them together. The credential store and delivery mode are composition inputs and must still agree with the candidate's exact inventory release. Verify the configuration before redriving a small batch.
 9. If a delivery references a package absent from the artifact prefix, leave its record unchanged and record the bounded reason `artifact_unavailable`. Restore the approved package or make a documented manual closure; current code cannot reinterpret the candidate under another digest.
 10. Do not retire packages yet. The repository has no mechanism that proves both the 400-day age floor and the newest-10 floor, so the safe current behavior is accumulation.

@@ -82,6 +82,15 @@ locals {
   watcher_artifact_key           = var.watcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.watcher_artifact_sha256}.zip"
   watcher_application_version    = var.watcher_artifact_sha256 == null ? null : "sha256:${var.watcher_artifact_sha256}"
 
+  dispatcher_timeout_seconds        = 60
+  dispatcher_reserved_concurrency   = 1
+  dispatcher_schedule_expression    = "rate(1 minute)"
+  dispatcher_maximum_retry_attempts = 2
+  dispatcher_maximum_event_age      = 300
+  dispatcher_runtime_enabled        = var.dispatcher_artifact_sha256 != null && var.dispatcher_artifact_version_id != null
+  dispatcher_artifact_key           = var.dispatcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.dispatcher_artifact_sha256}.zip"
+  dispatcher_application_version    = var.dispatcher_artifact_sha256 == null ? null : "sha256:${var.dispatcher_artifact_sha256}"
+
   reconciler_timeout_seconds        = 60
   reconciler_reserved_concurrency   = 1
   reconciler_repair_limit           = 100

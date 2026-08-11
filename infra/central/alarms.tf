@@ -168,6 +168,8 @@ resource "aws_cloudwatch_metric_alarm" "watcher_fault" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "dispatcher_errors" {
+  count = local.dispatcher_runtime_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-outbox-dispatcher-errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -183,6 +185,30 @@ resource "aws_cloudwatch_metric_alarm" "dispatcher_errors" {
   }
 
   alarm_description         = "Outbox dispatcher function reported errors. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Outbox or queue backlog'."
+  alarm_actions             = [aws_sns_topic.operations.arn]
+  ok_actions                = [aws_sns_topic.operations.arn]
+  insufficient_data_actions = [aws_sns_topic.operations.arn]
+  tags                      = local.common_alarm_tags
+}
+
+resource "aws_cloudwatch_metric_alarm" "dispatcher_heartbeat" {
+  count = local.dispatcher_runtime_enabled ? 1 : 0
+
+  alarm_name          = "apcf-${local.deployment_id}-outbox-dispatcher-heartbeat"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 3
+  metric_name         = "Heartbeat"
+  namespace           = local.metrics_namespace
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 1
+  treat_missing_data  = "breaching"
+
+  dimensions = {
+    Function = local.function_names.dispatcher
+  }
+
+  alarm_description         = "Outbox dispatcher heartbeat missing for three minutes. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Outbox or queue backlog'."
   alarm_actions             = [aws_sns_topic.operations.arn]
   ok_actions                = [aws_sns_topic.operations.arn]
   insufficient_data_actions = [aws_sns_topic.operations.arn]

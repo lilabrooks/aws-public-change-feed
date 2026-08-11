@@ -90,6 +90,49 @@ variable "watcher_artifact_version_id" {
   }
 }
 
+variable "dispatcher_artifact_sha256" {
+  description = "Lowercase SHA-256 digest of the exact published outbox dispatcher package bytes. Null leaves Ledger 6 undeployed."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.dispatcher_artifact_sha256 == null || can(regex("^[a-f0-9]{64}$", var.dispatcher_artifact_sha256))
+    error_message = "dispatcher_artifact_sha256 must be null or exactly 64 lowercase hexadecimal characters."
+  }
+
+  validation {
+    condition     = (var.dispatcher_artifact_sha256 == null) == (var.dispatcher_artifact_version_id == null)
+    error_message = "dispatcher_artifact_sha256 and dispatcher_artifact_version_id must both be set or both be null."
+  }
+
+  validation {
+    condition = var.dispatcher_artifact_sha256 == null || (
+      var.worker_artifact_sha256 != null && var.dispatcher_artifact_sha256 == var.worker_artifact_sha256
+    )
+    error_message = "enabling the dispatcher requires the exact same artifact digest as the enabled Slack worker."
+  }
+}
+
+variable "dispatcher_artifact_version_id" {
+  description = "Exact S3 VersionId returned by append-only publication of dispatcher_artifact_sha256."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition     = var.dispatcher_artifact_version_id == null || length(trimspace(var.dispatcher_artifact_version_id)) > 0
+    error_message = "dispatcher_artifact_version_id must be null or a nonempty S3 version ID."
+  }
+
+  validation {
+    condition = var.dispatcher_artifact_version_id == null || (
+      var.worker_artifact_version_id != null && var.dispatcher_artifact_version_id == var.worker_artifact_version_id
+    )
+    error_message = "enabling the dispatcher requires the exact same S3 VersionId as the enabled Slack worker."
+  }
+}
+
 variable "reconciler_artifact_sha256" {
   description = "Lowercase SHA-256 digest of the exact published recovery reconciler package bytes. Null leaves Ledger 3 undeployed."
   type        = string
