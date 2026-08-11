@@ -19,8 +19,10 @@ Each assertion here is a single pass whose outcome the store's conditions
 determine.
 """
 
+import copy
 import sys
 import unittest
+from datetime import timedelta
 from pathlib import Path
 
 import boto3
@@ -32,21 +34,26 @@ sys.path.insert(0, str(ROOT / "tests"))
 from test_worker import (  # noqa: E402
     NOW,
     NOW_TS,
+    AcceptedQueueSender,
     FakeSlackSender,
     RecordingCredentials,
     WorkerFixture,
 )
 
 from aws_public_change_feed.credentials import WEBHOOK, SlackCredential  # noqa: E402
+from aws_public_change_feed.dispatch import dispatch_due_work  # noqa: E402
+from aws_public_change_feed.manual_replay import apply_unknown_replay, plan_unknown_replay  # noqa: E402
 from aws_public_change_feed.outbox import (  # noqa: E402
     DeliveryRecord,
     DynamoDBDeliveryStore,
+    build_delivery_request,
 )
 from aws_public_change_feed.worker import (  # noqa: E402
     DELIVERY_UNKNOWN,
     FAILED_RETRYABLE,
     FAILED_TERMINAL,
     POSTED,
+    QueueDelivery,
     SlackResponse,
     TransportError,
 )
@@ -126,6 +133,7 @@ class PostedOutcomeTests(WorkerAgainstDynamoDB):
         self.assertIsNotNone(record.expires_at)
         self.assertIsNone(record.attempt_id)
         self.assertIsNone(record.lease_expires_at)
+        self.assertIsNotNone(record.last_attempt_id)
         assert record.slack_response is not None
         self.assertEqual(record.slack_response["response_class"], "http_200")
 
@@ -159,6 +167,7 @@ class RetryOutcomeTests(WorkerAgainstDynamoDB):
         record = self.record()
         self.assertEqual(record.status, FAILED_RETRYABLE)
         self.assertEqual(record.next_action_at, NOW_TS + 45)
+        self.assertIsNotNone(record.last_attempt_id)
         self.assertIsNone(record.expires_at)
         self.assertIsNone(record.dispatch_id)
         self.assertEqual(
@@ -196,6 +205,7 @@ class RetryOutcomeTests(WorkerAgainstDynamoDB):
         self.assertEqual(result.state, FAILED_TERMINAL)
         record = self.record()
         self.assertEqual(record.network_attempt_count, max_attempts)
+        self.assertIsNotNone(record.last_attempt_id)
         self.assertIsNotNone(record.expires_at)
 
 
@@ -215,6 +225,7 @@ class UnknownOutcomeTests(WorkerAgainstDynamoDB):
         self.assertEqual(record.status, DELIVERY_UNKNOWN)
         self.assertIsNone(record.expires_at)
         self.assertIsNone(record.attempt_id)
+        self.assertIsNotNone(record.last_attempt_id)
 
     def test_an_expired_sending_lease_becomes_delivery_unknown(self):
         self.queued_record(
@@ -228,7 +239,186 @@ class UnknownOutcomeTests(WorkerAgainstDynamoDB):
 
         self.assertEqual(result.state, DELIVERY_UNKNOWN)
         self.assertEqual(self.record().status, DELIVERY_UNKNOWN)
+        self.assertEqual(self.record().last_attempt_id, "a1")
         self.assertEqual(self.sender.calls, [])
+
+    def test_a_replayed_unknown_consumes_its_reserved_attempt(self):
+        reserved_attempt = "1" * 32
+        unknown = DeliveryRecord(
+            candidate_id=self.key,
+            destination_key=self.destination_key,
+            request=self.request,
+            next_action_at=None,
+            status=DELIVERY_UNKNOWN,
+            state_version=7,
+            created_at=self.request["created_at"],
+            dispatch_generation=1,
+            last_attempt_id="prior-attempt",
+            network_attempt_count=1,
+        )
+        self.store.put_delivery_if_absent(unknown)
+        replay = plan_unknown_replay(
+            unknown,
+            expected_state_version=7,
+            operator="operator@example.com",
+            reason="Approved after Slack inspection",
+            evidence="No matching post in the destination search window",
+            clock=lambda: NOW,
+            attempt_id_factory=lambda: reserved_attempt,
+        )
+        apply_unknown_replay(self.store, replay)
+
+        dispatched = dispatch_due_work(
+            self.store,
+            AcceptedQueueSender(),
+            queue_url="https://sqs.example/manual-replay.fifo",
+            now=NOW,
+            max_delivery_request_bytes=self.config["message_policy"]["max_delivery_request_bytes"],
+        )
+        self.assertEqual(dispatched.accepted, 1)
+        queued = self.record()
+        self.assertEqual(queued.next_attempt_id, reserved_attempt)
+
+        result = self.process(
+            queue_delivery=QueueDelivery(
+                request=self.request,
+                message_id=queued.queue_message_id,
+                message_group_id=self.destination_key,
+            )
+        )
+
+        self.assertEqual(result.state, POSTED)
+        record = self.record()
+        self.assertEqual(record.last_attempt_id, reserved_attempt)
+        self.assertIsNone(record.next_attempt_id)
+        self.assertEqual(record.manual_replay_history[-1].new_attempt_id, reserved_attempt)
+
+    def test_a_replayed_unknown_survives_pacing_and_does_not_block_other_due_work(self):
+        reserved_attempt = "1" * 32
+        unknown = DeliveryRecord(
+            candidate_id=self.key,
+            destination_key=self.destination_key,
+            request=self.request,
+            next_action_at=None,
+            status=DELIVERY_UNKNOWN,
+            state_version=7,
+            created_at=self.request["created_at"],
+            dispatch_generation=1,
+            last_attempt_id="prior-attempt",
+            network_attempt_count=1,
+        )
+        self.store.put_delivery_if_absent(unknown)
+        replay = plan_unknown_replay(
+            unknown,
+            expected_state_version=7,
+            operator="operator@example.com",
+            reason="Approved after Slack inspection",
+            evidence="No matching post in the destination search window",
+            clock=lambda: NOW,
+            attempt_id_factory=lambda: reserved_attempt,
+        )
+        apply_unknown_replay(self.store, replay)
+        dispatch_due_work(
+            self.store,
+            AcceptedQueueSender(),
+            queue_url="https://sqs.example/manual-replay.fifo",
+            now=NOW,
+            max_delivery_request_bytes=self.config["message_policy"]["max_delivery_request_bytes"],
+        )
+
+        retry_time = NOW + timedelta(seconds=60)
+        self.assertTrue(
+            self.store.update_pace(
+                self.destination_key,
+                expected_version=None,
+                next_allowed_at=int(retry_time.timestamp()),
+                last_response_class="http_200",
+            )
+        )
+        queued = self.record()
+        paced = self.process(
+            queue_delivery=QueueDelivery(
+                request=self.request,
+                message_id=queued.queue_message_id,
+                message_group_id=self.destination_key,
+            )
+        )
+
+        self.assertEqual(paced.state, FAILED_RETRYABLE)
+        self.assertFalse(paced.performed_network_call)
+        self.assertEqual(self.sender.calls, [])
+        deferred = self.record()
+        self.assertEqual(deferred.status, FAILED_RETRYABLE)
+        self.assertEqual(deferred.next_attempt_id, reserved_attempt)
+
+        unrelated_key = "f" * 64
+        self.assertNotEqual(unrelated_key, self.key)
+        unrelated_candidate = copy.deepcopy(self.candidate)
+        unrelated_candidate["candidate_id"] = unrelated_key
+        unrelated_destination = "unrelated-destination"
+        unrelated_request = build_delivery_request(unrelated_candidate, unrelated_destination, NOW)
+        dispatch_time = retry_time + timedelta(seconds=1)
+        self.assertTrue(
+            self.store.put_delivery_if_absent(
+                DeliveryRecord(
+                    candidate_id=unrelated_key,
+                    destination_key=unrelated_destination,
+                    request=unrelated_request,
+                    next_action_at=int(dispatch_time.timestamp()),
+                    status="pending_queue",
+                    created_at=unrelated_request["created_at"],
+                )
+            )
+        )
+
+        queue_sender = AcceptedQueueSender()
+        dispatched = dispatch_due_work(
+            self.store,
+            queue_sender,
+            queue_url="https://sqs.example/manual-replay.fifo",
+            now=dispatch_time,
+            max_delivery_request_bytes=self.config["message_policy"]["max_delivery_request_bytes"],
+        )
+        self.assertEqual(dispatched.accepted, 2)
+        self.assertEqual(len(queue_sender.calls), 2)
+        redispatched = self.record()
+        self.assertEqual(redispatched.status, "queued")
+        self.assertEqual(redispatched.next_attempt_id, reserved_attempt)
+        unrelated = self.store.get_delivery(unrelated_key)
+        assert unrelated is not None
+        self.assertEqual(unrelated.status, "queued")
+
+        outer = self
+
+        class InspectingSender(FakeSlackSender):
+            claimed: DeliveryRecord | None = None
+
+            def post(self, payload, *, credential, destination, timeout_seconds):
+                self.claimed = outer.record()
+                return super().post(
+                    payload,
+                    credential=credential,
+                    destination=destination,
+                    timeout_seconds=timeout_seconds,
+                )
+
+        sender = InspectingSender(self.posted_response())
+        self.sender = sender
+        posted = self.process(
+            clock=lambda: dispatch_time,
+            queue_delivery=QueueDelivery(
+                request=self.request,
+                message_id=redispatched.queue_message_id,
+                message_group_id=self.destination_key,
+            ),
+        )
+
+        self.assertEqual(posted.state, POSTED)
+        assert sender.claimed is not None
+        self.assertEqual(sender.claimed.status, "sending")
+        self.assertEqual(sender.claimed.attempt_id, reserved_attempt)
+        self.assertIsNone(sender.claimed.next_attempt_id)
+        self.assertEqual(self.record().last_attempt_id, reserved_attempt)
 
 
 class RefusedCredentialTests(WorkerAgainstDynamoDB):
@@ -247,6 +437,7 @@ class RefusedCredentialTests(WorkerAgainstDynamoDB):
         self.assertEqual(self.sender.calls, [])
         record = self.record()
         self.assertEqual(record.network_attempt_count, 0)
+        self.assertIsNotNone(record.last_attempt_id)
         assert record.slack_response is not None
         self.assertEqual(record.slack_response["response_class"], "webhook_url_rejected")
 

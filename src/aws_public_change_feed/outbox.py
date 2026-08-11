@@ -27,7 +27,7 @@ import re
 import time
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from .candidates import CONTRACT_VERSION, utc_timestamp
@@ -43,6 +43,7 @@ __all__ = [
     "DynamoDBDeliveryStore",
     "EmissionResult",
     "InMemoryOutboxStore",
+    "ManualReplayEntry",
     "OutboxStore",
     "ACKNOWLEDGED_STATES",
     "OversizeDeliveryError",
@@ -57,6 +58,13 @@ __all__ = [
 
 # A dispatch ID is `queue_dispatch_id` output, a lowercase SHA-256 digest.
 _DIGEST = re.compile(r"[a-f0-9]{64}")
+_REPLAY_ATTEMPT_ID = re.compile(r"[a-f0-9]{32}")
+
+MAX_MANUAL_REPLAY_HISTORY = 25
+MAX_OPERATOR_CHARACTERS = 200
+MAX_REPLAY_REASON_CHARACTERS = 1000
+MAX_REPLAY_EVIDENCE_CHARACTERS = 2000
+MAX_ATTEMPT_ID_CHARACTERS = 128
 
 # Chapter 02 keys the candidate and delivery items under one partition, and the
 # destination pacing item under its own.
@@ -111,6 +119,7 @@ def validate_delivery_transition(
     network_attempt_count: int = 0,
     slack_response: Mapping[str, Any] | None = None,
     expires_at: int | None = None,
+    last_attempt_id: str | None = None,
 ) -> None:
     """Refuse a delivery transition that would produce an unreadable record.
 
@@ -142,6 +151,7 @@ def validate_delivery_transition(
         network_attempt_count=network_attempt_count,
         slack_response=slack_response,
         expires_at=expires_at,
+        last_attempt_id=last_attempt_id,
     )
 
 
@@ -163,6 +173,110 @@ class CandidateIdentityError(Exception):
 
 class OversizeDeliveryError(ValueError):
     """A candidate or request exceeded its reviewed UTF-8 JSON byte limit."""
+
+
+def _bounded_single_line(name: str, value: str, maximum: int) -> None:
+    if not isinstance(value, str) or not value or value != value.strip():
+        raise ValueError(f"{name} must be a nonempty string without surrounding whitespace")
+    if "\n" in value or "\r" in value:
+        raise ValueError(f"{name} must be a single line")
+    if len(value) > maximum:
+        raise ValueError(f"{name} exceeds {maximum} characters")
+
+
+@dataclass(frozen=True, slots=True)
+class ManualReplayEntry:
+    """One operator-approved link from an unknown attempt to its replay."""
+
+    decided_at: str
+    operator: str
+    reason: str
+    evidence: str
+    prior_attempt_id: str
+    new_attempt_id: str
+
+    def __post_init__(self) -> None:
+        try:
+            parsed = datetime.strptime(self.decided_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        except (TypeError, ValueError):
+            raise ValueError("decided_at must be a canonical UTC timestamp") from None
+        if utc_timestamp(parsed) != self.decided_at:
+            raise ValueError("decided_at must be a canonical UTC timestamp")
+        _bounded_single_line("operator", self.operator, MAX_OPERATOR_CHARACTERS)
+        _bounded_single_line("reason", self.reason, MAX_REPLAY_REASON_CHARACTERS)
+        _bounded_single_line("evidence", self.evidence, MAX_REPLAY_EVIDENCE_CHARACTERS)
+        _bounded_single_line("prior_attempt_id", self.prior_attempt_id, MAX_ATTEMPT_ID_CHARACTERS)
+        if not isinstance(self.new_attempt_id, str) or not _REPLAY_ATTEMPT_ID.fullmatch(self.new_attempt_id):
+            raise ValueError("new_attempt_id must be 32 lowercase hexadecimal characters")
+
+    def document(self) -> dict[str, str]:
+        return {
+            "decided_at": self.decided_at,
+            "operator": self.operator,
+            "reason": self.reason,
+            "evidence": self.evidence,
+            "prior_attempt_id": self.prior_attempt_id,
+            "new_attempt_id": self.new_attempt_id,
+        }
+
+    @classmethod
+    def from_document(cls, document: Mapping[str, Any]) -> ManualReplayEntry:
+        required = {
+            "decided_at",
+            "operator",
+            "reason",
+            "evidence",
+            "prior_attempt_id",
+            "new_attempt_id",
+        }
+        if set(document) != required:
+            raise ValueError("manual replay entry fields do not match the contract")
+        return cls(
+            decided_at=document["decided_at"],
+            operator=document["operator"],
+            reason=document["reason"],
+            evidence=document["evidence"],
+            prior_attempt_id=document["prior_attempt_id"],
+            new_attempt_id=document["new_attempt_id"],
+        )
+
+
+def _encode_replay_entry(entry: ManualReplayEntry) -> dict[str, dict[str, dict[str, str]]]:
+    return {"M": {name: {"S": value} for name, value in entry.document().items()}}
+
+
+def _decode_replay_entry(value: Mapping[str, Any]) -> ManualReplayEntry:
+    encoded = value.get("M")
+    if not isinstance(encoded, Mapping):
+        raise ValueError("manual replay history entry must be a DynamoDB map")
+    document: dict[str, str] = {}
+    for name, field_value in encoded.items():
+        if not isinstance(field_value, Mapping) or set(field_value) != {"S"} or not isinstance(field_value["S"], str):
+            raise ValueError("manual replay history fields must be DynamoDB strings")
+        document[str(name)] = field_value["S"]
+    return ManualReplayEntry.from_document(document)
+
+
+def _validate_replay_transition(
+    *,
+    expected_state_version: int,
+    expected_prior_attempt_id: str,
+    entry: ManualReplayEntry,
+    next_action_at: int,
+) -> None:
+    if (
+        isinstance(expected_state_version, bool)
+        or not isinstance(expected_state_version, int)
+        or expected_state_version < 1
+    ):
+        raise ValueError("expected_state_version must be a positive integer")
+    _bounded_single_line("expected_prior_attempt_id", expected_prior_attempt_id, MAX_ATTEMPT_ID_CHARACTERS)
+    if not isinstance(entry, ManualReplayEntry):
+        raise ValueError("entry must be a ManualReplayEntry")
+    if entry.prior_attempt_id != expected_prior_attempt_id:
+        raise ValueError("entry prior_attempt_id must match the expected prior attempt")
+    if isinstance(next_action_at, bool) or not isinstance(next_action_at, int) or next_action_at < 0:
+        raise ValueError("next_action_at must be a non-negative integer Unix timestamp")
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,6 +319,12 @@ class DeliveryRecord:
     # redeliveries that never call Slack must not exhaust a Slack retry budget.
     attempt_id: str | None = None
     lease_expires_at: int | None = None
+    # A completed claim moves its ID here before clearing `attempt_id`. A
+    # manual replay reserves its next ID before the dispatcher and worker can
+    # make another call, then `claim_sending` consumes that reservation.
+    last_attempt_id: str | None = None
+    next_attempt_id: str | None = None
+    manual_replay_history: tuple[ManualReplayEntry, ...] = ()
     network_attempt_count: int = 0
     # Bounded Slack response metadata for diagnosis: the worker's derived
     # response class, latency, whether request bytes went out, the HTTP status
@@ -261,6 +381,24 @@ class DeliveryRecord:
                 raise ValueError("lease_expires_at is only valid on sending delivery records")
         if self.attempt_id is not None and (not isinstance(self.attempt_id, str) or not self.attempt_id):
             raise ValueError("attempt_id must be a nonempty string")
+        if self.last_attempt_id is not None:
+            _bounded_single_line("last_attempt_id", self.last_attempt_id, MAX_ATTEMPT_ID_CHARACTERS)
+        if self.next_attempt_id is not None:
+            if self.status not in {"pending_queue", "queued", "failed_retryable"}:
+                raise ValueError(
+                    "next_attempt_id is only valid on pending_queue, queued, or failed_retryable delivery records"
+                )
+            if not _REPLAY_ATTEMPT_ID.fullmatch(self.next_attempt_id):
+                raise ValueError("next_attempt_id must be 32 lowercase hexadecimal characters")
+        if not isinstance(self.manual_replay_history, tuple):
+            raise ValueError("manual_replay_history must be an immutable tuple")
+        if len(self.manual_replay_history) > MAX_MANUAL_REPLAY_HISTORY:
+            raise ValueError(f"manual_replay_history cannot exceed {MAX_MANUAL_REPLAY_HISTORY} entries")
+        if any(not isinstance(entry, ManualReplayEntry) for entry in self.manual_replay_history):
+            raise ValueError("manual_replay_history entries must be ManualReplayEntry values")
+        if self.next_attempt_id is not None:
+            if not self.manual_replay_history or self.manual_replay_history[-1].new_attempt_id != self.next_attempt_id:
+                raise ValueError("next_attempt_id must match the newest manual replay entry")
         if self.lease_expires_at is not None and (
             isinstance(self.lease_expires_at, bool)
             or not isinstance(self.lease_expires_at, int)
@@ -428,6 +566,7 @@ class OutboxStore(Protocol):
         expected_state_version: int,
         attempt_id: str,
         lease_expires_at: int,
+        expected_next_attempt_id: str | None = None,
     ) -> bool:
         """Move a `queued` record to `sending` with a lease and attempt ID.
 
@@ -435,6 +574,23 @@ class OutboxStore(Protocol):
         version, so two workers cannot both believe they hold the same claim.
         `next_action_at` is set to `lease_expires_at` so the status index can
         surface expired leases to the reconciler.
+        """
+        ...
+
+    def replay_unknown(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_prior_attempt_id: str,
+        entry: ManualReplayEntry,
+        next_action_at: int,
+    ) -> bool:
+        """Append one audited decision and make exact unknown work dispatchable.
+
+        The transition succeeds only for the observed unknown state version and
+        prior attempt, while no TTL or replay reservation exists. It does not
+        call SQS or Slack.
         """
         ...
 
@@ -643,15 +799,22 @@ class InMemoryOutboxStore:
         expected_state_version: int,
         attempt_id: str,
         lease_expires_at: int,
+        expected_next_attempt_id: str | None = None,
     ) -> bool:
         record = self._deliveries.get(candidate)
-        if record is None or record.status != "queued" or record.state_version != expected_state_version:
+        if (
+            record is None
+            or record.status != "queued"
+            or record.state_version != expected_state_version
+            or record.next_attempt_id != expected_next_attempt_id
+        ):
             return False
         self._deliveries[candidate] = replace(
             record,
             status="sending",
             attempt_id=attempt_id,
             lease_expires_at=lease_expires_at,
+            next_attempt_id=None,
             next_action_at=lease_expires_at,
             state_version=record.state_version + 1,
         )
@@ -682,6 +845,7 @@ class InMemoryOutboxStore:
             status=status,
             attempt_id=None,
             lease_expires_at=None,
+            last_attempt_id=attempt_id,
             network_attempt_count=network_attempt_count,
             next_action_at=next_action_at,
             slack_response=slack_response,
@@ -728,9 +892,48 @@ class InMemoryOutboxStore:
             status="delivery_unknown",
             attempt_id=None,
             lease_expires_at=None,
+            last_attempt_id=attempt_id,
             next_action_at=None,
             dispatch_id=None,
             state_version=record.state_version + 1,
+        )
+        return True
+
+    def replay_unknown(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_prior_attempt_id: str,
+        entry: ManualReplayEntry,
+        next_action_at: int,
+    ) -> bool:
+        _validate_replay_transition(
+            expected_state_version=expected_state_version,
+            expected_prior_attempt_id=expected_prior_attempt_id,
+            entry=entry,
+            next_action_at=next_action_at,
+        )
+        record = self._deliveries.get(candidate)
+        if (
+            record is None
+            or record.status != "delivery_unknown"
+            or record.state_version != expected_state_version
+            or record.last_attempt_id != expected_prior_attempt_id
+            or record.expires_at is not None
+            or record.next_attempt_id is not None
+            or len(record.manual_replay_history) >= MAX_MANUAL_REPLAY_HISTORY
+        ):
+            return False
+        self._deliveries[candidate] = replace(
+            record,
+            status="pending_queue",
+            state_version=record.state_version + 1,
+            next_action_at=next_action_at,
+            next_attempt_id=entry.new_attempt_id,
+            manual_replay_history=(*record.manual_replay_history, entry),
+            queue_message_id=None,
+            slack_response=None,
         )
         return True
 
@@ -811,6 +1014,14 @@ class DynamoDBDeliveryStore:
             item["attempt_id"] = {"S": record.attempt_id}
         if record.lease_expires_at is not None:
             item["lease_expires_at"] = {"N": str(record.lease_expires_at)}
+        if record.last_attempt_id is not None:
+            item["last_attempt_id"] = {"S": record.last_attempt_id}
+        if record.next_attempt_id is not None:
+            item["next_attempt_id"] = {"S": record.next_attempt_id}
+        if record.manual_replay_history:
+            item["manual_replay_history"] = {
+                "L": [_encode_replay_entry(entry) for entry in record.manual_replay_history]
+            }
         if record.slack_response is not None:
             item["slack_response"] = {"S": json.dumps(record.slack_response, sort_keys=True)}
         if record.expires_at is not None:
@@ -831,6 +1042,13 @@ class DynamoDBDeliveryStore:
             queue_message_id=item["queue_message_id"]["S"] if "queue_message_id" in item else None,
             attempt_id=item["attempt_id"]["S"] if "attempt_id" in item else None,
             lease_expires_at=int(item["lease_expires_at"]["N"]) if "lease_expires_at" in item else None,
+            last_attempt_id=item["last_attempt_id"]["S"] if "last_attempt_id" in item else None,
+            next_attempt_id=item["next_attempt_id"]["S"] if "next_attempt_id" in item else None,
+            manual_replay_history=(
+                tuple(_decode_replay_entry(entry) for entry in item["manual_replay_history"]["L"])
+                if "manual_replay_history" in item
+                else ()
+            ),
             network_attempt_count=(int(item["network_attempt_count"]["N"]) if "network_attempt_count" in item else 0),
             slack_response=json.loads(item["slack_response"]["S"]) if "slack_response" in item else None,
             expires_at=int(item["expires_at"]["N"]) if "expires_at" in item else None,
@@ -1105,9 +1323,12 @@ class DynamoDBDeliveryStore:
         expected_state_version: int,
         attempt_id: str,
         lease_expires_at: int,
+        expected_next_attempt_id: str | None = None,
     ) -> bool:
         from botocore.exceptions import ClientError
 
+        if expected_next_attempt_id is not None and attempt_id != expected_next_attempt_id:
+            raise ValueError("a reserved replay attempt must become the active attempt")
         validate_delivery_transition(
             status="sending",
             next_action_at=lease_expires_at,
@@ -1115,24 +1336,32 @@ class DynamoDBDeliveryStore:
             lease_expires_at=lease_expires_at,
         )
 
+        condition = "#status = :queued AND state_version = :version AND attribute_not_exists(attempt_id)"
+        values: dict[str, dict[str, object]] = {
+            ":queued": {"S": "queued"},
+            ":sending": {"S": "sending"},
+            ":attempt": {"S": attempt_id},
+            ":lease": {"N": str(lease_expires_at)},
+            ":version": {"N": str(expected_state_version)},
+            ":one": {"N": "1"},
+        }
+        if expected_next_attempt_id is None:
+            condition += " AND attribute_not_exists(next_attempt_id)"
+        else:
+            condition += " AND next_attempt_id = :next_attempt"
+            values[":next_attempt"] = {"S": expected_next_attempt_id}
+
         try:
             self._client.update_item(
                 TableName=self._table,
                 Key=self._key(candidate),
                 UpdateExpression=(
                     "SET #status = :sending, attempt_id = :attempt, lease_expires_at = :lease, "
-                    "next_action_at = :lease, state_version = state_version + :one"
+                    "next_action_at = :lease, state_version = state_version + :one REMOVE next_attempt_id"
                 ),
-                ConditionExpression="#status = :queued AND state_version = :version AND attribute_not_exists(attempt_id)",
+                ConditionExpression=condition,
                 ExpressionAttributeNames={"#status": "status"},
-                ExpressionAttributeValues={
-                    ":queued": {"S": "queued"},
-                    ":sending": {"S": "sending"},
-                    ":attempt": {"S": attempt_id},
-                    ":lease": {"N": str(lease_expires_at)},
-                    ":version": {"N": str(expected_state_version)},
-                    ":one": {"N": "1"},
-                },
+                ExpressionAttributeValues=values,
             )
         except ClientError as error:
             if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
@@ -1166,10 +1395,16 @@ class DynamoDBDeliveryStore:
             network_attempt_count=network_attempt_count,
             slack_response=slack_response,
             expires_at=expires_at,
+            last_attempt_id=attempt_id,
         )
 
-        set_parts = ["#status = :status", "network_attempt_count = :net", "state_version = state_version + :one"]
-        remove_parts = ["attempt_id", "lease_expires_at", "dispatch_id"]
+        set_parts = [
+            "#status = :status",
+            "network_attempt_count = :net",
+            "last_attempt_id = :attempt",
+            "state_version = state_version + :one",
+        ]
+        remove_parts = ["attempt_id", "lease_expires_at", "dispatch_id", "next_attempt_id"]
         values: dict[str, dict[str, object]] = {
             ":status": {"S": status},
             ":net": {"N": str(network_attempt_count)},
@@ -1231,6 +1466,7 @@ class DynamoDBDeliveryStore:
             network_attempt_count=network_attempt_count,
             slack_response=slack_response,
             expires_at=None,
+            last_attempt_id=attempt_id,
         )
         if isinstance(expected_state_version, bool) or not isinstance(expected_state_version, int):
             raise ValueError("expected_state_version must be an integer")
@@ -1245,8 +1481,8 @@ class DynamoDBDeliveryStore:
                 TableName=self._table,
                 Key=self._key(candidate),
                 UpdateExpression=(
-                    "SET #status = :unknown, state_version = state_version + :one "
-                    "REMOVE attempt_id, lease_expires_at, next_action_at, dispatch_id"
+                    "SET #status = :unknown, last_attempt_id = :attempt, state_version = state_version + :one "
+                    "REMOVE attempt_id, lease_expires_at, next_action_at, dispatch_id, next_attempt_id"
                 ),
                 ConditionExpression=(
                     "#status = :sending AND state_version = :version AND attempt_id = :attempt "
@@ -1261,6 +1497,57 @@ class DynamoDBDeliveryStore:
                     ":attempt": {"S": attempt_id},
                     ":lease": {"N": str(lease_expires_at)},
                     ":due": {"N": str(due_before)},
+                    ":one": {"N": "1"},
+                },
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
+
+    def replay_unknown(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_prior_attempt_id: str,
+        entry: ManualReplayEntry,
+        next_action_at: int,
+    ) -> bool:
+        from botocore.exceptions import ClientError
+
+        _validate_replay_transition(
+            expected_state_version=expected_state_version,
+            expected_prior_attempt_id=expected_prior_attempt_id,
+            entry=entry,
+            next_action_at=next_action_at,
+        )
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key=self._key(candidate),
+                UpdateExpression=(
+                    "SET #status = :pending, next_action_at = :next, next_attempt_id = :new_attempt, "
+                    "manual_replay_history = list_append(if_not_exists(manual_replay_history, :empty), :entry), "
+                    "state_version = state_version + :one REMOVE queue_message_id, slack_response"
+                ),
+                ConditionExpression=(
+                    "#status = :unknown AND state_version = :version AND last_attempt_id = :prior_attempt "
+                    "AND attribute_not_exists(expires_at) AND attribute_not_exists(next_attempt_id) "
+                    "AND (attribute_not_exists(manual_replay_history) OR size(manual_replay_history) < :history_limit)"
+                ),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":unknown": {"S": "delivery_unknown"},
+                    ":pending": {"S": "pending_queue"},
+                    ":version": {"N": str(expected_state_version)},
+                    ":prior_attempt": {"S": expected_prior_attempt_id},
+                    ":new_attempt": {"S": entry.new_attempt_id},
+                    ":next": {"N": str(next_action_at)},
+                    ":empty": {"L": []},
+                    ":entry": {"L": [_encode_replay_entry(entry)]},
+                    ":history_limit": {"N": str(MAX_MANUAL_REPLAY_HISTORY)},
                     ":one": {"N": "1"},
                 },
             )

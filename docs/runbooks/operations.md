@@ -117,9 +117,20 @@ Automatic retry is forbidden because Slack may already contain the message.
 1. Record the candidate ID, request ID, attempt ID, destination, request start time, lease expiry, and worker invocation.
 2. Search the destination around that time using title, source link, and compact candidate ID. Respect customer access boundaries.
 3. If the message exists, use the audited reconciliation action to mark `posted` and record its Slack identifier when available.
-4. If the message is absent and the operator accepts the remaining duplication risk, create a manual replay with operator, reason, evidence, prior attempt, and new attempt.
-5. If evidence is inconclusive, leave the state unknown and escalate to the service owner.
-6. Review timeout, lease, visibility, and worker termination evidence before closing the incident.
+4. If the message is absent and the operator accepts the remaining duplication
+   risk, record the delivery record's current state version. Preview the
+   mutation with `python3 scripts/replay_delivery.py --table-name <table>
+   --candidate-id <candidate> --expected-state-version <version> --operator
+   <operator> --reason <reason> --evidence <evidence>`. The preview performs a
+   strongly consistent read and no write. Review its redacted hashes against
+   the supplied operator, reason, and evidence.
+5. Repeat the same command with `--apply` to make one conditional mutation. A
+   successful result reports `ManualReplay: 1`, the new state version, and the
+   attempt ID reserved before the next Slack call. A refusal means the record
+   changed; inspect the fresh state. An ambiguous AWS result requires a direct
+   strongly consistent reread before any retry.
+6. If evidence is inconclusive, leave the state unknown and escalate to the service owner.
+7. Review timeout, lease, visibility, and worker termination evidence before closing the incident. Recording a found post, replaying a terminal record, and delivery-DLQ redrive still require separate operator tooling.
 
 ## DLQ response
 

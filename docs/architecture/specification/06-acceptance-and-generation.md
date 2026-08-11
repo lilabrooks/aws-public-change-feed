@@ -96,6 +96,12 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - Given more recovery work than one bounded run may inspect or repair, the reconciler emits saturation and leaves the remainder durable for a later run.
 - Given a DLQ item, the runbook can trace request, candidate, release, destination, and last state.
 - Given an operator-approved unknown replay, audit history records operator, reason, old attempt, and new attempt before another call.
+- Given a stale state version, wrong prior attempt, existing reservation,
+  unexpected TTL, or full 25-entry history, an unknown replay writes nothing.
+- Given a successful unknown replay, the existing dispatcher preserves the
+  reserved attempt through FIFO queue acceptance. A destination-pacing retry
+  preserves it through `failed_retryable` and redispatch, and the worker
+  consumes it in the sending claim before contacting Slack.
 
 ## Security acceptance
 
