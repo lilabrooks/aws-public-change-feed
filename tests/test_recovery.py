@@ -188,6 +188,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(result.expired_leases, 1)
         record = self.record("expired")
         self.assertEqual(record.status, "delivery_unknown")
+        self.assertEqual(record.last_attempt_id, "attempt-7")
         self.assertEqual(record.network_attempt_count, 3)
         self.assertEqual(record.slack_response, response)
         self.assertIsNone(record.next_action_at)

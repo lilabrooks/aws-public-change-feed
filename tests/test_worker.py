@@ -54,8 +54,10 @@ from aws_public_change_feed.credentials import (  # noqa: E402
     SlackCredential,
     StaticCredentialReader,
 )
+from aws_public_change_feed.dispatch import SendResult, SendStatus, dispatch_due_work  # noqa: E402
 from aws_public_change_feed.identity import queue_dispatch_id  # noqa: E402
 from aws_public_change_feed.loading import load_active_release  # noqa: E402
+from aws_public_change_feed.manual_replay import apply_unknown_replay, plan_unknown_replay  # noqa: E402
 from aws_public_change_feed.outbox import (  # noqa: E402
     DeliveryRecord,
     InMemoryOutboxStore,
@@ -195,6 +197,17 @@ class RaisingSlackSender:
 
     def post(self, payload, *, credential, destination, timeout_seconds):
         raise RuntimeError("socket hangup")
+
+
+class AcceptedQueueSender:
+    """The existing dispatcher handoff, with one deterministic queue receipt."""
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def send(self, request, *, queue_url, dispatch_id):
+        self.calls.append({"request": request, "queue_url": queue_url, "dispatch_id": dispatch_id})
+        return SendResult(SendStatus.ACCEPTED, message_id="manual-replay-message")
 
 
 class RecordingCredentials(StaticCredentialReader):
@@ -346,6 +359,238 @@ class WorkerFixture(unittest.TestCase):
         return loaded
 
 
+class ManualReplayWorkerTests(WorkerFixture):
+    def test_replay_uses_the_reserved_attempt_before_the_next_slack_call(self):
+        prior_attempt = "prior-attempt"
+        reserved_attempt = "1" * 32
+        unknown = DeliveryRecord(
+            candidate_id=self.key,
+            destination_key=self.destination_key,
+            request=self.request,
+            next_action_at=None,
+            status=DELIVERY_UNKNOWN,
+            state_version=7,
+            created_at=self.request["created_at"],
+            dispatch_generation=1,
+            last_attempt_id=prior_attempt,
+            network_attempt_count=1,
+            slack_response={"response_class": "transport_timeout", "bytes_sent": True},
+        )
+        self.store._deliveries[self.key] = unknown
+        replay_plan = plan_unknown_replay(
+            unknown,
+            expected_state_version=7,
+            operator="operator@example.com",
+            reason="Approved after Slack inspection",
+            evidence="No matching post in the destination search window",
+            clock=lambda: NOW,
+            attempt_id_factory=lambda: reserved_attempt,
+        )
+        apply_unknown_replay(self.store, replay_plan)
+
+        queue_sender = AcceptedQueueSender()
+        dispatched = dispatch_due_work(
+            self.store,
+            queue_sender,
+            queue_url="https://sqs.example/manual-replay.fifo",
+            now=NOW,
+            max_delivery_request_bytes=self.config["message_policy"]["max_delivery_request_bytes"],
+        )
+        self.assertEqual(dispatched.accepted, 1)
+        queued = self.record()
+        self.assertEqual(queued.status, "queued")
+        self.assertEqual(queued.next_attempt_id, reserved_attempt)
+
+        outer = self
+
+        class InspectingSender(FakeSlackSender):
+            claimed: DeliveryRecord | None = None
+
+            def post(self, payload, *, credential, destination, timeout_seconds):
+                self.claimed = outer.record()
+                return super().post(
+                    payload,
+                    credential=credential,
+                    destination=destination,
+                    timeout_seconds=timeout_seconds,
+                )
+
+        sender = InspectingSender(self.posted_response())
+        self.sender = sender
+        result = self.process(
+            queue_delivery=QueueDelivery(
+                request=self.request,
+                message_id="manual-replay-message",
+                message_group_id=self.destination_key,
+            )
+        )
+
+        self.assertEqual(result.state, POSTED)
+        assert sender.claimed is not None
+        self.assertEqual(sender.claimed.status, "sending")
+        self.assertEqual(sender.claimed.attempt_id, reserved_attempt)
+        self.assertIsNone(sender.claimed.next_attempt_id)
+        resolved = self.record()
+        self.assertEqual(resolved.last_attempt_id, reserved_attempt)
+        self.assertEqual(resolved.manual_replay_history[-1].prior_attempt_id, prior_attempt)
+        self.assertEqual(resolved.manual_replay_history[-1].new_attempt_id, reserved_attempt)
+
+    def test_replay_reservation_survives_pacing_and_redispatch(self):
+        reserved_attempt = "1" * 32
+        unknown = DeliveryRecord(
+            candidate_id=self.key,
+            destination_key=self.destination_key,
+            request=self.request,
+            next_action_at=None,
+            status=DELIVERY_UNKNOWN,
+            state_version=7,
+            created_at=self.request["created_at"],
+            dispatch_generation=1,
+            last_attempt_id="prior-attempt",
+            network_attempt_count=1,
+        )
+        self.store._deliveries[self.key] = unknown
+        replay = plan_unknown_replay(
+            unknown,
+            expected_state_version=7,
+            operator="operator@example.com",
+            reason="Approved after Slack inspection",
+            evidence="No matching post in the destination search window",
+            clock=lambda: NOW,
+            attempt_id_factory=lambda: reserved_attempt,
+        )
+        apply_unknown_replay(self.store, replay)
+        dispatch_due_work(
+            self.store,
+            AcceptedQueueSender(),
+            queue_url="https://sqs.example/manual-replay.fifo",
+            now=NOW,
+            max_delivery_request_bytes=self.config["message_policy"]["max_delivery_request_bytes"],
+        )
+
+        retry_time = NOW + timedelta(seconds=60)
+        self.assertTrue(
+            self.store.update_pace(
+                self.destination_key,
+                expected_version=None,
+                next_allowed_at=int(retry_time.timestamp()),
+                last_response_class="http_200",
+            )
+        )
+        queued = self.record()
+        paced = self.process(
+            queue_delivery=QueueDelivery(
+                request=self.request,
+                message_id=queued.queue_message_id,
+                message_group_id=self.destination_key,
+            )
+        )
+
+        self.assertEqual(paced.state, FAILED_RETRYABLE)
+        self.assertFalse(paced.performed_network_call)
+        self.assertEqual(self.sender.calls, [])
+        deferred = self.record()
+        self.assertEqual(deferred.status, FAILED_RETRYABLE)
+        self.assertEqual(deferred.next_attempt_id, reserved_attempt)
+        self.assertEqual(deferred.manual_replay_history[-1].new_attempt_id, reserved_attempt)
+
+        dispatched = dispatch_due_work(
+            self.store,
+            AcceptedQueueSender(),
+            queue_url="https://sqs.example/manual-replay.fifo",
+            now=retry_time,
+            max_delivery_request_bytes=self.config["message_policy"]["max_delivery_request_bytes"],
+        )
+        self.assertEqual(dispatched.accepted, 1)
+        redispatched = self.record()
+        self.assertEqual(redispatched.status, "queued")
+        self.assertEqual(redispatched.next_attempt_id, reserved_attempt)
+
+        outer = self
+
+        class InspectingSender(FakeSlackSender):
+            claimed: DeliveryRecord | None = None
+
+            def post(self, payload, *, credential, destination, timeout_seconds):
+                self.claimed = outer.record()
+                return super().post(
+                    payload,
+                    credential=credential,
+                    destination=destination,
+                    timeout_seconds=timeout_seconds,
+                )
+
+        sender = InspectingSender(self.posted_response())
+        self.sender = sender
+        posted = self.process(
+            clock=lambda: retry_time,
+            queue_delivery=QueueDelivery(
+                request=self.request,
+                message_id=redispatched.queue_message_id,
+                message_group_id=self.destination_key,
+            ),
+        )
+
+        self.assertEqual(posted.state, POSTED)
+        assert sender.claimed is not None
+        self.assertEqual(sender.claimed.status, "sending")
+        self.assertEqual(sender.claimed.attempt_id, reserved_attempt)
+        self.assertIsNone(sender.claimed.next_attempt_id)
+        self.assertEqual(self.record().last_attempt_id, reserved_attempt)
+
+    def test_a_claim_race_preserves_the_reservation_and_makes_no_slack_call(self):
+        reserved_attempt = "1" * 32
+        unknown = DeliveryRecord(
+            candidate_id=self.key,
+            destination_key=self.destination_key,
+            request=self.request,
+            next_action_at=None,
+            status=DELIVERY_UNKNOWN,
+            state_version=7,
+            created_at=self.request["created_at"],
+            last_attempt_id="prior-attempt",
+        )
+        self.store._deliveries[self.key] = unknown
+        replay = plan_unknown_replay(
+            unknown,
+            expected_state_version=7,
+            operator="operator@example.com",
+            reason="Approved after Slack inspection",
+            evidence="No matching post in the destination search window",
+            clock=lambda: NOW,
+            attempt_id_factory=lambda: reserved_attempt,
+        )
+        apply_unknown_replay(self.store, replay)
+        dispatch_due_work(
+            self.store,
+            AcceptedQueueSender(),
+            queue_url="https://sqs.example/manual-replay.fifo",
+            now=NOW,
+            max_delivery_request_bytes=self.config["message_policy"]["max_delivery_request_bytes"],
+        )
+        queued = self.record()
+        original_claim = self.store.claim_sending
+
+        def lose_to_newer_version(*args, **kwargs):
+            current = self.record()
+            self.store._deliveries[self.key] = replace(current, state_version=current.state_version + 1)
+            return original_claim(*args, **kwargs)
+
+        self.store.claim_sending = lose_to_newer_version  # type: ignore[method-assign]
+        result = self.process(
+            queue_delivery=QueueDelivery(
+                request=self.request,
+                message_id=queued.queue_message_id,
+                message_group_id=self.destination_key,
+            )
+        )
+
+        self.assertFalse(result.handled)
+        self.assertEqual(result.reason, "sending claim lost")
+        self.assertEqual(self.sender.calls, [])
+        self.assertEqual(self.record().next_attempt_id, reserved_attempt)
+
+
 class NonSlackPathsTests(WorkerFixture):
     """Every path that must not contact Slack returns the right `WorkerResult`."""
 
@@ -478,6 +723,7 @@ class NonSlackPathsTests(WorkerFixture):
         self.assertTrue(result.handled)
         self.assertEqual(result.state, DELIVERY_UNKNOWN)
         self.assertEqual(self.record().status, DELIVERY_UNKNOWN)
+        self.assertEqual(self.record().last_attempt_id, "a1")
         self.assertEqual(self.sender.calls, [])
 
     def test_a_queued_record_not_yet_due_is_returned_unprocessed(self):
@@ -562,6 +808,7 @@ class NonSlackPathsTests(WorkerFixture):
         record = self.record()
         self.assertEqual(record.status, DELIVERY_UNKNOWN)
         self.assertIsNone(record.expires_at)
+        self.assertEqual(record.last_attempt_id, "a1")
 
 
 class SlackDestinationTests(unittest.TestCase):
@@ -703,6 +950,7 @@ class SlackOutcomeTests(WorkerFixture):
         self.assertIsNotNone(record.expires_at)
         self.assertIsNone(record.attempt_id)
         self.assertIsNone(record.lease_expires_at)
+        self.assertIsNotNone(record.last_attempt_id)
 
     def test_an_authentication_error_records_failed_terminal_with_a_ttl(self):
         self.queued_record()
@@ -753,6 +1001,7 @@ class SlackOutcomeTests(WorkerFixture):
         record = self.record()
         self.assertEqual(record.status, DELIVERY_UNKNOWN)
         self.assertIsNone(record.expires_at)
+        self.assertIsNotNone(record.last_attempt_id)
         assert record.slack_response is not None
         self.assertEqual(record.slack_response["response_class"], "transport_timeout")
 
@@ -1001,6 +1250,7 @@ class SlackOutcomeTests(WorkerFixture):
         record = self.record()
         self.assertEqual(record.status, DELIVERY_UNKNOWN)
         self.assertIsNone(record.expires_at)
+        self.assertIsNotNone(record.last_attempt_id)
 
 
 class RetrySafetyProofTests(unittest.TestCase):

@@ -166,7 +166,11 @@ silently omit identity, evidence, or source URL.
 - Authentication, revoked hook, invalid channel, or permanent payload errors become `failed_terminal`.
 - Timeout, connection loss after bytes may have been sent, worker death during a network attempt, or expired sending lease becomes `delivery_unknown`.
 
-Unknown outcomes receive no automatic retry. An operator may inspect Slack and record a manual replay decision.
+Unknown outcomes receive no automatic retry. After inspecting Slack and
+finding no matching post, an operator may use the preview-first replay command
+to record the decision. Its conditional update appends the old-to-new attempt
+link before returning the exact stored request to the dispatcher. An
+inconclusive search leaves the record unchanged.
 
 Due-work checks use the worker's initial observation time. A sending lease
 starts from a fresh time read immediately before its conditional claim. Retry

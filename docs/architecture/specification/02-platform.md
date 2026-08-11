@@ -48,10 +48,21 @@ Use on-demand capacity for the baseline. The table needs a GSI named `status-nex
 ### Delivery item
 
 - Key: `PK = CANDIDATE#<candidate_id>`, `SK = DELIVERY`.
-- Contains the exact request, destination key, state, state version, creation time, numeric next action, dispatch generation and ID, queue message ID, attempt count, network-attempt count, lease, Slack response metadata, manual replay history, and TTL when safe.
+- Contains the exact request, destination key, state, state version, creation time, numeric next action, dispatch generation and ID, queue message ID, active, last, and reserved-next attempt IDs, network-attempt count, lease, Slack response metadata, manual replay history, and TTL when safe.
 - State transitions use conditions on current state, version, and lease.
 
 The states are `pending_queue`, `queued`, `sending`, `posted`, `failed_retryable`, `failed_terminal`, and `delivery_unknown`. `posted` and `failed_terminal` may expire after the configured terminal retention. Unresolved states have no TTL or receive a retention extension. A new put over a terminal expired item must prove `expires_at < now` in its condition; DynamoDB TTL deletion is asynchronous.
+
+A completed sending claim copies its active attempt ID to `last_attempt_id`
+before clearing the lease. An operator-approved replay of `delivery_unknown`
+appends a bounded history entry with decision time, operator, reason, evidence,
+prior attempt, and new attempt. The same conditional write proves the observed
+unknown state version and prior attempt, reserves the new attempt, and returns
+the record to immediately due `pending_queue`. The dispatcher preserves that
+reservation through `queued`. If destination pacing defers the record, the
+reservation remains on `failed_retryable` through the later redispatch. The
+worker consumes it into the next `sending` claim before another Slack call. A
+stale decision writes nothing.
 
 ### Destination item
 

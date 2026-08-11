@@ -26,7 +26,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from aws_public_change_feed.identity import queue_dispatch_id  # noqa: E402
-from aws_public_change_feed.outbox import DeliveryRecord, DynamoDBDeliveryStore  # noqa: E402
+from aws_public_change_feed.outbox import DeliveryRecord, DynamoDBDeliveryStore, ManualReplayEntry  # noqa: E402
 
 REGION = "us-west-2"
 TABLE = "aws-public-change-feed-delivery"
@@ -346,6 +346,43 @@ class DynamoWorkerTransitionTests(DynamoDeliveryStoreTests):
         )
         self.assertEqual(delivery(self.store, self.key).attempt_id, "a1")
 
+    def test_a_reserved_replay_attempt_is_consumed_by_the_exact_claim(self):
+        entry = ManualReplayEntry(
+            decided_at="2026-08-11T14:30:00Z",
+            operator="operator@example.com",
+            reason="Approved replay",
+            evidence="Slack search found no matching post",
+            prior_attempt_id="prior-attempt",
+            new_attempt_id="1" * 32,
+        )
+        record = self.queued(
+            last_attempt_id="prior-attempt",
+            next_attempt_id=entry.new_attempt_id,
+            manual_replay_history=(entry,),
+        )
+
+        self.assertFalse(
+            self.store.claim_sending(
+                self.key,
+                expected_state_version=record.state_version,
+                attempt_id="2" * 32,
+                lease_expires_at=1030,
+            )
+        )
+        self.assertTrue(
+            self.store.claim_sending(
+                self.key,
+                expected_state_version=record.state_version,
+                attempt_id=entry.new_attempt_id,
+                lease_expires_at=1030,
+                expected_next_attempt_id=entry.new_attempt_id,
+            )
+        )
+        claimed = delivery(self.store, self.key)
+        self.assertEqual(claimed.attempt_id, entry.new_attempt_id)
+        self.assertIsNone(claimed.next_attempt_id)
+        self.assertEqual(claimed.manual_replay_history, (entry,))
+
     def test_claim_sending_refuses_a_record_that_is_not_queued(self):
         self.store.put_delivery_if_absent(self.record(status="pending_queue"))
         record = delivery(self.store, self.key)
@@ -382,6 +419,7 @@ class DynamoWorkerTransitionTests(DynamoDeliveryStoreTests):
         self.assertIsNone(resolved.lease_expires_at)
         self.assertIsNone(resolved.next_action_at)
         self.assertIsNone(resolved.dispatch_id)
+        self.assertEqual(resolved.last_attempt_id, "a1")
         self.assertEqual(resolved.network_attempt_count, 1)
         self.assertEqual(resolved.expires_at, 99999)
         assert resolved.slack_response is not None
@@ -492,6 +530,7 @@ class DynamoWorkerTransitionTests(DynamoDeliveryStoreTests):
         self.assertEqual(recovered.status, "delivery_unknown")
         self.assertEqual(recovered.network_attempt_count, 2)
         self.assertEqual(recovered.slack_response, response)
+        self.assertEqual(recovered.last_attempt_id, "attempt-4")
         self.assertIsNone(recovered.expires_at)
 
     def test_expired_sending_recovery_refuses_corrupt_durable_condition_fields(self):

@@ -203,7 +203,9 @@ is enabled.
 - A function-scoped dispatcher heartbeat after strict event and environment validation.
 - SQS age, receives, redrives, and DLQ depth.
 - Slack network attempts, response classes, `Retry-After`, latency, and terminal states.
-- Unknown outcomes, manual replays, stale leases, and reconciler repairs.
+- Unknown outcomes, manual replays, stale leases, and reconciler repairs. The
+  operator command reports one bounded `ManualReplay` count after a successful
+  conditional mutation; durable replay history remains the audit authority.
 - Bounded state-observation saturation, repair-limit exhaustion, stale queued
   records, reconciler faults, and scheduled-runtime failure-queue depth.
 

@@ -1200,7 +1200,10 @@ def process_delivery(
             return WorkerResult(handled=True, state=FAILED_RETRYABLE, reason="destination pacing")
         return WorkerResult(handled=False, state=_QUEUED, reason="pacing claim lost")
 
-    attempt_id = uuid.uuid4().hex
+    # A manual replay reserves its new attempt while the operator decision is
+    # still the durable authority. Ordinary queue work keeps the existing
+    # generated-at-claim behavior.
+    attempt_id = record.next_attempt_id if record.next_attempt_id is not None else uuid.uuid4().hex
     claim_ts = int(clock().timestamp())
     lease_expires_at = claim_ts + lease_duration_seconds
     if not store.claim_sending(
@@ -1208,6 +1211,7 @@ def process_delivery(
         expected_state_version=record.state_version,
         attempt_id=attempt_id,
         lease_expires_at=lease_expires_at,
+        expected_next_attempt_id=record.next_attempt_id,
     ):
         metrics.unprocessed()
         return WorkerResult(handled=False, state=_QUEUED, reason="sending claim lost")
