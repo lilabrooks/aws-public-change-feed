@@ -144,6 +144,22 @@ separate standard runtime-failure queue.
 
 Use a FIFO queue and FIFO DLQ. Set content-based deduplication off because the dispatch ID is explicit. The redrive threshold is `queue_max_receive_count`, which must exceed `max_network_attempts` and leave room for pacing and transient worker failures.
 
+Delivery-DLQ recovery uses the native SQS message-movement task. The operator
+tool verifies that both queues are FIFO, the source queue's redrive policy names
+the supplied DLQ, and the DLQ's `byQueue` allow policy names only that source.
+It leaves the task destination unset so SQS returns messages to their original
+source queue. Only one task may be active for the DLQ. Start and cancellation
+are explicit mutations; preview and status inspect queue attributes and recent
+task state only.
+
+The operator supplies a fixed movement velocity from 1 through the SQS maximum
+of 500 messages per second. Task and queue counts are approximate. Native
+movement does not impose an exact message-count boundary: messages entering the
+DLQ while a task runs can join it, cancellation can lag, and redriven messages
+can interleave with new source-queue traffic. SQS assigns redriven work new
+message IDs and enqueue times. The tool does not receive, rewrite, send, or
+delete individual messages, and DynamoDB remains the delivery authority.
+
 The visibility timeout must exceed Lambda timeout plus the maximum work duration for one batch. Long Slack delays belong in `next_action_at` and a later queue delivery; the worker does not sleep for them. Reserved concurrency and batch size are chosen from the load test and destination count.
 
 ## Scheduling and concurrency

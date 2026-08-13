@@ -95,6 +95,22 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - Given an old queued record, the reconciler reports it without enqueuing another message because age does not prove absence from SQS.
 - Given more recovery work than one bounded run may inspect or repair, the reconciler emits saturation and leaves the remainder durable for a later run.
 - Given a DLQ item, the runbook can trace request, candidate, release, destination, and last state.
+- Given delivery-DLQ recovery, one operator command can preview, start, inspect,
+  and cancel the native SQS task without receiving or rewriting individual
+  messages.
+- Given preview or status, the tool verifies the exact FIFO source/DLQ policy
+  pair, lists recent tasks, reports bounded approximate counts, and performs no
+  SQS mutation.
+- Given start, the tool requires explicit apply and a movement velocity from 1
+  through 500, refuses an active task or wrong queue topology, and omits a
+  custom destination so messages return to their original source queue.
+- Given cancellation, the tool requires explicit apply and an exact handle for
+  a currently running task. Given an ambiguous start or cancellation result,
+  it directs the operator to status inspection before another mutation.
+- Given any task report, neither the tool nor the runbook claims an exact
+  message-count boundary. They state that cancellation can lag, new DLQ work
+  can join a running task, source traffic can interleave, and SQS assigns new
+  message IDs and enqueue times.
 - Given an operator-approved unknown replay, audit history records operator, reason, old attempt, and new attempt before another call.
 - Given a stale state version, wrong prior attempt, existing reservation,
   unexpected TTL, or full 25-entry history, an unknown replay writes nothing.
