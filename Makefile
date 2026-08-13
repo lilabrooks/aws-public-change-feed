@@ -78,7 +78,7 @@ terraform-check:
 		for root in $(TERRAFORM_ROOTS); do \
 			echo "Checking $$root"; \
 			$(TERRAFORM) -chdir=$$root fmt -check || exit 1; \
-			$(TERRAFORM) -chdir=$$root init -backend=false -input=false || exit 1; \
+			$(TERRAFORM) -chdir=$$root init -backend=false -input=false -lockfile=readonly || exit 1; \
 			$(TERRAFORM) -chdir=$$root validate || exit 1; \
 		done; \
 	fi
