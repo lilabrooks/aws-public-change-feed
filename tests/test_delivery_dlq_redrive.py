@@ -1,12 +1,12 @@
 """Contract tests for preview-first native delivery-DLQ redrive control."""
 
-import argparse
 import io
 import json
 import sys
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 from botocore.exceptions import ClientError, EndpointConnectionError
 
@@ -97,14 +97,14 @@ class FakeSqsClient:
 
 
 def arguments(action, *, apply=False, rate=1, task_handle=TASK_HANDLE):
-    return argparse.Namespace(
-        action=action,
-        source_queue_url=SOURCE_URL,
-        dlq_url=DLQ_URL,
-        max_messages_per_second=rate,
-        apply=apply,
-        task_handle=task_handle,
-    )
+    argv = [action, "--source-queue-url", SOURCE_URL, "--dlq-url", DLQ_URL]
+    if action in {"preview", "start"}:
+        argv.extend(("--max-messages-per-second", str(rate)))
+    if action == "cancel":
+        argv.extend(("--task-handle", task_handle))
+    if apply:
+        argv.append("--apply")
+    return redrive_delivery_dlq.parse_args(argv)
 
 
 def invoke(client, args):
@@ -142,7 +142,10 @@ class DeliveryDlqRedriveTests(unittest.TestCase):
 
         self.assertEqual(exit_code, 0)
         self.assertEqual(stderr, "")
-        self.assertEqual(json.loads(stdout)["task_handle"], TASK_HANDLE)
+        document = json.loads(stdout)
+        self.assertEqual(document["task_handle"], TASK_HANDLE)
+        self.assertEqual(document["latest_task_before_start"]["status"], "COMPLETED")
+        self.assertNotIn("latest_task", document)
         start_calls = [kwargs for name, kwargs in client.calls if name == "start_message_move_task"]
         self.assertEqual(start_calls, [{"SourceArn": DLQ_ARN, "MaxNumberOfMessagesPerSecond": 1}])
         self.assertNotIn("DestinationArn", start_calls[0])
@@ -307,20 +310,72 @@ class DeliveryDlqRedriveTests(unittest.TestCase):
                 self.assertEqual(document["status"], "ambiguous")
                 self.assertEqual(document["next_action"], "status")
                 self.assertEqual([call for call, _ in client.calls].count(mutation), 1)
+                self.assertNotIn(DLQ_URL, stderr)
 
-    def test_service_rejection_is_definitive_and_does_not_disclose_provider_text(self):
-        error = ClientError(
-            {"Error": {"Code": "UnsupportedOperation", "Message": "provider-secret-detail"}},
-            "StartMessageMoveTask",
+    def test_mutation_client_errors_distinguish_refusal_from_ambiguity_without_provider_text(self):
+        cases = (
+            ("start-4xx", "start", 400, redrive_delivery_dlq.EXIT_REFUSED, "refused"),
+            ("cancel-4xx", "cancel", 499, redrive_delivery_dlq.EXIT_REFUSED, "refused"),
+            ("start-5xx", "start", 500, redrive_delivery_dlq.EXIT_AMBIGUOUS, "ambiguous"),
+            ("cancel-5xx", "cancel", 599, redrive_delivery_dlq.EXIT_AMBIGUOUS, "ambiguous"),
+            ("start-missing", "start", None, redrive_delivery_dlq.EXIT_AMBIGUOUS, "ambiguous"),
+            ("cancel-boolean", "cancel", True, redrive_delivery_dlq.EXIT_AMBIGUOUS, "ambiguous"),
+            ("start-unrecognized", "start", 600, redrive_delivery_dlq.EXIT_AMBIGUOUS, "ambiguous"),
+            ("cancel-malformed", "cancel", "500", redrive_delivery_dlq.EXIT_AMBIGUOUS, "ambiguous"),
         )
-        client = FakeSqsClient(start_error=error)
+        for name, action, status, expected_exit, expected_status in cases:
+            with self.subTest(case=name):
+                response = {
+                    "Error": {"Code": "ProviderSecretCode", "Message": "provider-secret-detail"},
+                    "Endpoint": "https://provider-secret-endpoint.example",
+                    "ProviderBody": "provider-secret-body",
+                    "QueueUrl": "provider-secret-queue-url",
+                    "TaskHandle": "provider-secret-task-handle",
+                }
+                if status is not None:
+                    response["ResponseMetadata"] = {"HTTPStatusCode": status}
+                error = ClientError(response, "StartMessageMoveTask" if action == "start" else "CancelMessageMoveTask")
+                client = FakeSqsClient(
+                    tasks=[] if action == "start" else [task()],
+                    start_error=error if action == "start" else None,
+                    cancel_error=error if action == "cancel" else None,
+                )
 
-        exit_code, stdout, stderr = invoke(client, arguments("start", apply=True))
+                exit_code, stdout, stderr = invoke(client, arguments(action, apply=True))
 
-        self.assertEqual(exit_code, redrive_delivery_dlq.EXIT_REFUSED)
-        self.assertEqual(stdout, "")
-        self.assertEqual(json.loads(stderr)["status"], "refused")
-        self.assertNotIn("provider-secret-detail", stderr)
+                document = json.loads(stderr)
+                self.assertEqual(exit_code, expected_exit)
+                self.assertEqual(stdout, "")
+                self.assertEqual(document["status"], expected_status)
+                if expected_status == "ambiguous":
+                    self.assertEqual(document["next_action"], "status")
+                else:
+                    self.assertNotIn("next_action", document)
+                for secret in (
+                    "ProviderSecretCode",
+                    "provider-secret-detail",
+                    "https://provider-secret-endpoint.example",
+                    "provider-secret-body",
+                    "provider-secret-queue-url",
+                    "provider-secret-task-handle",
+                ):
+                    self.assertNotIn(secret, stderr)
+
+    def test_behavior_arguments_use_each_real_action_parser_namespace(self):
+        expected_fields = {
+            "preview": {"action", "source_queue_url", "dlq_url", "max_messages_per_second"},
+            "status": {"action", "source_queue_url", "dlq_url"},
+            "start": {"action", "source_queue_url", "dlq_url", "max_messages_per_second", "apply"},
+            "cancel": {"action", "source_queue_url", "dlq_url", "task_handle", "apply"},
+        }
+        for action, fields in expected_fields.items():
+            with self.subTest(action=action):
+                with mock.patch.object(
+                    redrive_delivery_dlq, "parse_args", wraps=redrive_delivery_dlq.parse_args
+                ) as parser:
+                    parsed = arguments(action)
+                parser.assert_called_once()
+                self.assertEqual(set(vars(parsed)), fields)
 
     def test_pre_mutation_read_failure_is_distinct(self):
         class ReadFailureClient(FakeSqsClient):

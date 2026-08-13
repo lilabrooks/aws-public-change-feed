@@ -207,6 +207,13 @@ def _find_task(tasks: list[dict[str, Any]], task_handle: str) -> dict[str, Any] 
     return next((task for task in tasks if task["task_handle"] == task_handle), None)
 
 
+def _is_definitive_client_refusal(error: Any) -> bool:
+    response = error.response if isinstance(getattr(error, "response", None), dict) else {}
+    metadata = response.get("ResponseMetadata")
+    status = metadata.get("HTTPStatusCode") if isinstance(metadata, dict) else None
+    return isinstance(status, int) and not isinstance(status, bool) and 400 <= status < 500
+
+
 def run(arguments: argparse.Namespace, client: Any) -> int:
     from botocore.exceptions import BotoCoreError, ClientError
 
@@ -256,22 +263,37 @@ def run(arguments: argparse.Namespace, client: Any) -> int:
         except ValueError as error:
             _write({"status": "ambiguous", "error": str(error), "next_action": "status"}, stream=sys.stderr)
             return EXIT_AMBIGUOUS
-        except ClientError:
+        except ClientError as error:
+            if _is_definitive_client_refusal(error):
+                _write(
+                    {
+                        "status": "refused",
+                        "error": "SQS rejected the start; inspect topology and status before retry",
+                    },
+                    stream=sys.stderr,
+                )
+                return EXIT_REFUSED
             _write(
-                {"status": "refused", "error": "SQS rejected the start; inspect topology and status before retry"},
+                {
+                    "status": "ambiguous",
+                    "error": "AWS did not prove whether redrive started",
+                    "next_action": "status",
+                },
                 stream=sys.stderr,
             )
-            return EXIT_REFUSED
+            return EXIT_AMBIGUOUS
         except BotoCoreError:
             _write(
                 {"status": "ambiguous", "error": "AWS did not prove whether redrive started", "next_action": "status"},
                 stream=sys.stderr,
             )
             return EXIT_AMBIGUOUS
+        latest_task_before_start = base.pop("latest_task")
         _write(
             {
                 "status": "started",
                 **base,
+                "latest_task_before_start": latest_task_before_start,
                 "max_messages_per_second": arguments.max_messages_per_second,
                 "task_handle": task_handle,
             }
@@ -296,12 +318,22 @@ def run(arguments: argparse.Namespace, client: Any) -> int:
             return EXIT_REFUSED
         try:
             response = client.cancel_message_move_task(TaskHandle=requested_handle)
-        except ClientError:
+        except ClientError as error:
+            if _is_definitive_client_refusal(error):
+                _write(
+                    {"status": "refused", "error": "SQS rejected cancellation; inspect status before retry"},
+                    stream=sys.stderr,
+                )
+                return EXIT_REFUSED
             _write(
-                {"status": "refused", "error": "SQS rejected cancellation; inspect status before retry"},
+                {
+                    "status": "ambiguous",
+                    "error": "AWS did not prove whether cancellation completed",
+                    "next_action": "status",
+                },
                 stream=sys.stderr,
             )
-            return EXIT_REFUSED
+            return EXIT_AMBIGUOUS
         except BotoCoreError:
             _write(
                 {
