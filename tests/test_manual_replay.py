@@ -375,6 +375,36 @@ class ReplayCliTests(unittest.TestCase):
         assert current is not None
         self.assertEqual(current.state_version, 8)
 
+    def test_initial_read_failure_is_distinct_from_write_ambiguity_in_both_modes(self):
+        class ReadFailureClient:
+            def __init__(self):
+                self.update_calls = 0
+
+            def get_item(self, **kwargs):
+                raise EndpointConnectionError(endpoint_url="https://dynamodb.invalid")
+
+            def update_item(self, **kwargs):
+                self.update_calls += 1
+                raise AssertionError("a failed initial read must not attempt an update")
+
+        for apply in (False, True):
+            with self.subTest(apply=apply):
+                client = ReadFailureClient()
+
+                exit_code, stdout, stderr = self.invoke(self.arguments(apply=apply), client=client)
+
+                self.assertEqual(exit_code, replay_delivery.EXIT_AMBIGUOUS)
+                self.assertEqual(stdout, "")
+                error = json.loads(stderr)
+                self.assertEqual(error["status"], "read_failed")
+                self.assertEqual(
+                    error["error"],
+                    "AWS read failed before any replay write was attempted; retry after restoring read access",
+                )
+                self.assertEqual(client.update_calls, 0)
+                self.assertNotIn("dynamodb.invalid", stderr)
+                self.assertNotIn("SIGNINGSECRET", stderr)
+
     def test_stale_apply_is_distinct_from_an_ambiguous_write(self):
         class RacingClient:
             def __init__(self, delegate):
@@ -410,18 +440,22 @@ class ReplayCliTests(unittest.TestCase):
         class AmbiguousClient:
             def __init__(self, delegate):
                 self.delegate = delegate
+                self.update_calls = 0
 
             def get_item(self, **kwargs):
                 return self.delegate.get_item(**kwargs)
 
             def update_item(self, **kwargs):
+                self.update_calls += 1
                 raise EndpointConnectionError(endpoint_url="https://dynamodb.invalid")
 
-        ambiguous_code, _, ambiguous_error = self.invoke(
-            self.arguments(apply=True), client=AmbiguousClient(self.client)
-        )
+        ambiguous_client = AmbiguousClient(self.client)
+        ambiguous_code, _, ambiguous_error = self.invoke(self.arguments(apply=True), client=ambiguous_client)
         self.assertEqual(ambiguous_code, replay_delivery.EXIT_AMBIGUOUS)
-        self.assertEqual(json.loads(ambiguous_error)["status"], "ambiguous")
+        error = json.loads(ambiguous_error)
+        self.assertEqual(error["status"], "ambiguous")
+        self.assertEqual(error["error"], "AWS did not prove whether the replay write completed; reread before retry")
+        self.assertEqual(ambiguous_client.update_calls, 1)
         self.assertNotIn("dynamodb.invalid", ambiguous_error)
 
 

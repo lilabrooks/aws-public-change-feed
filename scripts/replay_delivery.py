@@ -52,6 +52,7 @@ def run(arguments: argparse.Namespace, client: Any) -> int:
     from botocore.exceptions import BotoCoreError, ClientError
 
     store = DynamoDBDeliveryStore(client, arguments.table_name)
+    write_attempted = False
     try:
         record = store.get_delivery(arguments.candidate_id)
         if record is None:
@@ -77,6 +78,7 @@ def run(arguments: argparse.Namespace, client: Any) -> int:
             _write({"status": "preview", **preview})
             return 0
 
+        write_attempted = True
         result = apply_unknown_replay(store, plan)
         _write(
             {
@@ -118,6 +120,15 @@ def run(arguments: argparse.Namespace, client: Any) -> int:
         _write({"status": "invalid", "error": str(error)}, stream=sys.stderr)
         return EXIT_INVALID
     except (BotoCoreError, ClientError):
+        if not write_attempted:
+            _write(
+                {
+                    "status": "read_failed",
+                    "error": "AWS read failed before any replay write was attempted; retry after restoring read access",
+                },
+                stream=sys.stderr,
+            )
+            return EXIT_AMBIGUOUS
         _write(
             {
                 "status": "ambiguous",

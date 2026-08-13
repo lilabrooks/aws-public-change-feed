@@ -127,8 +127,10 @@ Automatic retry is forbidden because Slack may already contain the message.
 5. Repeat the same command with `--apply` to make one conditional mutation. A
    successful result reports `ManualReplay: 1`, the new state version, and the
    attempt ID reserved before the next Slack call. A refusal means the record
-   changed; inspect the fresh state. An ambiguous AWS result requires a direct
-   strongly consistent reread before any retry.
+   changed; inspect the fresh state. A `read_failed` result proves the initial
+   read failed before any replay write was attempted; restore read access and
+   repeat the command. An ambiguous AWS result requires a direct strongly
+   consistent reread before any retry.
 6. If evidence is inconclusive, leave the state unknown and escalate to the service owner.
 7. Review timeout, lease, visibility, and worker termination evidence before closing the incident. Recording a found post, replaying a terminal record, and delivery-DLQ redrive still require separate operator tooling.
 
