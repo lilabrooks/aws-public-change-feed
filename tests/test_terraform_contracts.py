@@ -74,6 +74,38 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn("values   = local.backend_state_keys", bootstrap)
         self.assertNotIn('values   = ["apcf/*"]', bootstrap)
 
+    def test_terraform_check_keeps_committed_provider_locks_readonly(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            terraform = temporary_root / "terraform"
+            argument_log = temporary_root / "arguments.log"
+            terraform.write_text(
+                '#!/bin/sh\nprintf "%s\\n" "$*" >> "$TERRAFORM_ARGUMENT_LOG"\n',
+                encoding="utf-8",
+            )
+            terraform.chmod(0o700)
+            environment = os.environ.copy()
+            environment["TERRAFORM_ARGUMENT_LOG"] = str(argument_log)
+
+            checked = subprocess.run(
+                ("make", "terraform-check", f"TERRAFORM={terraform}"),
+                cwd=ROOT,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(checked.returncode, 0, msg=f"{checked.stdout}\n{checked.stderr}")
+            init_calls = [line for line in argument_log.read_text(encoding="utf-8").splitlines() if " init " in line]
+            self.assertEqual(
+                init_calls,
+                [
+                    "-chdir=infra/bootstrap init -backend=false -input=false -lockfile=readonly",
+                    "-chdir=infra/central init -backend=false -input=false -lockfile=readonly",
+                ],
+            )
+
     def test_feed_dashboard_has_aggregate_and_per_feed_staleness(self):
         dashboard = (ROOT / "infra/central/dashboard.tf").read_text(encoding="utf-8")
         alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
