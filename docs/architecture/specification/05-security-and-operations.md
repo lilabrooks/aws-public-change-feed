@@ -206,10 +206,22 @@ is enabled.
 - Unknown outcomes, manual replays, stale leases, and reconciler repairs. The
   operator command reports one bounded `ManualReplay` count after a successful
   conditional mutation; durable replay history remains the audit authority.
+- Native delivery-DLQ task starts, status, approximate moved and remaining
+  counts, and cancellation. Provider failure text and message bodies are not
+  emitted by the controller.
 - Bounded state-observation saturation, repair-limit exhaustion, stale queued
   records, reconciler faults, and scheduled-runtime failure-queue depth.
 
 Use bounded dimensions. Do not use announcement URLs, titles, candidate IDs, customer names, or error messages as metric dimensions.
+
+The separately authenticated operator running delivery-DLQ recovery needs
+`sqs:GetQueueAttributes`, `sqs:ListMessageMoveTasks`,
+`sqs:StartMessageMoveTask`, and `sqs:CancelMessageMoveTask` on the exact DLQ.
+Native movement also requires `sqs:ReceiveMessage` and `sqs:DeleteMessage` on
+that DLQ and `sqs:SendMessage` on the exact source queue. These permissions do
+not belong to a runtime role. Customer-managed encryption adds the documented
+KMS decrypt and data-key permissions; the current queues use SQS-managed
+encryption.
 
 ## Alarms
 

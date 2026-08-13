@@ -384,6 +384,7 @@
               <li>FIFO Lambda handling with strict queue-body validation, remaining-time checks, ordered partial-batch failures, and fixed-name, dimensionless embedded metrics</li>
               <li>Bounded recovery with exact expired-lease conditions, no automatic replay of unknown or unproven queued work, fixed state dimensions, and a scheduled Lambda composition root</li>
               <li>A five-minute reconciler schedule with reserved concurrency one, separate exact package inputs, bounded retries, and a source-scoped standard runtime-failure queue</li>
+              <li>Preview-first delivery-DLQ control that verifies the exact FIFO queue pair and uses native SQS start, status, and cancellation actions without reading message bodies</li>
               <li>Deterministic Python 3.12 packaging, a complete dependency lock, append-only digest-key publication, exact S3 object-version deployment inputs, and one injected <code>sha256:</code> application identity</li>
               <li>Slack HTTP transport for incoming-webhook and bot-token modes, sharing feed acquisition&rsquo;s address validation and pinned TLS connection, reporting only observed facts, and proving its no-bytes-sent claim row by row against a truth table</li>
               <li>Credential readers for both accepted secret stores, Secrets Manager and SSM SecureString, requiring an encrypted parameter type, returning the stored value whole, and keeping it out of every message, repr, and log</li>

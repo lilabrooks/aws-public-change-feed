@@ -132,16 +132,45 @@ Automatic retry is forbidden because Slack may already contain the message.
    repeat the command. An ambiguous AWS result requires a direct strongly
    consistent reread before any retry.
 6. If evidence is inconclusive, leave the state unknown and escalate to the service owner.
-7. Review timeout, lease, visibility, and worker termination evidence before closing the incident. Recording a found post, replaying a terminal record, and delivery-DLQ redrive still require separate operator tooling.
+7. Review timeout, lease, visibility, and worker termination evidence before closing the incident. Recording a found post and replaying a terminal record still require separate operator tooling.
 
 ## DLQ response
 
-1. Stop bulk redrive.
-2. Inspect a sample and map each request ID to its delivery record and exact release.
-3. Separate poison payloads, incompatible contracts, permission failures, pacing redeliveries, worker faults, and state-transition conflicts.
-4. Fix and test the cause with a regression fixture.
-5. Redrive a small batch. Confirm no duplicate network call occurs for `posted` or active `sending` records.
-6. Expand redrive gradually while watching queue age, unknown outcomes, and terminal failures.
+1. Stop bulk redrive. Inspect a sample and map each request ID to its delivery
+   record and exact release. Separate poison payloads, incompatible contracts,
+   permission failures, pacing redeliveries, worker faults, and state-transition
+   conflicts. Fix and test the cause with a regression fixture.
+2. Confirm the exact source FIFO URL and delivery-DLQ URL. Preview a movement
+   at one message per second:
+
+   ```bash
+   python3 scripts/redrive_delivery_dlq.py preview \
+     --source-queue-url <delivery-fifo-url> \
+     --dlq-url <delivery-dlq-url> \
+     --max-messages-per-second 1
+   ```
+
+   The preview verifies both FIFO attributes, the exact source redrive policy,
+   the DLQ's exact `byQueue` allow policy, approximate visible depth, and recent
+   movement tasks. It receives no message and starts no task.
+3. Review the preview and the deployed package required by the queued records.
+   Start the task by changing `preview` to `start` and adding `--apply`. Omit a
+   custom destination; the command returns work to the configured source queue.
+4. Inspect progress with the same queue arguments and the `status` action. If
+   the first records do not produce the expected durable outcomes, cancel the
+   exact running task with `cancel --task-handle <handle> --apply`. An ambiguous
+   start or cancellation result is followed by `status` before any retry.
+5. Confirm no duplicate network call occurs for `posted` or active `sending`
+   records. Expand velocity gradually while watching source-queue age, DLQ
+   depth, unknown outcomes, and terminal failures.
+
+Native SQS redrive is asynchronous and does not impose an exact message-count
+boundary. Queue and task counts are approximate, cancellation can lag, and
+messages entering the DLQ during a running task can join it. Redriven work can
+interleave with new source traffic; SQS assigns it new message IDs and enqueue
+times. Revisit an exact finite-message redrive cap or a custom per-message
+mechanism if controlled L-09 deployment evidence shows that velocity and
+cancellation do not give operators enough control.
 
 ## Scheduled runtime failure
 
@@ -244,6 +273,6 @@ References verified: 2026-08-07.
 
 - [AWS IAM policy simulator](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_testing-policies.html)
 - [CloudWatch alarm troubleshooting](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/troubleshooting-alarms.html)
-- [SQS DLQ redrive](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-dead-letter-queues.html)
+- [SQS DLQ redrive](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-configure-dead-letter-queue-redrive.html)
 - [Slack incoming webhooks](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)
 - [DynamoDB condition expressions](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html)
