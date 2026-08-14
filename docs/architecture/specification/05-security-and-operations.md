@@ -102,6 +102,14 @@ exception attached for a chain walker to reach.
 - Write bounded raw snapshots under the designated prefix.
 - No Slack secrets, queue consumption, customer-account calls, or role assumption.
 
+### Application artifact retirement operator
+
+- Assume a role separate from release publication and every runtime role.
+- List object versions only under the exact application-artifact prefix.
+- Read metadata and exact versions only in that prefix.
+- Permanently delete only an exact version in that prefix.
+- Receive no release publication, runtime, secret, queue, table, or customer-account permission.
+
 The watcher uses the same content-addressed package digest and exact S3 object
 version as the delivery worker. It runs every 15 minutes with a 300-second
 timeout, reserved concurrency one, a 360-second feed lease, and a 60-second
@@ -282,8 +290,12 @@ metadata. Publication conditionally creates
 bucket, reads the returned S3 version back, verifies its bytes against the
 digest, and records that version. Terraform deploys that exact key and version
 and injects `sha256:<digest>` into the composition root. Publication has no
-delete grant. No lifecycle rule covers this prefix; packages accumulate until a
-retirement tool can prove both the age and version-count conditions.
+delete grant. No lifecycle rule covers this prefix. The ADR-022 operator tool
+instead binds a complete bounded inventory to a canonical preview plan, proves
+the 400-day and newest-10 floors plus exact protected references, and applies
+only after the inventory and plan digest still match. Each deletion names the
+exact VersionId and recorded ETag, then proves absence with an exact-version
+read. Partial, refused, failed, and ambiguous outcomes never report success.
 
 Build the package twice with the same Python and pip toolchain whenever runtime
 source, production dependencies or their lock, packaged schemas or assets, or
@@ -293,8 +305,9 @@ trigger this double build by themselves because they do not enter the archive.
 
 Evidence can outlive its runnable package. When that happens, automatic delivery
 leaves the record unchanged and reports `artifact_unavailable`; an operator must
-restore the approved package or record a manual closure. Package retirement must
-prove the age and version-count floors before deletion.
+restore the approved package or record a manual closure. Package retirement
+proves the age and version-count floors before deletion and keeps rollout,
+rollback, publication, and retirement mutually exclusive operator activities.
 
 On an exact-version mismatch, the worker checks only the expected digest key's
 metadata. A missing key emits the dimensionless `ArtifactUnavailable` metric; a

@@ -197,6 +197,41 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn('actions = ["s3:GetObject", "s3:GetObjectVersion", "s3:PutObject"]', artifact_statement)
         self.assertNotIn("s3:DeleteObject", artifact_statement)
 
+    def test_application_artifact_retirement_is_a_separate_exact_prefix_role(self):
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        outputs = (ROOT / "infra/central/outputs.tf").read_text(encoding="utf-8")
+        trust = iam[iam.index('data "aws_iam_policy_document" "publisher_assume_role"') :]
+        trust = trust[: trust.index('\nresource "aws_iam_role"', 1)]
+        role = iam[iam.index('resource "aws_iam_role" "application_artifact_retirement"') :]
+        role = role[: role.index("\n}") + 2]
+        retirement = iam[iam.index('data "aws_iam_policy_document" "application_artifact_retirement"') :]
+        retirement = retirement[: retirement.index('\ndata "aws_iam_policy_document"', 1)]
+
+        self.assertIn('actions = ["sts:AssumeRole"]', trust)
+        self.assertIn('type        = "AWS"', trust)
+        self.assertIn(
+            'identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]',
+            trust,
+        )
+        self.assertIn("assume_role_policy = data.aws_iam_policy_document.publisher_assume_role.json", role)
+        self.assertIn('actions   = ["s3:ListBucketVersions"]', retirement)
+        self.assertIn('variable = "s3:prefix"', retirement)
+        self.assertIn('values   = ["${local.application_artifact_prefix}/*"]', retirement)
+        self.assertIn('actions   = ["s3:GetObjectVersion", "s3:DeleteObjectVersion"]', retirement)
+        self.assertIn("${aws_s3_bucket.config.arn}/${local.application_artifact_prefix}/*", retirement)
+        self.assertNotIn('s3:DeleteObject"', retirement)
+        self.assertIn(
+            "application_artifact_retirement = aws_iam_role.application_artifact_retirement.arn",
+            outputs,
+        )
+
+    def test_publisher_and_runtime_roles_cannot_retire_application_artifacts(self):
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        retirement_start = iam.index('data "aws_iam_policy_document" "application_artifact_retirement"')
+        retirement_end = iam.index('\ndata "aws_iam_policy_document"', retirement_start + 1)
+        without_retirement_policy = iam[:retirement_start] + iam[retirement_end:]
+        self.assertNotIn("s3:DeleteObjectVersion", without_retirement_policy)
+
     def test_watcher_uses_the_exact_worker_package_and_frozen_schedule(self):
         locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
         lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")

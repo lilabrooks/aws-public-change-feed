@@ -1043,6 +1043,54 @@ class DeploymentInputTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "raw_snapshot_prefix"):
                 validator.validate_deployment_inputs(root)
 
+    def test_application_package_retirement_is_required(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        del deployment["application_package_retirement"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "application_package_retirement"):
+                validator.validate_deployment_inputs(root)
+
+    def test_application_package_retirement_rejects_unknown_fields(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        deployment["application_package_retirement"]["use_release_policy"] = True
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "use_release_policy"):
+                validator.validate_deployment_inputs(root)
+
+    def test_application_package_retention_floor_is_enforced(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        deployment["application_package_retirement"]["retention_days"] = 399
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "retention_days"):
+                validator.validate_deployment_inputs(root)
+
+    def test_application_package_count_floor_is_enforced(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        deployment["application_package_retirement"]["minimum_retained_packages"] = 9
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "minimum_retained_packages"):
+                validator.validate_deployment_inputs(root)
+
+    def test_application_package_retention_ceiling_is_enforced(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        deployment["application_package_retirement"]["retention_days"] = 3651
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "retention_days"):
+                validator.validate_deployment_inputs(root)
+
+    def test_application_package_count_ceiling_is_enforced(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        deployment["application_package_retirement"]["minimum_retained_packages"] = 101
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "minimum_retained_packages"):
+                validator.validate_deployment_inputs(root)
+
     def test_missing_deployment_input_is_rejected(self):
         with tempfile.TemporaryDirectory() as directory:
             root = self._staged_root(directory, None)

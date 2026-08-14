@@ -4,13 +4,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-import workflow_pins
-import yaml
-
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
+sys.path.insert(0, str(ROOT / "tests"))
 
 import validate_site as validator  # noqa: E402
+import workflow_pins  # noqa: E402
+import yaml  # noqa: E402
 
 
 class SiteValidatorTests(unittest.TestCase):

@@ -38,17 +38,25 @@ It contains secret identifiers, never secret values. Infrastructure-coupled keys
 
 ### Configuration bucket layout
 
-Three kinds of object share the configuration bucket, and each has different write and retention behavior:
+Four kinds of object share the configuration bucket, and each has different write and retention behavior:
 
 | Location | Written by | Versioning behavior |
 | --- | --- | --- |
 | `<release_prefix>/<release_id>/` | Release publisher | Write-once per release ID. Never overwritten, so these keys hold exactly one version. |
 | `<active_versions_object_key>` | Release publisher | Overwritten on every promotion. Its superseded versions are the retained promotion history. |
 | `<manifest directory>/raw-snapshots/` | Feed watcher | New key per fetch, deleted by lifecycle after its retention. |
+| `<manifest directory>/application-artifacts/<sha256>.zip` | Package publisher; package-retirement operator deletes exact reviewed versions | One current data version per digest key, with no delete marker or version history. |
 
 The raw-snapshot prefix is the directory of `active_versions_object_key` followed by `raw-snapshots/`. It is not a free choice for either side: the feed watcher role's `s3:PutObject` grant and the snapshot lifecycle rules are both scoped to it. `infra/central` publishes it as the `raw_snapshot_prefix` output, and the S3 `SnapshotStore` adapter reads that output rather than rebuilding the string.
 
 The write-once shape of release keys is why release retention is not an S3 lifecycle rule. See [chapter 05](05-security-and-operations.md#retention).
+
+`application_package_retirement` is a required deployment-owned object. Its
+`retention_days` is between 400 and 3650, and its
+`minimum_retained_packages` is between 10 and 100. These values govern only
+content-addressed application packages. Release retirement continues to use
+the separate `s3_lifecycle.retired_release_retention_days` and
+`minimum_retained_releases` fields.
 
 ## Cross-document rules
 

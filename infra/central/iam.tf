@@ -26,6 +26,12 @@ resource "aws_iam_role" "release_publisher" {
   tags               = local.tags
 }
 
+resource "aws_iam_role" "application_artifact_retirement" {
+  name               = "apcf-${local.deployment_id}-application-artifact-retirement"
+  assume_role_policy = data.aws_iam_policy_document.publisher_assume_role.json
+  tags               = local.tags
+}
+
 resource "aws_iam_role" "feed_watcher" {
   name               = local.role_names.watcher
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
@@ -81,6 +87,26 @@ data "aws_iam_policy_document" "release_publisher" {
     resources = [
       "${aws_s3_bucket.config.arn}/${local.application_artifact_prefix}/*",
     ]
+  }
+}
+
+data "aws_iam_policy_document" "application_artifact_retirement" {
+  statement {
+    sid       = "ListExactApplicationArtifactPrefix"
+    actions   = ["s3:ListBucketVersions"]
+    resources = [aws_s3_bucket.config.arn]
+
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["${local.application_artifact_prefix}/*"]
+    }
+  }
+
+  statement {
+    sid       = "ReadAndRetireExactApplicationArtifactVersions"
+    actions   = ["s3:GetObjectVersion", "s3:DeleteObjectVersion"]
+    resources = ["${aws_s3_bucket.config.arn}/${local.application_artifact_prefix}/*"]
   }
 }
 
@@ -230,6 +256,12 @@ resource "aws_iam_role_policy" "release_publisher" {
   name   = "release-publisher"
   role   = aws_iam_role.release_publisher.id
   policy = data.aws_iam_policy_document.release_publisher.json
+}
+
+resource "aws_iam_role_policy" "application_artifact_retirement" {
+  name   = "application-artifact-retirement"
+  role   = aws_iam_role.application_artifact_retirement.id
+  policy = data.aws_iam_policy_document.application_artifact_retirement.json
 }
 
 resource "aws_iam_role_policy" "feed_watcher" {
