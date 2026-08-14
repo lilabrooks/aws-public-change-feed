@@ -116,7 +116,15 @@ Automatic retry is forbidden because Slack may already contain the message.
 
 1. Record the candidate ID, request ID, attempt ID, destination, request start time, lease expiry, and worker invocation.
 2. Search the destination around that time using title, source link, and compact candidate ID. Respect customer access boundaries.
-3. If the message exists, use the audited reconciliation action to mark `posted` and record its Slack identifier when available.
+3. If the message exists, record the delivery record's current state version.
+   Preview the reconciliation with `python3 scripts/replay_delivery.py
+   --table-name <table> --candidate-id <candidate> --expected-state-version
+   <version> --operator <operator> --reason <reason> --evidence <evidence>
+   --found-post --terminal-retention-seconds <retention>`, adding
+   `--slack-message-ts`, `--slack-permalink`, or `--slack-reference` only for
+   bounded identifiers. Repeat with `--apply` to conditionally mark `posted`.
+   A successful result reports `FoundPostReconciliation: 1` and creates no new
+   attempt.
 4. If the message is absent and the operator accepts the remaining duplication
    risk, record the delivery record's current state version. Preview the
    mutation with `python3 scripts/replay_delivery.py --table-name <table>
@@ -132,7 +140,7 @@ Automatic retry is forbidden because Slack may already contain the message.
    repeat the command. An ambiguous AWS result requires a direct strongly
    consistent reread before any retry.
 6. If evidence is inconclusive, leave the state unknown and escalate to the service owner.
-7. Review timeout, lease, visibility, and worker termination evidence before closing the incident. Recording a found post and replaying a terminal record still require separate operator tooling.
+7. Review timeout, lease, visibility, and worker termination evidence before closing the incident. Replaying a terminal record still requires separate operator tooling.
 
 ## DLQ response
 

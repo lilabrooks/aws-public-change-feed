@@ -304,7 +304,7 @@
           <article class="compact-card">
             <span class="compact-tag">04 · Deliver</span>
             <h3 class="compact-card-title">Order, pace, and recover Slack work</h3>
-            <p>SQS FIFO groups work by destination. The worker records posted, retryable, terminal, or unknown outcomes. An operator can reserve one audited retry for a <code>delivery_unknown</code> record; destination pacing preserves that reservation through retryable redispatch, and the next sending claim consumes it before Slack. A separate five-minute reconciler repairs bounded safe work, converts exact expired leases to unknown, and reports stale queued records without guessing that SQS lost them.</p>
+            <p>SQS FIFO groups work by destination. The worker records posted, retryable, terminal, or unknown outcomes. An operator can close a <code>delivery_unknown</code> record as posted after finding the Slack message, or reserve one audited retry after finding no post; destination pacing preserves that reservation through retryable redispatch, and the next sending claim consumes it before Slack. A separate five-minute reconciler repairs bounded safe work, converts exact expired leases to unknown, and reports stale queued records without guessing that SQS lost them.</p>
           </article>
         </div>
       </div>

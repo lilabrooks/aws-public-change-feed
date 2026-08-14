@@ -46,6 +46,7 @@ from aws_public_change_feed.manual_replay import apply_unknown_replay, plan_unkn
 from aws_public_change_feed.outbox import (  # noqa: E402
     DeliveryRecord,
     DynamoDBDeliveryStore,
+    FoundPostEntry,
     build_delivery_request,
 )
 from aws_public_change_feed.worker import (  # noqa: E402
@@ -152,6 +153,37 @@ class PostedOutcomeTests(WorkerAgainstDynamoDB):
         self.assertTrue(again.handled)
         self.assertEqual(again.state, POSTED)
         self.assertEqual(len(self.sender.calls), 1)
+
+    def test_a_found_post_reconciled_record_makes_no_second_call(self):
+        prior_attempt = "prior-attempt"
+        self.queued_record(
+            status=DELIVERY_UNKNOWN,
+            next_action_at=None,
+            state_version=7,
+            last_attempt_id=prior_attempt,
+        )
+        self.assertTrue(
+            self.store.reconcile_found_post(
+                self.key,
+                expected_state_version=7,
+                expected_prior_attempt_id=prior_attempt,
+                entry=FoundPostEntry(
+                    decided_at="2026-08-11T14:30:00Z",
+                    operator="operator@example.com",
+                    reason="Closed after finding the Slack post",
+                    evidence="Slack search found the posted message",
+                    prior_attempt_id=prior_attempt,
+                    slack_reference="operator note 42",
+                ),
+                expires_at=NOW_TS + 365 * 86400,
+            )
+        )
+
+        result = self.process()
+
+        self.assertTrue(result.handled)
+        self.assertEqual(result.state, POSTED)
+        self.assertEqual(self.sender.calls, [])
 
 
 class RetryOutcomeTests(WorkerAgainstDynamoDB):

@@ -22,13 +22,17 @@ import replay_delivery  # noqa: E402
 
 from aws_public_change_feed.manual_replay import (  # noqa: E402
     ReplayRefused,
+    apply_found_post,
     apply_unknown_replay,
+    plan_found_post,
     plan_unknown_replay,
 )
 from aws_public_change_feed.outbox import (  # noqa: E402
+    MAX_FOUND_POST_HISTORY,
     MAX_MANUAL_REPLAY_HISTORY,
     DeliveryRecord,
     DynamoDBDeliveryStore,
+    FoundPostEntry,
     InMemoryOutboxStore,
     ManualReplayEntry,
 )
@@ -86,6 +90,21 @@ def plan(record):
         evidence="No matching post in the destination search window",
         clock=lambda: DECIDED,
         attempt_id_factory=lambda: NEW_ATTEMPT,
+    )
+
+
+def found_post_plan(record, *, retention=86400):
+    return plan_found_post(
+        record,
+        expected_state_version=record.state_version,
+        operator="operator@example.com",
+        reason="Closed after finding the Slack post",
+        evidence="Slack search found the posted message",
+        terminal_retention_seconds=retention,
+        slack_message_ts="1723386600.000100",
+        slack_permalink="https://example.slack.com/archives/C0ALERTS/p1723386600000100",
+        slack_reference="operator note 42",
+        clock=lambda: DECIDED,
     )
 
 
@@ -191,6 +210,97 @@ class ManualReplayModelTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "cannot exceed"):
             unknown_record(manual_replay_history=tuple(replay_entry(index, new=f"{index:032x}") for index in range(26)))
 
+    def test_found_post_reconciliation_closes_unknown_without_a_new_attempt(self):
+        store = InMemoryOutboxStore()
+        original = unknown_record()
+        store._deliveries[original.candidate_id] = original
+
+        result = apply_found_post(store, found_post_plan(original))
+
+        current = store.get_delivery(original.candidate_id)
+        assert current is not None
+        self.assertEqual(result.state_version, 8)
+        self.assertEqual(result.found_post_count, 1)
+        self.assertEqual(current.status, "posted")
+        self.assertIsNone(current.next_action_at)
+        self.assertIsNone(current.next_attempt_id)
+        self.assertEqual(current.manual_replay_history, ())
+        self.assertEqual(current.found_post_history[-1].prior_attempt_id, PRIOR_ATTEMPT)
+        self.assertEqual(current.request, original.request)
+        self.assertEqual(current.destination_key, original.destination_key)
+        self.assertEqual(current.created_at, original.created_at)
+        self.assertEqual(current.network_attempt_count, original.network_attempt_count)
+        self.assertEqual(current.dispatch_generation, original.dispatch_generation)
+        self.assertIsNone(current.queue_message_id)
+        self.assertEqual(current.slack_response, original.slack_response)
+        self.assertEqual(current.expires_at, DECIDED_TS + 86400)
+
+    def test_found_post_conditions_refuse_stale_wrong_state_ttl_reservation_and_cap(self):
+        entry = found_post_plan(unknown_record()).entry
+        wrong_state = unknown_record(status="queued", next_action_at=DECIDED_TS)
+        corrupt_ttl = unknown_record()
+        object.__setattr__(corrupt_ttl, "expires_at", 999)
+        corrupt_reservation = unknown_record()
+        object.__setattr__(corrupt_reservation, "next_attempt_id", NEW_ATTEMPT)
+        capped = unknown_record(
+            found_post_history=tuple(
+                replace(entry, reason=f"Found post {index}") for index in range(MAX_FOUND_POST_HISTORY)
+            )
+        )
+        cases = (
+            ("stale version", unknown_record(), 6, PRIOR_ATTEMPT, entry),
+            (
+                "wrong prior",
+                unknown_record(),
+                7,
+                "another-attempt",
+                replace(entry, prior_attempt_id="another-attempt"),
+            ),
+            ("wrong state", wrong_state, 7, PRIOR_ATTEMPT, entry),
+            ("existing ttl", corrupt_ttl, 7, PRIOR_ATTEMPT, entry),
+            ("existing reservation", corrupt_reservation, 7, PRIOR_ATTEMPT, entry),
+            ("history cap", capped, 7, PRIOR_ATTEMPT, entry),
+        )
+
+        for name, original, expected_version, expected_prior, candidate_entry in cases:
+            with self.subTest(case=name):
+                store = InMemoryOutboxStore()
+                store._deliveries[original.candidate_id] = original
+
+                self.assertFalse(
+                    store.reconcile_found_post(
+                        original.candidate_id,
+                        expected_state_version=expected_version,
+                        expected_prior_attempt_id=expected_prior,
+                        entry=candidate_entry,
+                        expires_at=DECIDED_TS + 86400,
+                    )
+                )
+                self.assertIs(store.get_delivery(original.candidate_id), original)
+
+    def test_found_post_fields_are_bounded_and_distinct_from_replay(self):
+        entry = found_post_plan(unknown_record()).entry
+        mutations = (
+            ("operator blank", {"operator": ""}, "operator"),
+            ("reason multiline", {"reason": "one\ntwo"}, "single line"),
+            ("evidence oversize", {"evidence": "e" * 2001}, "2000"),
+            ("prior oversize", {"prior_attempt_id": "a" * 129}, "128"),
+            ("message ts multiline", {"slack_message_ts": "1\n2"}, "single line"),
+            ("permalink oversize", {"slack_permalink": "h" * 501}, "500"),
+        )
+        for name, fields, message in mutations:
+            with self.subTest(case=name), self.assertRaisesRegex(ValueError, message):
+                replace(entry, **fields)
+
+        with self.assertRaisesRegex(ValueError, "fields do not match"):
+            FoundPostEntry.from_document({**entry.document(), "message_body": "secret message text"})
+        with self.assertRaisesRegex(ValueError, "cannot exceed"):
+            unknown_record(
+                found_post_history=tuple(
+                    replace(entry, reason=f"Found post {index}") for index in range(MAX_FOUND_POST_HISTORY + 1)
+                )
+            )
+
 
 @mock_aws
 class DynamoManualReplayTests(unittest.TestCase):
@@ -220,6 +330,93 @@ class DynamoManualReplayTests(unittest.TestCase):
         self.assertEqual(raw["manual_replay_history"]["L"][0]["M"]["new_attempt_id"]["S"], NEW_ATTEMPT)
         self.assertNotIn("queue_message_id", raw)
         self.assertNotIn("slack_response", raw)
+
+    def test_found_post_roundtrips_native_history_ttl_and_no_reservation(self):
+        result = apply_found_post(self.store, found_post_plan(self.original))
+
+        current = self.store.get_delivery(self.key)
+        assert current is not None
+        self.assertEqual(result.state_version, 8)
+        self.assertEqual(current.status, "posted")
+        self.assertIsNone(current.next_attempt_id)
+        self.assertEqual(current.manual_replay_history, ())
+        self.assertEqual(current.found_post_history, (found_post_plan(self.original).entry,))
+        self.assertEqual(current.expires_at, DECIDED_TS + 86400)
+        raw = self.client.get_item(
+            TableName=TABLE,
+            Key={"PK": {"S": f"CANDIDATE#{self.key}"}, "SK": {"S": "DELIVERY"}},
+            ConsistentRead=True,
+        )["Item"]
+        self.assertEqual(raw["found_post_history"]["L"][0]["M"]["prior_attempt_id"]["S"], PRIOR_ATTEMPT)
+        self.assertNotIn("next_attempt_id", raw)
+        self.assertNotIn("queue_message_id", raw)
+
+    def test_found_post_conditions_refuse_stale_wrong_state_ttl_reservation_and_cap(self):
+        entry = found_post_plan(self.original).entry
+        self.assertFalse(
+            self.store.reconcile_found_post(
+                self.key,
+                expected_state_version=6,
+                expected_prior_attempt_id=PRIOR_ATTEMPT,
+                entry=entry,
+                expires_at=DECIDED_TS + 86400,
+            )
+        )
+        self.assertFalse(
+            self.store.reconcile_found_post(
+                self.key,
+                expected_state_version=7,
+                expected_prior_attempt_id="another-attempt",
+                entry=replace(entry, prior_attempt_id="another-attempt"),
+                expires_at=DECIDED_TS + 86400,
+            )
+        )
+
+        key = {"PK": {"S": f"CANDIDATE#{self.key}"}, "SK": {"S": "DELIVERY"}}
+        corruptions: tuple[tuple[str, str, dict[str, dict[str, str]]], ...] = (
+            ("state", "SET #status = :value", {":value": {"S": "posted"}}),
+            ("ttl", "SET expires_at = :value", {":value": {"N": "999"}}),
+            ("reservation", "SET next_attempt_id = :value", {":value": {"S": "2" * 32}}),
+        )
+        for name, expression, values in corruptions:
+            with self.subTest(case=name):
+                self.client.delete_item(TableName=TABLE, Key=key)
+                self.assertTrue(self.store.put_delivery_if_absent(self.original))
+                kwargs = {
+                    "TableName": TABLE,
+                    "Key": key,
+                    "UpdateExpression": expression,
+                    "ExpressionAttributeValues": values,
+                }
+                if name == "state":
+                    kwargs["ExpressionAttributeNames"] = {"#status": "status"}
+                self.client.update_item(**kwargs)
+                self.assertFalse(
+                    self.store.reconcile_found_post(
+                        self.key,
+                        expected_state_version=7,
+                        expected_prior_attempt_id=PRIOR_ATTEMPT,
+                        entry=entry,
+                        expires_at=DECIDED_TS + 86400,
+                    )
+                )
+
+        capped = unknown_record(
+            candidate_id="found-post-cap",
+            found_post_history=tuple(
+                replace(entry, reason=f"Found post {index}") for index in range(MAX_FOUND_POST_HISTORY)
+            ),
+        )
+        self.assertTrue(self.store.put_delivery_if_absent(capped))
+        self.assertFalse(
+            self.store.reconcile_found_post(
+                capped.candidate_id,
+                expected_state_version=capped.state_version,
+                expected_prior_attempt_id=PRIOR_ATTEMPT,
+                entry=entry,
+                expires_at=DECIDED_TS + 86400,
+            )
+        )
 
     def test_state_version_prior_attempt_state_and_history_cap_are_conditions(self):
         entry = plan(self.original).entry
@@ -340,8 +537,22 @@ class ReplayCliTests(unittest.TestCase):
             operator=f"operator-{secret}",
             reason=f"approved-{secret}",
             evidence=f"searched-{secret}",
+            found_post=False,
+            terminal_retention_seconds=None,
+            slack_message_ts=None,
+            slack_permalink=None,
+            slack_reference=None,
             apply=apply,
         )
+
+    def found_post_arguments(self, *, apply=False, version=7, secret="SIGNINGSECRET"):
+        arguments = self.arguments(apply=apply, version=version, secret=secret)
+        arguments.found_post = True
+        arguments.terminal_retention_seconds = 86400
+        arguments.slack_message_ts = f"1723386600.000100-{secret}"
+        arguments.slack_permalink = f"https://example.slack.com/archives/C0ALERTS/p1723386600000100-{secret}"
+        arguments.slack_reference = f"operator-note-{secret}"
+        return arguments
 
     def invoke(self, arguments, client=None):
         stdout = io.StringIO()
@@ -374,6 +585,68 @@ class ReplayCliTests(unittest.TestCase):
         current = self.store.get_delivery(self.original.candidate_id)
         assert current is not None
         self.assertEqual(current.state_version, 8)
+
+    def test_found_post_preview_and_apply_are_safe_and_create_no_new_attempt(self):
+        before = self.store.get_delivery(self.original.candidate_id)
+
+        preview_code, preview_stdout, preview_stderr = self.invoke(self.found_post_arguments())
+
+        self.assertEqual(preview_code, 0)
+        self.assertEqual(preview_stderr, "")
+        preview = json.loads(preview_stdout)
+        self.assertEqual(preview["status"], "preview")
+        self.assertEqual(preview["action"], "found_post_reconciliation")
+        self.assertIn("expires_at", preview)
+        self.assertNotIn("SIGNINGSECRET", preview_stdout)
+        self.assertEqual(self.store.get_delivery(self.original.candidate_id), before)
+
+        apply_code, apply_stdout, apply_stderr = self.invoke(self.found_post_arguments(apply=True))
+
+        output = json.loads(apply_stdout)
+        self.assertEqual(apply_code, 0)
+        self.assertEqual(apply_stderr, "")
+        self.assertEqual(output["status"], "applied")
+        self.assertEqual(output["new_state"], "posted")
+        self.assertEqual(output["FoundPostReconciliation"], 1)
+        self.assertNotIn("SIGNINGSECRET", apply_stdout)
+        current = self.store.get_delivery(self.original.candidate_id)
+        assert current is not None
+        self.assertEqual(current.status, "posted")
+        self.assertIsNone(current.next_attempt_id)
+        self.assertEqual(current.manual_replay_history, ())
+        self.assertEqual(len(current.found_post_history), 1)
+
+    def test_found_post_requires_terminal_retention_and_reports_ambiguity_after_write_attempt(self):
+        missing_retention = self.found_post_arguments(apply=True)
+        missing_retention.terminal_retention_seconds = None
+
+        invalid_code, _, invalid_error = self.invoke(missing_retention)
+
+        self.assertEqual(invalid_code, replay_delivery.EXIT_INVALID)
+        self.assertEqual(json.loads(invalid_error)["status"], "invalid")
+
+        class AmbiguousClient:
+            def __init__(self, delegate):
+                self.delegate = delegate
+                self.update_calls = 0
+
+            def get_item(self, **kwargs):
+                return self.delegate.get_item(**kwargs)
+
+            def update_item(self, **kwargs):
+                self.update_calls += 1
+                raise EndpointConnectionError(endpoint_url="https://dynamodb.invalid")
+
+        ambiguous_client = AmbiguousClient(self.client)
+        ambiguous_code, _, ambiguous_error = self.invoke(
+            self.found_post_arguments(apply=True),
+            client=ambiguous_client,
+        )
+        self.assertEqual(ambiguous_code, replay_delivery.EXIT_AMBIGUOUS)
+        self.assertEqual(json.loads(ambiguous_error)["status"], "ambiguous")
+        self.assertEqual(ambiguous_client.update_calls, 1)
+        self.assertNotIn("dynamodb.invalid", ambiguous_error)
+        self.assertNotIn("SIGNINGSECRET", ambiguous_error)
 
     def test_initial_read_failure_is_distinct_from_write_ambiguity_in_both_modes(self):
         class ReadFailureClient:

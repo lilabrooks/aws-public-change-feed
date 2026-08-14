@@ -118,6 +118,11 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
   reserved attempt through FIFO queue acceptance. A destination-pacing retry
   preserves it through `failed_retryable` and redispatch, and the worker
   consumes it in the sending claim before contacting Slack.
+- Given operator evidence that Slack already contains the unknown attempt's
+  message, one preview-first action records bounded found-post history, moves
+  the exact `delivery_unknown` record to `posted`, applies terminal retention,
+  reserves no new attempt, and causes duplicate queue delivery to make no Slack
+  call.
 
 ## Security acceptance
 
@@ -171,7 +176,7 @@ Each step ends with executable evidence before the next layer treats it as a dep
 - Conditional `304`, duplicate item, overlapping feeds, edited item, missing date, malformed XML, entity expansion, unsafe URL, redirect, oversized response, and partial feed failure.
 - Service/risk positives, hard negatives, phrase boundaries, Unicode, HTML, distinct evidence spans, and excluded terms.
 - One route, shared destination, separate destinations, disabled environment, changed profile, and route isolation.
-- Every delivery transition, queue duplicate, state-write failure after SQS acceptance, `429`, bounded retry, terminal error, timeout, worker crash, stale lease, DLQ, and manual replay.
+- Every delivery transition, queue duplicate, state-write failure after SQS acceptance, `429`, bounded retry, terminal error, timeout, worker crash, stale lease, DLQ, found-post reconciliation, and manual replay.
 - Release hash mismatch, incompatible version, concurrent promotion, retained rollback, and expired terminal replacement.
 - Precondition responses for release publication: `412` on create with matching and mismatching hashes, `412` on a stale promotion ETag, `409` on promotion with the desired release both present and absent on re-read, `404` on `If-Match` against a missing pointer, and a first promotion through `If-None-Match: *`.
 - An IAM policy granting `s3:GetObject` but not `s3:GetObjectVersion`, to prove exact-version reads fail closed.
