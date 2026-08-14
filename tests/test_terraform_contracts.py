@@ -110,7 +110,12 @@ class TerraformContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary_directory:
             missing_terraform = Path(temporary_directory) / "terraform"
             checked = subprocess.run(
-                ("make", "terraform-check", f"TERRAFORM={missing_terraform}"),
+                (
+                    "make",
+                    "terraform-check",
+                    f"TERRAFORM={missing_terraform}",
+                    "REQUIRE_TERRAFORM=0",
+                ),
                 cwd=ROOT,
                 capture_output=True,
                 text=True,
