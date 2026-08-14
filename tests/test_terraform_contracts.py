@@ -52,6 +52,30 @@ class TerraformContractTests(unittest.TestCase):
             with self.subTest(required=required):
                 self.assertIn(required, policy)
 
+    def test_operations_subscriptions_bind_reviewed_aliases_to_private_endpoints(self):
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
+        sns = (ROOT / "infra/central/sns.tf").read_text(encoding="utf-8")
+        endpoints = self.variable_block(variables, "operational_sns_subscription_endpoints")
+        subscription = self.resource_block(sns, "aws_sns_topic_subscription", "operations")
+
+        self.assertIn("type        = map(string)", endpoints)
+        self.assertIn("default     = {}", endpoints)
+        self.assertIn("sensitive   = true", endpoints)
+        self.assertIn("length(trimspace(endpoint)) > 0", endpoints)
+        self.assertIn("for subscription in local.deployment.operational_sns_subscriptions", locals_source)
+        self.assertIn("toset(keys(local.operational_sns_subscriptions))", locals_source)
+        self.assertIn("toset(keys(var.operational_sns_subscription_endpoints))", locals_source)
+        self.assertIn("for_each = local.operational_sns_subscriptions", subscription)
+        self.assertIn("topic_arn = aws_sns_topic.operations.arn", subscription)
+        self.assertIn("protocol  = each.value.protocol", subscription)
+        self.assertIn('endpoint  = lookup(var.operational_sns_subscription_endpoints, each.key, "")', subscription)
+        self.assertIn(
+            "local.operational_sns_subscription_aliases == local.operational_sns_endpoint_aliases",
+            subscription,
+        )
+        self.assertIn("keys must exactly match", subscription)
+
     def test_backend_policy_covers_both_roots_and_native_lockfiles(self):
         bootstrap = (ROOT / "infra/bootstrap/main.tf").read_text(encoding="utf-8")
         central_backend = (ROOT / "infra/central/backend.tf").read_text(encoding="utf-8")
@@ -556,9 +580,21 @@ class TerraformContractTests(unittest.TestCase):
 
     def test_watcher_failure_alarms_match_the_accepted_paging_policy(self):
         alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        watcher = self.resource_block(lambda_source, "aws_lambda_function", "watcher")
         errors = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "feed_watcher_errors")
         incomplete = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "watcher_incomplete_runs")
         fault = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "watcher_fault")
+
+        condition = "count = local.watcher_runtime_enabled ? 1 : 0"
+        for resource, block in (
+            ("watcher_lambda", watcher),
+            ("watcher_errors", errors),
+            ("watcher_incomplete_runs", incomplete),
+            ("watcher_fault", fault),
+        ):
+            with self.subTest(resource=resource):
+                self.assertIn(condition, block)
 
         for block in (errors, incomplete):
             with self.subTest(alarm="sustained"):
@@ -574,7 +610,6 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn('metric_name         = "IncompleteRuns"', incomplete)
         self.assertIn("namespace           = local.metrics_namespace", incomplete)
         self.assertIn("Function = local.function_names.watcher", incomplete)
-        self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", incomplete)
 
         self.assertIn("evaluation_periods  = 1", fault)
         self.assertIn("datapoints_to_alarm = 1", fault)
@@ -582,9 +617,17 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn('metric_name         = "WatcherFaults"', fault)
         self.assertIn("namespace           = local.metrics_namespace", fault)
         self.assertIn("Function = local.function_names.watcher", fault)
-        self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", fault)
         self.assertIn('treat_missing_data  = "notBreaching"', fault)
         self.assertIn("alarm_actions             = [aws_sns_topic.operations.arn]", fault)
+
+        release_verification = self.resource_block(
+            alarms, "aws_cloudwatch_metric_alarm", "release_verification_failures"
+        )
+        self.assertIn('metric_name         = "ReleaseVerificationFailures"', release_verification)
+        self.assertNotIn("alarm_actions", release_verification)
+        self.assertNotIn("ok_actions", release_verification)
+        self.assertNotIn("insufficient_data_actions", release_verification)
+        self.assertIn("Diagnostic only; WatcherFaults owns notification paging", release_verification)
 
     def test_changed_watcher_custom_alarms_are_owned_by_the_watcher_runtime(self):
         watcher = (ROOT / "src/aws_public_change_feed/watcher_runtime.py").read_text(encoding="utf-8")

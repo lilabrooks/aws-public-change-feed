@@ -24,6 +24,12 @@ locals {
   log_retention_days = local.deployment.log_retention_days
   sns_topic_name     = local.deployment.operational_sns_topic_name
 
+  operational_sns_subscriptions = {
+    for subscription in local.deployment.operational_sns_subscriptions : subscription.alias => subscription
+  }
+  operational_sns_subscription_aliases = toset(keys(local.operational_sns_subscriptions))
+  operational_sns_endpoint_aliases     = toset(keys(var.operational_sns_subscription_endpoints))
+
   rate_control      = local.deployment.slack.rate_control
   feed_fetch_policy = local.deployment.feed_fetch_policy
 

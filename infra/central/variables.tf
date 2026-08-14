@@ -4,6 +4,20 @@ variable "deployment_file" {
   default     = "deployment.yaml"
 }
 
+variable "operational_sns_subscription_endpoints" {
+  description = "Private map from each reviewed operational SNS subscription alias to its endpoint. Values enter Terraform state and must be supplied outside Git."
+  type        = map(string)
+  default     = {}
+  sensitive   = true
+
+  validation {
+    condition = alltrue([
+      for endpoint in values(var.operational_sns_subscription_endpoints) : length(trimspace(endpoint)) > 0
+    ])
+    error_message = "operational_sns_subscription_endpoints values must be nonempty."
+  }
+}
+
 variable "enable_dynamodb_point_in_time_recovery" {
   description = "Whether DynamoDB point-in-time recovery is enabled. Chapter 05 leaves the production decision open."
   type        = bool

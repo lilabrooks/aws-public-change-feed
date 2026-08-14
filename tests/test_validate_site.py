@@ -71,6 +71,15 @@ class SiteValidatorTests(unittest.TestCase):
         changed = ["docs/GOAL.md", "site/architecture.mmd", "site/index.html"]
         self.assertEqual(validator.validate_site_sync(changed), [])
 
+    def test_package_retirement_status_matches_the_implemented_tool(self):
+        page = (ROOT / "site/index.html").read_text(encoding="utf-8")
+        self.assertIn(
+            "A controlled application-package retirement preview and, when naturally eligible packages exist, "
+            "a separately authorized apply with retained-set verification",
+            page,
+        )
+        self.assertNotIn("packages accumulate until it exists", page)
+
     def test_unrelated_change_does_not_require_page_update(self):
         self.assertEqual(validator.validate_site_sync(["tests/test_validate_config.py"]), [])
 
