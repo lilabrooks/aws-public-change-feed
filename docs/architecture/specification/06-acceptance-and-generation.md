@@ -123,6 +123,26 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
   the exact `delivery_unknown` record to `posted`, applies terminal retention,
   reserves no new attempt, and causes duplicate queue delivery to make no Slack
   call.
+- Given each exact ADR-021 correction class, or one of its exact worker-
+  exhaustible classes with bounded `attempts_exhausted = true` metadata, a live
+  `failed_terminal` record produces a read-only preview and can conditionally
+  reserve one terminal replay attempt.
+- Given an unlisted response without exhausted-budget evidence, an immutable
+  candidate/release/application or payload failure, malformed bounded outcome,
+  expired or changed TTL, stale version or attempt, existing reservation, or
+  full 25-entry terminal-replay history, terminal replay writes nothing.
+- Given a successful terminal replay, dedicated history retains the prior
+  response class, exhausted-budget flag, expiry, operator decision, and old and
+  new attempts. The stored request, release, application digest, dispatch
+  generation, and historical network-attempt count remain unchanged.
+- Given a terminal replay after automatic attempts are exhausted, one reserved
+  Slack call can succeed. Another retryable response increments the historical
+  count and returns the record to `failed_terminal` without reopening the
+  automatic budget.
+- Given a write response lost after any of the three replay actions, a bounded
+  strongly consistent reread reports success only when it proves that action's
+  exact history entry and reserved attempt or posted closure. Every other
+  post-write result remains ambiguous.
 
 ## Security acceptance
 
@@ -176,7 +196,7 @@ Each step ends with executable evidence before the next layer treats it as a dep
 - Conditional `304`, duplicate item, overlapping feeds, edited item, missing date, malformed XML, entity expansion, unsafe URL, redirect, oversized response, and partial feed failure.
 - Service/risk positives, hard negatives, phrase boundaries, Unicode, HTML, distinct evidence spans, and excluded terms.
 - One route, shared destination, separate destinations, disabled environment, changed profile, and route isolation.
-- Every delivery transition, queue duplicate, state-write failure after SQS acceptance, `429`, bounded retry, terminal error, timeout, worker crash, stale lease, DLQ, found-post reconciliation, and manual replay.
+- Every delivery transition, queue duplicate, state-write failure after SQS acceptance, `429`, bounded retry, terminal error, timeout, worker crash, stale lease, DLQ, found-post reconciliation, unknown replay, and terminal replay.
 - Release hash mismatch, incompatible version, concurrent promotion, retained rollback, and expired terminal replacement.
 - Precondition responses for release publication: `412` on create with matching and mismatching hashes, `412` on a stale promotion ETag, `409` on promotion with the desired release both present and absent on re-read, `404` on `If-Match` against a missing pointer, and a first promotion through `If-None-Match: *`.
 - An IAM policy granting `s3:GetObject` but not `s3:GetObjectVersion`, to prove exact-version reads fail closed.

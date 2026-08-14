@@ -33,6 +33,7 @@ The [goal](../GOAL.md) defines the outcome and milestones. The [operations runbo
 - [ADR-018: Corpus evaluation and matching thresholds](../adr/018-corpus-evaluation-and-matching-thresholds.md)
 - [ADR-019: S3 preconditions for release publication and promotion](../adr/019-s3-preconditions-for-release-publication-and-promotion.md)
 - [ADR-020: Exact application-version gate for delivery](../adr/020-exact-application-version-gate-for-delivery.md)
+- [ADR-021: Audited replay of exact terminal delivery records](../adr/021-audited-terminal-record-replay.md)
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 

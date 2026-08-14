@@ -45,6 +45,9 @@ __all__ = [
     "FoundPostEntry",
     "InMemoryOutboxStore",
     "ManualReplayEntry",
+    "TerminalReplayEntry",
+    "TERMINAL_REPLAY_EXHAUSTIBLE_RESPONSE_CLASSES",
+    "TERMINAL_REPLAY_RESPONSE_CLASSES",
     "OutboxStore",
     "ACKNOWLEDGED_STATES",
     "OversizeDeliveryError",
@@ -54,6 +57,7 @@ __all__ = [
     "build_delivery_request",
     "emit",
     "serialized_size",
+    "terminal_replay_outcome",
     "verify_durable",
 ]
 
@@ -63,11 +67,74 @@ _REPLAY_ATTEMPT_ID = re.compile(r"[a-f0-9]{32}")
 
 MAX_MANUAL_REPLAY_HISTORY = 25
 MAX_FOUND_POST_HISTORY = 25
+MAX_TERMINAL_REPLAY_HISTORY = 25
 MAX_OPERATOR_CHARACTERS = 200
 MAX_REPLAY_REASON_CHARACTERS = 1000
 MAX_REPLAY_EVIDENCE_CHARACTERS = 2000
 MAX_SLACK_REFERENCE_CHARACTERS = 500
 MAX_ATTEMPT_ID_CHARACTERS = 128
+MAX_RESPONSE_CLASS_CHARACTERS = 200
+
+TERMINAL_REPLAY_RESPONSE_CLASSES = frozenset(
+    {
+        "credential_read_error",
+        "credential_kind_mismatch",
+        "webhook_url_rejected",
+        "bot_token_rejected",
+        "http_403",
+        "http_404",
+        "http_410",
+        "slack_access_denied",
+        "slack_account_inactive",
+        "slack_app_access_restricted",
+        "slack_invalid_auth",
+        "slack_missing_scope",
+        "slack_no_permission",
+        "slack_not_allowed_token_type",
+        "slack_not_authed",
+        "slack_team_access_not_granted",
+        "slack_token_expired",
+        "slack_token_revoked",
+        "slack_channel_not_found",
+        "slack_ekm_access_denied",
+        "slack_is_archived",
+        "slack_not_in_channel",
+        "slack_restricted_action",
+        "slack_restricted_action_non_threadable_channel",
+        "slack_restricted_action_read_only_channel",
+        "slack_restricted_action_thread_locked",
+        "slack_restricted_action_thread_only_channel",
+    }
+)
+
+TERMINAL_REPLAY_EXHAUSTIBLE_RESPONSE_CLASSES = frozenset(
+    {
+        "http_408",
+        "http_429",
+        "http_500",
+        "http_502",
+        "http_503",
+        "http_504",
+        "slack_internal_error",
+        "slack_ratelimited",
+        "slack_service_unavailable",
+        "transport_connect_failed",
+        "transport_tls_failed",
+    }
+)
+
+_TERMINAL_RESPONSE_FIELDS = frozenset(
+    {
+        "response_class",
+        "latency_ms",
+        "bytes_sent",
+        "status_code",
+        "retry_after_seconds",
+        "message_ts",
+        "attempts_exhausted",
+    }
+)
+_RESPONSE_CLASS = re.compile(r"[a-z0-9_]{1,200}")
 
 # Chapter 02 keys the candidate and delivery items under one partition, and the
 # destination pacing item under its own.
@@ -187,6 +254,76 @@ def _bounded_single_line(name: str, value: str, maximum: int) -> None:
         raise ValueError(f"{name} exceeds {maximum} characters")
 
 
+def terminal_replay_outcome(slack_response: Mapping[str, Any] | None) -> tuple[str, bool]:
+    """Return the eligible bounded terminal outcome, or refuse its shape.
+
+    The exact allowlists are the ADR-021 contract. Exhausted automatic retries
+    remain eligible only for response classes the worker can truthfully mark
+    exhausted after spending the configured budget.
+    """
+
+    if not isinstance(slack_response, Mapping):
+        raise ValueError("terminal replay requires bounded Slack outcome metadata")
+    fields = set(slack_response)
+    if "response_class" not in fields or fields - _TERMINAL_RESPONSE_FIELDS:
+        raise ValueError("terminal replay outcome fields do not match the bounded contract")
+
+    response_class = slack_response["response_class"]
+    if not isinstance(response_class, str) or not _RESPONSE_CLASS.fullmatch(response_class):
+        raise ValueError("terminal replay response_class is not a bounded diagnostic label")
+
+    if "latency_ms" in slack_response and (
+        isinstance(slack_response["latency_ms"], bool)
+        or not isinstance(slack_response["latency_ms"], int)
+        or slack_response["latency_ms"] < 0
+    ):
+        raise ValueError("terminal replay latency_ms must be a non-negative integer")
+    if "bytes_sent" in slack_response and type(slack_response["bytes_sent"]) is not bool:
+        raise ValueError("terminal replay bytes_sent must be a boolean")
+    if "status_code" in slack_response and (
+        isinstance(slack_response["status_code"], bool)
+        or not isinstance(slack_response["status_code"], int)
+        or not 100 <= slack_response["status_code"] <= 599
+    ):
+        raise ValueError("terminal replay status_code must be an HTTP status integer")
+    if "retry_after_seconds" in slack_response and (
+        isinstance(slack_response["retry_after_seconds"], bool)
+        or not isinstance(slack_response["retry_after_seconds"], int)
+        or slack_response["retry_after_seconds"] <= 0
+    ):
+        raise ValueError("terminal replay retry_after_seconds must be a positive integer")
+    if "message_ts" in slack_response:
+        _bounded_single_line(
+            "terminal replay message_ts",
+            slack_response["message_ts"],
+            MAX_SLACK_REFERENCE_CHARACTERS,
+        )
+
+    attempts_exhausted = slack_response.get("attempts_exhausted", False)
+    if type(attempts_exhausted) is not bool:
+        raise ValueError("terminal replay attempts_exhausted must be a boolean")
+
+    status_code = slack_response.get("status_code")
+    if response_class.startswith("http_"):
+        try:
+            class_status = int(response_class.removeprefix("http_"))
+        except ValueError:
+            raise ValueError("terminal replay HTTP response class is malformed") from None
+        if status_code != class_status or slack_response.get("bytes_sent") is not True:
+            raise ValueError("terminal replay HTTP outcome facts disagree")
+    elif response_class.startswith("slack_"):
+        if status_code != 200 or slack_response.get("bytes_sent") is not True:
+            raise ValueError("terminal replay Slack outcome facts disagree")
+    elif status_code is not None:
+        raise ValueError("terminal replay local outcome cannot carry an HTTP status")
+
+    if attempts_exhausted and response_class not in TERMINAL_REPLAY_EXHAUSTIBLE_RESPONSE_CLASSES:
+        raise ValueError("terminal response class cannot truthfully carry attempts_exhausted")
+    if response_class not in TERMINAL_REPLAY_RESPONSE_CLASSES and not attempts_exhausted:
+        raise ValueError("terminal response class is not eligible for exact-request replay")
+    return response_class, attempts_exhausted
+
+
 @dataclass(frozen=True, slots=True)
 class ManualReplayEntry:
     """One operator-approved link from an unknown attempt to its replay."""
@@ -258,6 +395,119 @@ def _decode_replay_entry(value: Mapping[str, Any]) -> ManualReplayEntry:
             raise ValueError("manual replay history fields must be DynamoDB strings")
         document[str(name)] = field_value["S"]
     return ManualReplayEntry.from_document(document)
+
+
+@dataclass(frozen=True, slots=True)
+class TerminalReplayEntry:
+    """One operator-approved replay of an exact terminal delivery record."""
+
+    decided_at: str
+    operator: str
+    reason: str
+    evidence: str
+    prior_attempt_id: str
+    new_attempt_id: str
+    prior_response_class: str
+    prior_attempts_exhausted: bool
+    prior_expires_at: int
+
+    def __post_init__(self) -> None:
+        try:
+            parsed = datetime.strptime(self.decided_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        except (TypeError, ValueError):
+            raise ValueError("decided_at must be a canonical UTC timestamp") from None
+        if utc_timestamp(parsed) != self.decided_at:
+            raise ValueError("decided_at must be a canonical UTC timestamp")
+        _bounded_single_line("operator", self.operator, MAX_OPERATOR_CHARACTERS)
+        _bounded_single_line("reason", self.reason, MAX_REPLAY_REASON_CHARACTERS)
+        _bounded_single_line("evidence", self.evidence, MAX_REPLAY_EVIDENCE_CHARACTERS)
+        _bounded_single_line("prior_attempt_id", self.prior_attempt_id, MAX_ATTEMPT_ID_CHARACTERS)
+        if not isinstance(self.new_attempt_id, str) or not _REPLAY_ATTEMPT_ID.fullmatch(self.new_attempt_id):
+            raise ValueError("new_attempt_id must be 32 lowercase hexadecimal characters")
+        if not isinstance(self.prior_response_class, str) or not _RESPONSE_CLASS.fullmatch(self.prior_response_class):
+            raise ValueError("prior_response_class must be a bounded diagnostic label")
+        if type(self.prior_attempts_exhausted) is not bool:
+            raise ValueError("prior_attempts_exhausted must be a boolean")
+        if (
+            isinstance(self.prior_expires_at, bool)
+            or not isinstance(self.prior_expires_at, int)
+            or self.prior_expires_at < 0
+        ):
+            raise ValueError("prior_expires_at must be a non-negative integer Unix timestamp")
+
+    def document(self) -> dict[str, str | bool | int]:
+        return {
+            "decided_at": self.decided_at,
+            "operator": self.operator,
+            "reason": self.reason,
+            "evidence": self.evidence,
+            "prior_attempt_id": self.prior_attempt_id,
+            "new_attempt_id": self.new_attempt_id,
+            "prior_response_class": self.prior_response_class,
+            "prior_attempts_exhausted": self.prior_attempts_exhausted,
+            "prior_expires_at": self.prior_expires_at,
+        }
+
+    @classmethod
+    def from_document(cls, document: Mapping[str, Any]) -> TerminalReplayEntry:
+        required = {
+            "decided_at",
+            "operator",
+            "reason",
+            "evidence",
+            "prior_attempt_id",
+            "new_attempt_id",
+            "prior_response_class",
+            "prior_attempts_exhausted",
+            "prior_expires_at",
+        }
+        if set(document) != required:
+            raise ValueError("terminal replay entry fields do not match the contract")
+        return cls(
+            decided_at=document["decided_at"],
+            operator=document["operator"],
+            reason=document["reason"],
+            evidence=document["evidence"],
+            prior_attempt_id=document["prior_attempt_id"],
+            new_attempt_id=document["new_attempt_id"],
+            prior_response_class=document["prior_response_class"],
+            prior_attempts_exhausted=document["prior_attempts_exhausted"],
+            prior_expires_at=document["prior_expires_at"],
+        )
+
+
+def _encode_terminal_replay_entry(entry: TerminalReplayEntry) -> dict[str, Any]:
+    encoded: dict[str, dict[str, object]] = {}
+    for name, value in entry.document().items():
+        if type(value) is bool:
+            encoded[name] = {"BOOL": value}
+        elif isinstance(value, int):
+            encoded[name] = {"N": str(value)}
+        else:
+            encoded[name] = {"S": value}
+    return {"M": encoded}
+
+
+def _decode_terminal_replay_entry(value: Mapping[str, Any]) -> TerminalReplayEntry:
+    encoded = value.get("M")
+    if not isinstance(encoded, Mapping):
+        raise ValueError("terminal replay history entry must be a DynamoDB map")
+    document: dict[str, Any] = {}
+    for name, field_value in encoded.items():
+        if not isinstance(field_value, Mapping) or len(field_value) != 1:
+            raise ValueError("terminal replay history fields must be scalar DynamoDB values")
+        if set(field_value) == {"S"} and isinstance(field_value["S"], str):
+            document[str(name)] = field_value["S"]
+        elif set(field_value) == {"BOOL"} and type(field_value["BOOL"]) is bool:
+            document[str(name)] = field_value["BOOL"]
+        elif set(field_value) == {"N"} and isinstance(field_value["N"], str):
+            try:
+                document[str(name)] = int(field_value["N"])
+            except ValueError:
+                raise ValueError("terminal replay history number is not an integer") from None
+        else:
+            raise ValueError("terminal replay history fields must use their contracted DynamoDB type")
+    return TerminalReplayEntry.from_document(document)
 
 
 @dataclass(frozen=True, slots=True)
@@ -385,6 +635,39 @@ def _validate_found_post_transition(
         raise ValueError("expires_at must be a non-negative integer Unix timestamp")
 
 
+def _validate_terminal_replay_transition(
+    *,
+    expected_state_version: int,
+    expected_prior_attempt_id: str,
+    expected_expires_at: int,
+    expected_slack_response: Mapping[str, Any],
+    entry: TerminalReplayEntry,
+    next_action_at: int,
+) -> None:
+    if (
+        isinstance(expected_state_version, bool)
+        or not isinstance(expected_state_version, int)
+        or expected_state_version < 1
+    ):
+        raise ValueError("expected_state_version must be a positive integer")
+    _bounded_single_line("expected_prior_attempt_id", expected_prior_attempt_id, MAX_ATTEMPT_ID_CHARACTERS)
+    if isinstance(expected_expires_at, bool) or not isinstance(expected_expires_at, int) or expected_expires_at < 0:
+        raise ValueError("expected_expires_at must be a non-negative integer Unix timestamp")
+    if isinstance(next_action_at, bool) or not isinstance(next_action_at, int) or next_action_at < 0:
+        raise ValueError("next_action_at must be a non-negative integer Unix timestamp")
+    if not isinstance(entry, TerminalReplayEntry):
+        raise ValueError("entry must be a TerminalReplayEntry")
+    if entry.prior_attempt_id != expected_prior_attempt_id:
+        raise ValueError("entry prior_attempt_id must match the expected prior attempt")
+    if entry.prior_expires_at != expected_expires_at:
+        raise ValueError("entry prior_expires_at must match the expected terminal expiry")
+    response_class, attempts_exhausted = terminal_replay_outcome(expected_slack_response)
+    if entry.prior_response_class != response_class:
+        raise ValueError("entry prior_response_class must match the expected outcome")
+    if entry.prior_attempts_exhausted is not attempts_exhausted:
+        raise ValueError("entry prior_attempts_exhausted must match the expected outcome")
+
+
 @dataclass(frozen=True, slots=True)
 class DeliveryRecord:
     """The delivery item chapter 02 keys as `CANDIDATE#<id>` / `DELIVERY`.
@@ -431,6 +714,7 @@ class DeliveryRecord:
     last_attempt_id: str | None = None
     next_attempt_id: str | None = None
     manual_replay_history: tuple[ManualReplayEntry, ...] = ()
+    terminal_replay_history: tuple[TerminalReplayEntry, ...] = ()
     found_post_history: tuple[FoundPostEntry, ...] = ()
     network_attempt_count: int = 0
     # Bounded Slack response metadata for diagnosis: the worker's derived
@@ -503,9 +787,19 @@ class DeliveryRecord:
             raise ValueError(f"manual_replay_history cannot exceed {MAX_MANUAL_REPLAY_HISTORY} entries")
         if any(not isinstance(entry, ManualReplayEntry) for entry in self.manual_replay_history):
             raise ValueError("manual_replay_history entries must be ManualReplayEntry values")
-        if self.next_attempt_id is not None:
-            if not self.manual_replay_history or self.manual_replay_history[-1].new_attempt_id != self.next_attempt_id:
-                raise ValueError("next_attempt_id must match the newest manual replay entry")
+        if not isinstance(self.terminal_replay_history, tuple):
+            raise ValueError("terminal_replay_history must be an immutable tuple")
+        if len(self.terminal_replay_history) > MAX_TERMINAL_REPLAY_HISTORY:
+            raise ValueError(f"terminal_replay_history cannot exceed {MAX_TERMINAL_REPLAY_HISTORY} entries")
+        if any(not isinstance(entry, TerminalReplayEntry) for entry in self.terminal_replay_history):
+            raise ValueError("terminal_replay_history entries must be TerminalReplayEntry values")
+        if self.next_attempt_id is not None and not (
+            (self.manual_replay_history and self.manual_replay_history[-1].new_attempt_id == self.next_attempt_id)
+            or (
+                self.terminal_replay_history and self.terminal_replay_history[-1].new_attempt_id == self.next_attempt_id
+            )
+        ):
+            raise ValueError("next_attempt_id must match the newest replay entry")
         if not isinstance(self.found_post_history, tuple):
             raise ValueError("found_post_history must be an immutable tuple")
         if len(self.found_post_history) > MAX_FOUND_POST_HISTORY:
@@ -704,6 +998,25 @@ class OutboxStore(Protocol):
         The transition succeeds only for the observed unknown state version and
         prior attempt, while no TTL or replay reservation exists. It does not
         call SQS or Slack.
+        """
+        ...
+
+    def replay_terminal(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_prior_attempt_id: str,
+        expected_expires_at: int,
+        expected_slack_response: Mapping[str, Any],
+        entry: TerminalReplayEntry,
+        next_action_at: int,
+    ) -> bool:
+        """Append one audited terminal decision and reserve its exact replay.
+
+        The transition succeeds only for the observed live terminal state,
+        prior attempt, expiry, and bounded outcome while no reservation exists.
+        It does not call SQS or Slack.
         """
         ...
 
@@ -1067,6 +1380,51 @@ class InMemoryOutboxStore:
         )
         return True
 
+    def replay_terminal(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_prior_attempt_id: str,
+        expected_expires_at: int,
+        expected_slack_response: Mapping[str, Any],
+        entry: TerminalReplayEntry,
+        next_action_at: int,
+    ) -> bool:
+        _validate_terminal_replay_transition(
+            expected_state_version=expected_state_version,
+            expected_prior_attempt_id=expected_prior_attempt_id,
+            expected_expires_at=expected_expires_at,
+            expected_slack_response=expected_slack_response,
+            entry=entry,
+            next_action_at=next_action_at,
+        )
+        record = self._deliveries.get(candidate)
+        if (
+            record is None
+            or record.status != "failed_terminal"
+            or record.state_version != expected_state_version
+            or record.last_attempt_id != expected_prior_attempt_id
+            or record.expires_at != expected_expires_at
+            or expected_expires_at <= next_action_at
+            or record.slack_response != expected_slack_response
+            or record.next_attempt_id is not None
+            or len(record.terminal_replay_history) >= MAX_TERMINAL_REPLAY_HISTORY
+        ):
+            return False
+        self._deliveries[candidate] = replace(
+            record,
+            status="pending_queue",
+            state_version=record.state_version + 1,
+            next_action_at=next_action_at,
+            next_attempt_id=entry.new_attempt_id,
+            terminal_replay_history=(*record.terminal_replay_history, entry),
+            queue_message_id=None,
+            slack_response=None,
+            expires_at=None,
+        )
+        return True
+
     def reconcile_found_post(
         self,
         candidate: str,
@@ -1193,6 +1551,10 @@ class DynamoDBDeliveryStore:
             item["manual_replay_history"] = {
                 "L": [_encode_replay_entry(entry) for entry in record.manual_replay_history]
             }
+        if record.terminal_replay_history:
+            item["terminal_replay_history"] = {
+                "L": [_encode_terminal_replay_entry(entry) for entry in record.terminal_replay_history]
+            }
         if record.found_post_history:
             item["found_post_history"] = {"L": [_encode_found_post_entry(entry) for entry in record.found_post_history]}
         if record.slack_response is not None:
@@ -1220,6 +1582,11 @@ class DynamoDBDeliveryStore:
             manual_replay_history=(
                 tuple(_decode_replay_entry(entry) for entry in item["manual_replay_history"]["L"])
                 if "manual_replay_history" in item
+                else ()
+            ),
+            terminal_replay_history=(
+                tuple(_decode_terminal_replay_entry(entry) for entry in item["terminal_replay_history"]["L"])
+                if "terminal_replay_history" in item
                 else ()
             ),
             found_post_history=(
@@ -1726,6 +2093,67 @@ class DynamoDBDeliveryStore:
                     ":empty": {"L": []},
                     ":entry": {"L": [_encode_replay_entry(entry)]},
                     ":history_limit": {"N": str(MAX_MANUAL_REPLAY_HISTORY)},
+                    ":one": {"N": "1"},
+                },
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
+
+    def replay_terminal(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_prior_attempt_id: str,
+        expected_expires_at: int,
+        expected_slack_response: Mapping[str, Any],
+        entry: TerminalReplayEntry,
+        next_action_at: int,
+    ) -> bool:
+        from botocore.exceptions import ClientError
+
+        _validate_terminal_replay_transition(
+            expected_state_version=expected_state_version,
+            expected_prior_attempt_id=expected_prior_attempt_id,
+            expected_expires_at=expected_expires_at,
+            expected_slack_response=expected_slack_response,
+            entry=entry,
+            next_action_at=next_action_at,
+        )
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key=self._key(candidate),
+                UpdateExpression=(
+                    "SET #status = :pending, next_action_at = :next, next_attempt_id = :new_attempt, "
+                    "terminal_replay_history = "
+                    "list_append(if_not_exists(terminal_replay_history, :empty), :entry), "
+                    "state_version = state_version + :one "
+                    "REMOVE expires_at, queue_message_id, slack_response"
+                ),
+                ConditionExpression=(
+                    "#status = :terminal AND state_version = :version AND last_attempt_id = :prior_attempt "
+                    "AND expires_at = :expiry AND expires_at > :next "
+                    "AND slack_response = :response AND attribute_not_exists(next_attempt_id) "
+                    "AND (attribute_not_exists(terminal_replay_history) "
+                    "OR size(terminal_replay_history) < :history_limit)"
+                ),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":terminal": {"S": "failed_terminal"},
+                    ":pending": {"S": "pending_queue"},
+                    ":version": {"N": str(expected_state_version)},
+                    ":prior_attempt": {"S": expected_prior_attempt_id},
+                    ":expiry": {"N": str(expected_expires_at)},
+                    ":response": {"S": json.dumps(expected_slack_response, sort_keys=True)},
+                    ":new_attempt": {"S": entry.new_attempt_id},
+                    ":next": {"N": str(next_action_at)},
+                    ":empty": {"L": []},
+                    ":entry": {"L": [_encode_terminal_replay_entry(entry)]},
+                    ":history_limit": {"N": str(MAX_TERMINAL_REPLAY_HISTORY)},
                     ":one": {"N": "1"},
                 },
             )
