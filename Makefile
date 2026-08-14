@@ -4,6 +4,7 @@ PYTHON_PATHS := scripts tests $(wildcard src)
 MYPY_PATHS := $(PYTHON_PATHS)
 YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml $(wildcard .github/workflows)
 TERRAFORM ?= terraform
+REQUIRE_TERRAFORM ?= 0
 TERRAFORM_ROOTS := infra/bootstrap infra/central
 
 .PHONY: help install format format-check lint lint-python lint-yaml typecheck validate validate-config \
@@ -21,7 +22,7 @@ help:
 	@echo "  evaluate-corpus    Score matching against the labeled corpus and approved thresholds"
 	@echo "  references-online  Check external links with Lychee (requires network)"
 	@echo "  screen-feeds       Screen live feeds against the rules (requires network)"
-	@echo "  terraform-check    Format-check and validate Terraform roots (skips cleanly if absent)"
+	@echo "  terraform-check    Format-check and validate Terraform roots (REQUIRE_TERRAFORM=1 fails if absent)"
 	@echo "  test          Run the unittest suite"
 	@echo "  whitespace    Check changed files for Git whitespace errors"
 	@echo "  check         Run every non-mutating repository check"
@@ -68,11 +69,15 @@ references-online: validate-references
 screen-feeds:
 	$(PYTHON) scripts/screen_feeds.py
 
-# One recipe line, so the absent-terraform branch skips the whole target. Split
-# across two lines Make runs two shells, and `exit 0` in the first ends only
-# that shell: the guard printed "skipping" and the loop then ran anyway.
+# One recipe line keeps the absent-binary guard and Terraform loop in one shell.
+# Split across two lines Make runs two shells, so the loop would still run after
+# the first line reported a skip or required-mode failure.
 terraform-check:
 	@if ! command -v $(TERRAFORM) >/dev/null 2>&1; then \
+		if [ "$(REQUIRE_TERRAFORM)" = "1" ]; then \
+			echo "terraform is required but not installed" >&2; \
+			exit 1; \
+		fi; \
 		echo "terraform not installed; skipping terraform-check"; \
 	else \
 		for root in $(TERRAFORM_ROOTS); do \

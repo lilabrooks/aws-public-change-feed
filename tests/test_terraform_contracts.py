@@ -106,6 +106,39 @@ class TerraformContractTests(unittest.TestCase):
                 ],
             )
 
+    def test_terraform_check_skips_an_absent_optional_binary(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            missing_terraform = Path(temporary_directory) / "terraform"
+            checked = subprocess.run(
+                ("make", "terraform-check", f"TERRAFORM={missing_terraform}"),
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(checked.returncode, 0, msg=f"{checked.stdout}\n{checked.stderr}")
+            self.assertIn("terraform not installed; skipping terraform-check", checked.stdout)
+
+    def test_terraform_check_fails_when_the_required_binary_is_absent(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            missing_terraform = Path(temporary_directory) / "terraform"
+            checked = subprocess.run(
+                (
+                    "make",
+                    "terraform-check",
+                    f"TERRAFORM={missing_terraform}",
+                    "REQUIRE_TERRAFORM=1",
+                ),
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(checked.returncode, 0, msg=f"{checked.stdout}\n{checked.stderr}")
+            self.assertIn("terraform is required but not installed", checked.stderr)
+
     def test_feed_dashboard_has_aggregate_and_per_feed_staleness(self):
         dashboard = (ROOT / "infra/central/dashboard.tf").read_text(encoding="utf-8")
         alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")

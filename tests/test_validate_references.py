@@ -351,14 +351,13 @@ class ReferenceValidatorTests(unittest.TestCase):
         workflow_pins.assert_pinned(checkout["uses"], "actions/checkout")
         workflow_pins.assert_pinned(setup["uses"], "actions/setup-python")
         self.assertEqual(setup["with"]["python-version"], "3.12")
-        self.assertEqual(checks["run"], "make check PYTHON=python")
+        self.assertEqual(checks["run"], "make check PYTHON=python REQUIRE_TERRAFORM=1")
 
     def test_quality_workflow_installs_terraform_before_the_checks(self):
-        """Without terraform the check target skips, so the roots go unvalidated.
+        """The local default may skip Terraform, while CI must require it.
 
-        That failure is silent: make check still passes, and the Terraform gate
-        reports nothing rather than reporting a problem. This asserts the runner
-        actually has the binary, and that it arrives before the checks run.
+        This binds both CI jobs to installed Terraform versions, keeps the
+        workflow minimum at the exact accepted floor, and makes CI fail closed.
         """
 
         workflow = yaml.safe_load((ROOT / ".github/workflows/quality.yml").read_text(encoding="utf-8"))
@@ -369,19 +368,36 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.assertLess(names.index("Set up Terraform"), names.index("Run repository checks"))
         self.assertFalse(setup["with"]["terraform_wrapper"], "the Makefile reads exit codes directly")
 
-        constraint = (ROOT / "infra/central/versions.tf").read_text(encoding="utf-8")
-        self.assertIn(">= 1.10.0, < 2.0.0", constraint)
+        minimum_version = "1.10.0"
+        constraint = ">= 1.10.0, < 2.0.0"
+        for root in ("infra/bootstrap", "infra/central"):
+            with self.subTest(root=root):
+                versions = (ROOT / root / "versions.tf").read_text(encoding="utf-8")
+                required_version_lines = [
+                    line.strip() for line in versions.splitlines() if line.strip().startswith("required_version")
+                ]
+                self.assertEqual(required_version_lines, [f'required_version = "{constraint}"'])
         self.assertEqual(setup["with"]["terraform_version"], "1.15.8")
 
         minimum_steps = workflow["jobs"]["terraform-minimum"]["steps"]
         minimum_setup = next(step for step in minimum_steps if step.get("name") == "Set up minimum Terraform")
+        minimum_version_check = next(
+            step for step in minimum_steps if step.get("name") == "Confirm minimum Terraform version"
+        )
         minimum_check = next(
             step for step in minimum_steps if step.get("name") == "Validate Terraform roots at the minimum version"
         )
         workflow_pins.assert_pinned(minimum_setup["uses"], "hashicorp/setup-terraform")
-        self.assertEqual(minimum_setup["with"]["terraform_version"], "1.10.5")
+        self.assertEqual(minimum_setup["with"]["terraform_version"], minimum_version)
         self.assertFalse(minimum_setup["with"]["terraform_wrapper"])
-        self.assertEqual(minimum_check["run"], "make terraform-check")
+        self.assertEqual(
+            minimum_version_check["run"].splitlines(),
+            [
+                "terraform version",
+                f'test "$(terraform version | sed -n \'1p\')" = "Terraform v{minimum_version}"',
+            ],
+        )
+        self.assertEqual(minimum_check["run"], "make terraform-check REQUIRE_TERRAFORM=1")
 
     def test_provider_lockfiles_cover_the_ci_and_local_platforms(self):
         """A lockfile locked only on the author's platform fails init on the runner."""

@@ -52,7 +52,7 @@ jobs:
         run: python scripts/validate_site.py --base "$SITE_SYNC_BASE" --head "$GITHUB_SHA"
 
       - name: Run repository checks
-        run: make check PYTHON=python
+        run: make check PYTHON=python REQUIRE_TERRAFORM=1
 
   # Exercise ADR-006's minimum supported Terraform without repeating the
   # Python, contract, corpus, and site suites from the primary job.
@@ -68,8 +68,13 @@ jobs:
       - name: Set up minimum Terraform
         uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e  # v4.0.1
         with:
-          terraform_version: "1.10.5"
+          terraform_version: "1.10.0"
           terraform_wrapper: false
 
+      - name: Confirm minimum Terraform version
+        run: |
+          terraform version
+          test "$(terraform version | sed -n '1p')" = "Terraform v1.10.0"
+
       - name: Validate Terraform roots at the minimum version
-        run: make terraform-check
+        run: make terraform-check REQUIRE_TERRAFORM=1
