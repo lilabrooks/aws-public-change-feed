@@ -89,13 +89,14 @@ output "slack_secret_ids" {
 }
 
 output "roles" {
-  description = "ARNs of the five least-privilege runtime roles."
+  description = "ARNs of the least-privilege publication, retirement, and runtime roles."
   value = {
-    release_publisher   = aws_iam_role.release_publisher.arn
-    feed_watcher        = aws_iam_role.feed_watcher.arn
-    outbox_dispatcher   = aws_iam_role.outbox_dispatcher.arn
-    slack_worker        = aws_iam_role.slack_worker.arn
-    recovery_reconciler = aws_iam_role.recovery_reconciler.arn
+    release_publisher               = aws_iam_role.release_publisher.arn
+    application_artifact_retirement = aws_iam_role.application_artifact_retirement.arn
+    feed_watcher                    = aws_iam_role.feed_watcher.arn
+    outbox_dispatcher               = aws_iam_role.outbox_dispatcher.arn
+    slack_worker                    = aws_iam_role.slack_worker.arn
+    recovery_reconciler             = aws_iam_role.recovery_reconciler.arn
   }
 }
 

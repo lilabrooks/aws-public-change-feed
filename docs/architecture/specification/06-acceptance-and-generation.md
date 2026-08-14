@@ -144,6 +144,20 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
   exact history entry and reserved attempt or posted closure. Every other
   post-write result remains ambiguous.
 
+## Application package retirement acceptance
+
+- Given deployment retention below 400 days or a newest-retained floor below 10, the tool refuses even if an older schema accepts the document.
+- Given truncated, failed, over-limit, malformed, multiply versioned, noncurrent, metadata-mismatched, or delete-marker inventory, preview writes no applicable plan and deletes nothing.
+- Given fewer than 10, exactly 10, or timestamp ties at the newest-package boundary, all packages covered by the floor remain retained.
+- Given an age exactly at the cutoff, the package can be age-eligible; one second newer is not.
+- Given a protected digest and VersionId, only that exact current record satisfies protection.
+- Given preview, no S3 mutation occurs and canonical plan bytes have a stable SHA-256.
+- Given changed deployment bytes, protection, inventory rows, ETag, VersionId, metadata, or classification, apply is stale before deletion.
+- Given apply, every delete names one exact VersionId and recorded ETag; no key-only or batch delete is permitted.
+- Given a delete response or exception, an exact-version read proves absence or presence; unreadable status is ambiguous and is not retried.
+- Given a partial run, earlier proved deletions and untouched later candidates remain distinct. Only a final complete inventory proving all deleted and retained rows reports `applied`.
+- The retirement role can list and retire only the exact artifact prefix. Publisher and runtime roles have no version-delete permission.
+
 ## Security acceptance
 
 - Feed and dispatcher roles cannot read Slack secrets.

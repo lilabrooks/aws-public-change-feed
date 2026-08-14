@@ -11,6 +11,10 @@ config_filename: config.yaml
 inventory_filename: inventory.json
 active_versions_object_key: apcf/active-versions.json
 
+application_package_retirement:
+  retention_days: 400
+  minimum_retained_packages: 10
+
 slack:
   delivery_mode: incoming_webhook
   default_route_id: dev-alerts

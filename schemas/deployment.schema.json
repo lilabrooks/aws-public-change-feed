@@ -17,6 +17,7 @@
     "config_filename",
     "inventory_filename",
     "active_versions_object_key",
+    "application_package_retirement",
     "slack",
     "environments",
     "s3_lifecycle",
@@ -41,6 +42,7 @@
     "config_filename": {"const": "config.yaml"},
     "inventory_filename": {"const": "inventory.json"},
     "active_versions_object_key": {"$ref": "#/$defs/object_key"},
+    "application_package_retirement": {"$ref": "#/$defs/application_package_retirement"},
     "slack": {"$ref": "#/$defs/slack"},
     "environments": {
       "type": "array",
@@ -190,6 +192,15 @@
         "abort_incomplete_multipart_upload_days": {"type": "integer", "minimum": 1},
         "transition_current_versions": {"const": false},
         "raw_feed_snapshots_expiration_days": {"type": "integer", "minimum": 1, "maximum": 365}
+      }
+    },
+    "application_package_retirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["retention_days", "minimum_retained_packages"],
+      "properties": {
+        "retention_days": {"type": "integer", "minimum": 400, "maximum": 3650},
+        "minimum_retained_packages": {"type": "integer", "minimum": 10, "maximum": 100}
       }
     },
     "feed_fetch_policy": {
