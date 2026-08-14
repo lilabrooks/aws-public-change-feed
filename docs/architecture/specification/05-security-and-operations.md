@@ -203,9 +203,11 @@ is enabled.
 - A function-scoped dispatcher heartbeat after strict event and environment validation.
 - SQS age, receives, redrives, and DLQ depth.
 - Slack network attempts, response classes, `Retry-After`, latency, and terminal states.
-- Unknown outcomes, manual replays, stale leases, and reconciler repairs. The
-  operator command reports one bounded `ManualReplay` count after a successful
-  conditional mutation; durable replay history remains the audit authority.
+- Unknown outcomes, found-post reconciliations, manual replays, stale leases,
+  and reconciler repairs. The operator command reports one bounded
+  `FoundPostReconciliation` or `ManualReplay` count after a successful
+  conditional mutation; durable reconciliation or replay history remains the
+  audit authority.
 - Native delivery-DLQ task starts, status, approximate moved and remaining
   counts, and cancellation. Provider failure text and message bodies are not
   emitted by the controller.

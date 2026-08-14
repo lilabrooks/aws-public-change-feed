@@ -15,7 +15,9 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from aws_public_change_feed.manual_replay import (  # noqa: E402
     ReplayRefused,
+    apply_found_post,
     apply_unknown_replay,
+    plan_found_post,
     plan_unknown_replay,
 )
 from aws_public_change_feed.outbox import DynamoDBDeliveryStore  # noqa: E402
@@ -33,6 +35,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--operator", required=True)
     parser.add_argument("--reason", required=True)
     parser.add_argument("--evidence", required=True)
+    parser.add_argument(
+        "--found-post", action="store_true", help="close an unknown record after finding the Slack post"
+    )
+    parser.add_argument("--terminal-retention-seconds", type=int, help="TTL horizon for a found posted record")
+    parser.add_argument("--slack-message-ts", help="bounded Slack timestamp for the found message")
+    parser.add_argument("--slack-permalink", help="bounded Slack permalink for the found message")
+    parser.add_argument("--slack-reference", help="bounded operator reference for the found message")
     parser.add_argument("--apply", action="store_true", help="perform the single conditional mutation")
     return parser.parse_args(argv)
 
@@ -48,6 +57,90 @@ def _write(document: dict[str, Any], *, stream: Any | None = None) -> None:
     print(json.dumps(document, separators=(",", ":"), sort_keys=True), file=sys.stdout if stream is None else stream)
 
 
+def _run_found_post(arguments: argparse.Namespace, store: DynamoDBDeliveryStore, record: Any) -> int:
+    if arguments.terminal_retention_seconds is None:
+        raise ValueError("found-post reconciliation requires --terminal-retention-seconds")
+    plan = plan_found_post(
+        record,
+        expected_state_version=arguments.expected_state_version,
+        operator=arguments.operator,
+        reason=arguments.reason,
+        evidence=arguments.evidence,
+        terminal_retention_seconds=arguments.terminal_retention_seconds,
+        slack_message_ts=arguments.slack_message_ts,
+        slack_permalink=arguments.slack_permalink,
+        slack_reference=arguments.slack_reference,
+    )
+    preview = {
+        "action": "found_post_reconciliation",
+        "candidate_id": plan.candidate_id,
+        "current_state": record.status,
+        "expected_state_version": plan.expected_state_version,
+        "prior_attempt_id": plan.entry.prior_attempt_id,
+        "operator": _redacted_text(plan.entry.operator),
+        "reason": _redacted_text(plan.entry.reason),
+        "evidence": _redacted_text(plan.entry.evidence),
+        "expires_at": plan.expires_at,
+    }
+    if plan.entry.slack_message_ts is not None:
+        preview["slack_message_ts"] = _redacted_text(plan.entry.slack_message_ts)
+    if plan.entry.slack_permalink is not None:
+        preview["slack_permalink"] = _redacted_text(plan.entry.slack_permalink)
+    if plan.entry.slack_reference is not None:
+        preview["slack_reference"] = _redacted_text(plan.entry.slack_reference)
+    if not arguments.apply:
+        _write({"status": "preview", **preview})
+        return 0
+
+    result = apply_found_post(store, plan)
+    _write(
+        {
+            "status": "applied",
+            **preview,
+            "new_state": "posted",
+            "new_state_version": result.state_version,
+            "FoundPostReconciliation": result.found_post_count,
+        }
+    )
+    return 0
+
+
+def _run_unknown_replay(arguments: argparse.Namespace, store: DynamoDBDeliveryStore, record: Any) -> int:
+    plan = plan_unknown_replay(
+        record,
+        expected_state_version=arguments.expected_state_version,
+        operator=arguments.operator,
+        reason=arguments.reason,
+        evidence=arguments.evidence,
+    )
+    preview = {
+        "action": "manual_replay",
+        "candidate_id": plan.candidate_id,
+        "current_state": record.status,
+        "expected_state_version": plan.expected_state_version,
+        "prior_attempt_id": plan.entry.prior_attempt_id,
+        "operator": _redacted_text(plan.entry.operator),
+        "reason": _redacted_text(plan.entry.reason),
+        "evidence": _redacted_text(plan.entry.evidence),
+    }
+    if not arguments.apply:
+        _write({"status": "preview", **preview})
+        return 0
+
+    result = apply_unknown_replay(store, plan)
+    _write(
+        {
+            "status": "applied",
+            **preview,
+            "new_state": "pending_queue",
+            "new_state_version": result.state_version,
+            "new_attempt_id": result.new_attempt_id,
+            "ManualReplay": result.manual_replay_count,
+        }
+    )
+    return 0
+
+
 def run(arguments: argparse.Namespace, client: Any) -> int:
     from botocore.exceptions import BotoCoreError, ClientError
 
@@ -57,40 +150,18 @@ def run(arguments: argparse.Namespace, client: Any) -> int:
         record = store.get_delivery(arguments.candidate_id)
         if record is None:
             raise ValueError("delivery record does not exist")
-        plan = plan_unknown_replay(
-            record,
-            expected_state_version=arguments.expected_state_version,
-            operator=arguments.operator,
-            reason=arguments.reason,
-            evidence=arguments.evidence,
-        )
-        preview = {
-            "action": "manual_replay",
-            "candidate_id": plan.candidate_id,
-            "current_state": record.status,
-            "expected_state_version": plan.expected_state_version,
-            "prior_attempt_id": plan.entry.prior_attempt_id,
-            "operator": _redacted_text(plan.entry.operator),
-            "reason": _redacted_text(plan.entry.reason),
-            "evidence": _redacted_text(plan.entry.evidence),
-        }
+        found_post = bool(getattr(arguments, "found_post", False))
         if not arguments.apply:
-            _write({"status": "preview", **preview})
-            return 0
+            return (
+                _run_found_post(arguments, store, record)
+                if found_post
+                else _run_unknown_replay(arguments, store, record)
+            )
 
         write_attempted = True
-        result = apply_unknown_replay(store, plan)
-        _write(
-            {
-                "status": "applied",
-                **preview,
-                "new_state": "pending_queue",
-                "new_state_version": result.state_version,
-                "new_attempt_id": result.new_attempt_id,
-                "ManualReplay": result.manual_replay_count,
-            }
+        return (
+            _run_found_post(arguments, store, record) if found_post else _run_unknown_replay(arguments, store, record)
         )
-        return 0
     except ReplayRefused:
         try:
             current = store.get_delivery(arguments.candidate_id)

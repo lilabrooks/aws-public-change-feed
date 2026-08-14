@@ -42,6 +42,7 @@ __all__ = [
     "DeliveryRecord",
     "DynamoDBDeliveryStore",
     "EmissionResult",
+    "FoundPostEntry",
     "InMemoryOutboxStore",
     "ManualReplayEntry",
     "OutboxStore",
@@ -61,9 +62,11 @@ _DIGEST = re.compile(r"[a-f0-9]{64}")
 _REPLAY_ATTEMPT_ID = re.compile(r"[a-f0-9]{32}")
 
 MAX_MANUAL_REPLAY_HISTORY = 25
+MAX_FOUND_POST_HISTORY = 25
 MAX_OPERATOR_CHARACTERS = 200
 MAX_REPLAY_REASON_CHARACTERS = 1000
 MAX_REPLAY_EVIDENCE_CHARACTERS = 2000
+MAX_SLACK_REFERENCE_CHARACTERS = 500
 MAX_ATTEMPT_ID_CHARACTERS = 128
 
 # Chapter 02 keys the candidate and delivery items under one partition, and the
@@ -257,6 +260,87 @@ def _decode_replay_entry(value: Mapping[str, Any]) -> ManualReplayEntry:
     return ManualReplayEntry.from_document(document)
 
 
+@dataclass(frozen=True, slots=True)
+class FoundPostEntry:
+    """One operator-reviewed closure that found the original Slack post."""
+
+    decided_at: str
+    operator: str
+    reason: str
+    evidence: str
+    prior_attempt_id: str
+    slack_message_ts: str | None = None
+    slack_permalink: str | None = None
+    slack_reference: str | None = None
+
+    def __post_init__(self) -> None:
+        try:
+            parsed = datetime.strptime(self.decided_at, "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=UTC)
+        except (TypeError, ValueError):
+            raise ValueError("decided_at must be a canonical UTC timestamp") from None
+        if utc_timestamp(parsed) != self.decided_at:
+            raise ValueError("decided_at must be a canonical UTC timestamp")
+        _bounded_single_line("operator", self.operator, MAX_OPERATOR_CHARACTERS)
+        _bounded_single_line("reason", self.reason, MAX_REPLAY_REASON_CHARACTERS)
+        _bounded_single_line("evidence", self.evidence, MAX_REPLAY_EVIDENCE_CHARACTERS)
+        _bounded_single_line("prior_attempt_id", self.prior_attempt_id, MAX_ATTEMPT_ID_CHARACTERS)
+        for name, value in (
+            ("slack_message_ts", self.slack_message_ts),
+            ("slack_permalink", self.slack_permalink),
+            ("slack_reference", self.slack_reference),
+        ):
+            if value is not None:
+                _bounded_single_line(name, value, MAX_SLACK_REFERENCE_CHARACTERS)
+
+    def document(self) -> dict[str, str]:
+        document = {
+            "decided_at": self.decided_at,
+            "operator": self.operator,
+            "reason": self.reason,
+            "evidence": self.evidence,
+            "prior_attempt_id": self.prior_attempt_id,
+        }
+        for name in ("slack_message_ts", "slack_permalink", "slack_reference"):
+            value = getattr(self, name)
+            if value is not None:
+                document[name] = value
+        return document
+
+    @classmethod
+    def from_document(cls, document: Mapping[str, Any]) -> FoundPostEntry:
+        required = {"decided_at", "operator", "reason", "evidence", "prior_attempt_id"}
+        optional = {"slack_message_ts", "slack_permalink", "slack_reference"}
+        fields = set(document)
+        if not required <= fields or fields - required - optional:
+            raise ValueError("found-post entry fields do not match the contract")
+        return cls(
+            decided_at=document["decided_at"],
+            operator=document["operator"],
+            reason=document["reason"],
+            evidence=document["evidence"],
+            prior_attempt_id=document["prior_attempt_id"],
+            slack_message_ts=document.get("slack_message_ts"),
+            slack_permalink=document.get("slack_permalink"),
+            slack_reference=document.get("slack_reference"),
+        )
+
+
+def _encode_found_post_entry(entry: FoundPostEntry) -> dict[str, dict[str, dict[str, str]]]:
+    return {"M": {name: {"S": value} for name, value in entry.document().items()}}
+
+
+def _decode_found_post_entry(value: Mapping[str, Any]) -> FoundPostEntry:
+    encoded = value.get("M")
+    if not isinstance(encoded, Mapping):
+        raise ValueError("found-post history entry must be a DynamoDB map")
+    document: dict[str, str] = {}
+    for name, field_value in encoded.items():
+        if not isinstance(field_value, Mapping) or set(field_value) != {"S"} or not isinstance(field_value["S"], str):
+            raise ValueError("found-post history fields must be DynamoDB strings")
+        document[str(name)] = field_value["S"]
+    return FoundPostEntry.from_document(document)
+
+
 def _validate_replay_transition(
     *,
     expected_state_version: int,
@@ -277,6 +361,28 @@ def _validate_replay_transition(
         raise ValueError("entry prior_attempt_id must match the expected prior attempt")
     if isinstance(next_action_at, bool) or not isinstance(next_action_at, int) or next_action_at < 0:
         raise ValueError("next_action_at must be a non-negative integer Unix timestamp")
+
+
+def _validate_found_post_transition(
+    *,
+    expected_state_version: int,
+    expected_prior_attempt_id: str,
+    entry: FoundPostEntry,
+    expires_at: int,
+) -> None:
+    if (
+        isinstance(expected_state_version, bool)
+        or not isinstance(expected_state_version, int)
+        or expected_state_version < 1
+    ):
+        raise ValueError("expected_state_version must be a positive integer")
+    _bounded_single_line("expected_prior_attempt_id", expected_prior_attempt_id, MAX_ATTEMPT_ID_CHARACTERS)
+    if not isinstance(entry, FoundPostEntry):
+        raise ValueError("entry must be a FoundPostEntry")
+    if entry.prior_attempt_id != expected_prior_attempt_id:
+        raise ValueError("entry prior_attempt_id must match the expected prior attempt")
+    if isinstance(expires_at, bool) or not isinstance(expires_at, int) or expires_at < 0:
+        raise ValueError("expires_at must be a non-negative integer Unix timestamp")
 
 
 @dataclass(frozen=True, slots=True)
@@ -325,6 +431,7 @@ class DeliveryRecord:
     last_attempt_id: str | None = None
     next_attempt_id: str | None = None
     manual_replay_history: tuple[ManualReplayEntry, ...] = ()
+    found_post_history: tuple[FoundPostEntry, ...] = ()
     network_attempt_count: int = 0
     # Bounded Slack response metadata for diagnosis: the worker's derived
     # response class, latency, whether request bytes went out, the HTTP status
@@ -399,6 +506,12 @@ class DeliveryRecord:
         if self.next_attempt_id is not None:
             if not self.manual_replay_history or self.manual_replay_history[-1].new_attempt_id != self.next_attempt_id:
                 raise ValueError("next_attempt_id must match the newest manual replay entry")
+        if not isinstance(self.found_post_history, tuple):
+            raise ValueError("found_post_history must be an immutable tuple")
+        if len(self.found_post_history) > MAX_FOUND_POST_HISTORY:
+            raise ValueError(f"found_post_history cannot exceed {MAX_FOUND_POST_HISTORY} entries")
+        if any(not isinstance(entry, FoundPostEntry) for entry in self.found_post_history):
+            raise ValueError("found_post_history entries must be FoundPostEntry values")
         if self.lease_expires_at is not None and (
             isinstance(self.lease_expires_at, bool)
             or not isinstance(self.lease_expires_at, int)
@@ -591,6 +704,23 @@ class OutboxStore(Protocol):
         The transition succeeds only for the observed unknown state version and
         prior attempt, while no TTL or replay reservation exists. It does not
         call SQS or Slack.
+        """
+        ...
+
+    def reconcile_found_post(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_prior_attempt_id: str,
+        entry: FoundPostEntry,
+        expires_at: int,
+    ) -> bool:
+        """Close one reviewed unknown outcome after the original Slack post is found.
+
+        The transition succeeds only for the observed unknown state version and
+        prior attempt, while no TTL or replay reservation exists. It does not
+        call SQS or Slack and does not reserve a new attempt.
         """
         ...
 
@@ -937,6 +1067,47 @@ class InMemoryOutboxStore:
         )
         return True
 
+    def reconcile_found_post(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_prior_attempt_id: str,
+        entry: FoundPostEntry,
+        expires_at: int,
+    ) -> bool:
+        _validate_found_post_transition(
+            expected_state_version=expected_state_version,
+            expected_prior_attempt_id=expected_prior_attempt_id,
+            entry=entry,
+            expires_at=expires_at,
+        )
+        record = self._deliveries.get(candidate)
+        if (
+            record is None
+            or record.status != "delivery_unknown"
+            or record.state_version != expected_state_version
+            or record.last_attempt_id != expected_prior_attempt_id
+            or record.expires_at is not None
+            or record.next_attempt_id is not None
+            or len(record.found_post_history) >= MAX_FOUND_POST_HISTORY
+        ):
+            return False
+        self._deliveries[candidate] = replace(
+            record,
+            status="posted",
+            state_version=record.state_version + 1,
+            next_action_at=None,
+            attempt_id=None,
+            lease_expires_at=None,
+            dispatch_id=None,
+            queue_message_id=None,
+            next_attempt_id=None,
+            found_post_history=(*record.found_post_history, entry),
+            expires_at=expires_at,
+        )
+        return True
+
     def schedule_retry(
         self,
         candidate: str,
@@ -1022,6 +1193,8 @@ class DynamoDBDeliveryStore:
             item["manual_replay_history"] = {
                 "L": [_encode_replay_entry(entry) for entry in record.manual_replay_history]
             }
+        if record.found_post_history:
+            item["found_post_history"] = {"L": [_encode_found_post_entry(entry) for entry in record.found_post_history]}
         if record.slack_response is not None:
             item["slack_response"] = {"S": json.dumps(record.slack_response, sort_keys=True)}
         if record.expires_at is not None:
@@ -1047,6 +1220,11 @@ class DynamoDBDeliveryStore:
             manual_replay_history=(
                 tuple(_decode_replay_entry(entry) for entry in item["manual_replay_history"]["L"])
                 if "manual_replay_history" in item
+                else ()
+            ),
+            found_post_history=(
+                tuple(_decode_found_post_entry(entry) for entry in item["found_post_history"]["L"])
+                if "found_post_history" in item
                 else ()
             ),
             network_attempt_count=(int(item["network_attempt_count"]["N"]) if "network_attempt_count" in item else 0),
@@ -1548,6 +1726,57 @@ class DynamoDBDeliveryStore:
                     ":empty": {"L": []},
                     ":entry": {"L": [_encode_replay_entry(entry)]},
                     ":history_limit": {"N": str(MAX_MANUAL_REPLAY_HISTORY)},
+                    ":one": {"N": "1"},
+                },
+            )
+        except ClientError as error:
+            if error.response["Error"]["Code"] == "ConditionalCheckFailedException":
+                return False
+            raise
+        return True
+
+    def reconcile_found_post(
+        self,
+        candidate: str,
+        *,
+        expected_state_version: int,
+        expected_prior_attempt_id: str,
+        entry: FoundPostEntry,
+        expires_at: int,
+    ) -> bool:
+        from botocore.exceptions import ClientError
+
+        _validate_found_post_transition(
+            expected_state_version=expected_state_version,
+            expected_prior_attempt_id=expected_prior_attempt_id,
+            entry=entry,
+            expires_at=expires_at,
+        )
+        try:
+            self._client.update_item(
+                TableName=self._table,
+                Key=self._key(candidate),
+                UpdateExpression=(
+                    "SET #status = :posted, expires_at = :expiry, "
+                    "found_post_history = list_append(if_not_exists(found_post_history, :empty), :entry), "
+                    "state_version = state_version + :one "
+                    "REMOVE attempt_id, lease_expires_at, next_action_at, dispatch_id, queue_message_id, next_attempt_id"
+                ),
+                ConditionExpression=(
+                    "#status = :unknown AND state_version = :version AND last_attempt_id = :prior_attempt "
+                    "AND attribute_not_exists(expires_at) AND attribute_not_exists(next_attempt_id) "
+                    "AND (attribute_not_exists(found_post_history) OR size(found_post_history) < :history_limit)"
+                ),
+                ExpressionAttributeNames={"#status": "status"},
+                ExpressionAttributeValues={
+                    ":unknown": {"S": "delivery_unknown"},
+                    ":posted": {"S": "posted"},
+                    ":version": {"N": str(expected_state_version)},
+                    ":prior_attempt": {"S": expected_prior_attempt_id},
+                    ":expiry": {"N": str(expires_at)},
+                    ":empty": {"L": []},
+                    ":entry": {"L": [_encode_found_post_entry(entry)]},
+                    ":history_limit": {"N": str(MAX_FOUND_POST_HISTORY)},
                     ":one": {"N": "1"},
                 },
             )
