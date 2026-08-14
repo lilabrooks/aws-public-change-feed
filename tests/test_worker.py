@@ -57,7 +57,12 @@ from aws_public_change_feed.credentials import (  # noqa: E402
 from aws_public_change_feed.dispatch import SendResult, SendStatus, dispatch_due_work  # noqa: E402
 from aws_public_change_feed.identity import queue_dispatch_id  # noqa: E402
 from aws_public_change_feed.loading import load_active_release  # noqa: E402
-from aws_public_change_feed.manual_replay import apply_unknown_replay, plan_unknown_replay  # noqa: E402
+from aws_public_change_feed.manual_replay import (  # noqa: E402
+    apply_terminal_replay,
+    apply_unknown_replay,
+    plan_terminal_replay,
+    plan_unknown_replay,
+)
 from aws_public_change_feed.outbox import (  # noqa: E402
     DeliveryRecord,
     FoundPostEntry,
@@ -361,6 +366,82 @@ class WorkerFixture(unittest.TestCase):
 
 
 class ManualReplayWorkerTests(WorkerFixture):
+    def dispatch_terminal_replay(self, *, response: SlackResponse) -> tuple[str, int]:
+        reserved_attempt = "1" * 32
+        max_attempts = self.inventory["slack"]["rate_control"]["max_network_attempts"]
+        terminal = DeliveryRecord(
+            candidate_id=self.key,
+            destination_key=self.destination_key,
+            request=self.request,
+            next_action_at=None,
+            status=FAILED_TERMINAL,
+            state_version=7,
+            created_at=self.request["created_at"],
+            dispatch_generation=1,
+            last_attempt_id="prior-attempt",
+            network_attempt_count=max_attempts,
+            slack_response={
+                "response_class": "http_503",
+                "status_code": 503,
+                "bytes_sent": True,
+                "latency_ms": 90,
+                "attempts_exhausted": True,
+            },
+            expires_at=NOW_TS + 365 * 86400,
+        )
+        self.store._deliveries[self.key] = terminal
+        replay = plan_terminal_replay(
+            terminal,
+            expected_state_version=7,
+            operator="operator@example.com",
+            reason="Approved after restoring Slack service",
+            evidence="Synthetic destination preflight succeeded",
+            clock=lambda: NOW,
+            attempt_id_factory=lambda: reserved_attempt,
+        )
+        apply_terminal_replay(self.store, replay)
+        dispatched = dispatch_due_work(
+            self.store,
+            AcceptedQueueSender(),
+            queue_url="https://sqs.example/terminal-replay.fifo",
+            now=NOW,
+            max_delivery_request_bytes=self.config["message_policy"]["max_delivery_request_bytes"],
+        )
+        self.assertEqual(dispatched.accepted, 1)
+        self.sender = FakeSlackSender(response)
+        queued = self.record()
+        result = self.process(
+            queue_delivery=QueueDelivery(
+                request=self.request,
+                message_id=queued.queue_message_id,
+                message_group_id=self.destination_key,
+            )
+        )
+        assert result.state is not None
+        return result.state, max_attempts
+
+    def test_terminal_replay_can_succeed_with_one_reserved_attempt_beyond_the_budget(self):
+        state, max_attempts = self.dispatch_terminal_replay(response=self.posted_response())
+
+        self.assertEqual(state, POSTED)
+        resolved = self.record()
+        self.assertEqual(resolved.network_attempt_count, max_attempts + 1)
+        self.assertEqual(resolved.last_attempt_id, "1" * 32)
+        self.assertEqual(resolved.terminal_replay_history[-1].new_attempt_id, "1" * 32)
+        self.assertIsNone(resolved.next_attempt_id)
+
+    def test_terminal_replay_retryable_result_returns_to_terminal_without_resetting_budget(self):
+        state, max_attempts = self.dispatch_terminal_replay(response=SlackResponse(status_code=503, latency_ms=90))
+
+        self.assertEqual(state, FAILED_TERMINAL)
+        resolved = self.record()
+        self.assertEqual(resolved.network_attempt_count, max_attempts + 1)
+        self.assertEqual(resolved.last_attempt_id, "1" * 32)
+        self.assertEqual(resolved.terminal_replay_history[-1].new_attempt_id, "1" * 32)
+        self.assertIsNone(resolved.next_attempt_id)
+        assert resolved.slack_response is not None
+        self.assertIs(resolved.slack_response["attempts_exhausted"], True)
+
     def test_replay_uses_the_reserved_attempt_before_the_next_slack_call(self):
         prior_attempt = "prior-attempt"
         reserved_attempt = "1" * 32

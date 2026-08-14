@@ -174,6 +174,41 @@ replay command to record the decision. Its conditional update appends the
 old-to-new attempt link before returning the exact stored request to the
 dispatcher. An inconclusive search leaves the record unchanged.
 
+Terminal outcomes also receive no automatic replay. After correcting a mutable
+condition and completing the synthetic destination preflight, an operator may
+preview and conditionally apply one exact-request replay while the terminal TTL
+is still live. The exact pre-call allowlist is `credential_read_error`,
+`credential_kind_mismatch`, `webhook_url_rejected`, and `bot_token_rejected`.
+The exact post-call allowlist is `http_403`, `http_404`, `http_410`,
+`slack_access_denied`, `slack_account_inactive`,
+`slack_app_access_restricted`, `slack_invalid_auth`, `slack_missing_scope`,
+`slack_no_permission`, `slack_not_allowed_token_type`, `slack_not_authed`,
+`slack_team_access_not_granted`, `slack_token_expired`,
+`slack_token_revoked`, `slack_channel_not_found`, `slack_ekm_access_denied`,
+`slack_is_archived`, `slack_not_in_channel`, `slack_restricted_action`,
+`slack_restricted_action_non_threadable_channel`,
+`slack_restricted_action_read_only_channel`,
+`slack_restricted_action_thread_locked`, and
+`slack_restricted_action_thread_only_channel`. A bounded outcome carrying
+`attempts_exhausted = true` is also eligible for one operator-reserved call
+only when its response class is `http_408`, `http_429`, `http_500`, `http_502`,
+`http_503`, `http_504`, `slack_internal_error`, `slack_ratelimited`,
+`slack_service_unavailable`, `transport_connect_failed`, or
+`transport_tls_failed`. These are the exact classes the worker can exhaust.
+Every other response class, malformed outcome, expired record, immutable
+candidate/release/application disagreement, unsafe destination, renderer
+failure, and payload defect is refused. [ADR-021](../../adr/021-audited-terminal-record-replay.md)
+owns these allowlists and the exact conflict rule.
+
+An eligible record is potentially recoverable after an operator-verified
+mutable correction. Eligibility is not evidence that the public announcement
+affected an environment or that the external correction succeeded.
+
+Terminal replay never resets `network_attempt_count` or the automatic retry
+budget. The reserved call may succeed. A retryable result with an already
+exhausted budget returns the record to `failed_terminal` with a fresh terminal
+TTL and the complete terminal-replay history.
+
 Due-work checks use the worker's initial observation time. A sending lease
 starts from a fresh time read immediately before its conditional claim. Retry
 schedules, destination pacing, and terminal TTLs start from a fresh time after

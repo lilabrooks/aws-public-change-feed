@@ -107,8 +107,34 @@ mapping health, and the durable message ID first.
 2. For rate limiting, validate the bounded `Retry-After` and destination pacing record. Do not force immediate retry.
 3. For server errors, allow the reviewed backoff policy to continue until its network-attempt limit.
 4. For a terminal credential, hook, workspace, channel, or payload error, disable only the affected route if messages would otherwise accumulate without value.
-5. Correct the secret or configuration through its normal reviewed path and run a synthetic destination preflight.
-6. Use an audited replay action for terminal records that require delivery after correction.
+5. Classify the record under [ADR-021](../adr/021-audited-terminal-record-replay.md).
+   Exact-request replay accepts only its enumerated credential, hook,
+   authorization, membership, channel, archive, and exhausted-budget outcomes.
+   Refuse immutable candidate/release/application disagreement, stored
+   destination or payload defects, renderer failures, `http_400`, malformed or
+   unknown outcome metadata, every unlisted response class, and any class that
+   cannot truthfully carry `attempts_exhausted = true`.
+6. Correct the mutable secret or Slack-side condition through its normal
+   reviewed path. Run the synthetic destination preflight against the exact
+   stored route and request conditions.
+7. Record the current state version. Preview with `python3
+   scripts/replay_delivery.py --table-name <table> --candidate-id <candidate>
+   --expected-state-version <version> --operator <operator> --reason <reason>
+   --evidence <preflight-evidence> --terminal-replay`. Confirm the response
+   class, exhausted-budget flag, prior attempt, and live terminal expiry. The
+   preview performs no write.
+8. Repeat with `--apply`. A successful result reports `TerminalReplay: 1`,
+   appends dedicated bounded history, removes the terminal TTL, preserves the
+   historical network-attempt count and exact request/release/application
+   identity, and reserves one attempt. A refusal means the state, version,
+   attempt, expiry, response, reservation, or history capacity changed.
+9. Treat `read_failed` as a proved pre-write failure. Treat `ambiguous` as an
+   unknown write result and reread before any retry. `applied_after_reread`
+   means the command proved its exact history entry and reservation after the
+   write response was lost.
+10. Leave an expired terminal record unchanged. A correction requiring a newer
+    release or application belongs to the separately tracked reissue decision;
+    do not rewrite the historical candidate or request.
 
 ## Delivery unknown
 
@@ -140,7 +166,7 @@ Automatic retry is forbidden because Slack may already contain the message.
    repeat the command. An ambiguous AWS result requires a direct strongly
    consistent reread before any retry.
 6. If evidence is inconclusive, leave the state unknown and escalate to the service owner.
-7. Review timeout, lease, visibility, and worker termination evidence before closing the incident. Replaying a terminal record still requires separate operator tooling.
+7. Review timeout, lease, visibility, and worker termination evidence before closing the incident.
 
 ## DLQ response
 

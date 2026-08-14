@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preview or apply one audited replay of a delivery_unknown record."""
+"""Preview or apply one audited delivery replay or found-post closure."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -16,8 +17,10 @@ sys.path.insert(0, str(ROOT / "src"))
 from aws_public_change_feed.manual_replay import (  # noqa: E402
     ReplayRefused,
     apply_found_post,
+    apply_terminal_replay,
     apply_unknown_replay,
     plan_found_post,
+    plan_terminal_replay,
     plan_unknown_replay,
 )
 from aws_public_change_feed.outbox import DynamoDBDeliveryStore  # noqa: E402
@@ -28,15 +31,19 @@ EXIT_AMBIGUOUS = 4
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Preview or apply one audited unknown-outcome replay.")
+    parser = argparse.ArgumentParser(description="Preview or apply one audited delivery recovery action.")
     parser.add_argument("--table-name", required=True)
     parser.add_argument("--candidate-id", required=True)
     parser.add_argument("--expected-state-version", required=True, type=int)
     parser.add_argument("--operator", required=True)
     parser.add_argument("--reason", required=True)
     parser.add_argument("--evidence", required=True)
-    parser.add_argument(
-        "--found-post", action="store_true", help="close an unknown record after finding the Slack post"
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--found-post", action="store_true", help="close an unknown record after finding the Slack post")
+    mode.add_argument(
+        "--terminal-replay",
+        action="store_true",
+        help="replay one live failed_terminal record after an exact-request-compatible correction",
     )
     parser.add_argument("--terminal-retention-seconds", type=int, help="TTL horizon for a found posted record")
     parser.add_argument("--slack-message-ts", help="bounded Slack timestamp for the found message")
@@ -57,7 +64,12 @@ def _write(document: dict[str, Any], *, stream: Any | None = None) -> None:
     print(json.dumps(document, separators=(",", ":"), sort_keys=True), file=sys.stdout if stream is None else stream)
 
 
-def _run_found_post(arguments: argparse.Namespace, store: DynamoDBDeliveryStore, record: Any) -> int:
+def _run_found_post(
+    arguments: argparse.Namespace,
+    store: DynamoDBDeliveryStore,
+    record: Any,
+    before_write: Callable[[dict[str, Any]], None],
+) -> int:
     if arguments.terminal_retention_seconds is None:
         raise ValueError("found-post reconciliation requires --terminal-retention-seconds")
     plan = plan_found_post(
@@ -92,6 +104,15 @@ def _run_found_post(arguments: argparse.Namespace, store: DynamoDBDeliveryStore,
         _write({"status": "preview", **preview})
         return 0
 
+    before_write(
+        {
+            "action": "found_post_reconciliation",
+            "state": "posted",
+            "state_version": plan.expected_state_version + 1,
+            "prior_attempt_id": plan.entry.prior_attempt_id,
+            "decided_at": plan.entry.decided_at,
+        }
+    )
     result = apply_found_post(store, plan)
     _write(
         {
@@ -105,7 +126,12 @@ def _run_found_post(arguments: argparse.Namespace, store: DynamoDBDeliveryStore,
     return 0
 
 
-def _run_unknown_replay(arguments: argparse.Namespace, store: DynamoDBDeliveryStore, record: Any) -> int:
+def _run_unknown_replay(
+    arguments: argparse.Namespace,
+    store: DynamoDBDeliveryStore,
+    record: Any,
+    before_write: Callable[[dict[str, Any]], None],
+) -> int:
     plan = plan_unknown_replay(
         record,
         expected_state_version=arguments.expected_state_version,
@@ -127,6 +153,14 @@ def _run_unknown_replay(arguments: argparse.Namespace, store: DynamoDBDeliverySt
         _write({"status": "preview", **preview})
         return 0
 
+    before_write(
+        {
+            "action": "manual_replay",
+            "state": "pending_queue",
+            "state_version": plan.expected_state_version + 1,
+            "new_attempt_id": plan.entry.new_attempt_id,
+        }
+    )
     result = apply_unknown_replay(store, plan)
     _write(
         {
@@ -141,27 +175,103 @@ def _run_unknown_replay(arguments: argparse.Namespace, store: DynamoDBDeliverySt
     return 0
 
 
+def _run_terminal_replay(
+    arguments: argparse.Namespace,
+    store: DynamoDBDeliveryStore,
+    record: Any,
+    before_write: Callable[[dict[str, Any]], None],
+) -> int:
+    plan = plan_terminal_replay(
+        record,
+        expected_state_version=arguments.expected_state_version,
+        operator=arguments.operator,
+        reason=arguments.reason,
+        evidence=arguments.evidence,
+    )
+    preview = {
+        "action": "terminal_replay",
+        "candidate_id": plan.candidate_id,
+        "current_state": record.status,
+        "expected_state_version": plan.expected_state_version,
+        "prior_attempt_id": plan.entry.prior_attempt_id,
+        "prior_response_class": plan.entry.prior_response_class,
+        "prior_attempts_exhausted": plan.entry.prior_attempts_exhausted,
+        "prior_expires_at": plan.entry.prior_expires_at,
+        "operator": _redacted_text(plan.entry.operator),
+        "reason": _redacted_text(plan.entry.reason),
+        "evidence": _redacted_text(plan.entry.evidence),
+    }
+    if not arguments.apply:
+        _write({"status": "preview", **preview})
+        return 0
+
+    before_write(
+        {
+            "action": "terminal_replay",
+            "state": "pending_queue",
+            "state_version": plan.expected_state_version + 1,
+            "new_attempt_id": plan.entry.new_attempt_id,
+        }
+    )
+    result = apply_terminal_replay(store, plan)
+    _write(
+        {
+            "status": "applied",
+            **preview,
+            "new_state": "pending_queue",
+            "new_state_version": result.state_version,
+            "new_attempt_id": result.new_attempt_id,
+            "TerminalReplay": result.terminal_replay_count,
+        }
+    )
+    return 0
+
+
+def _proof_matches(record: Any, proof: dict[str, Any]) -> bool:
+    if record is None or record.status != proof["state"] or record.state_version != proof["state_version"]:
+        return False
+    if proof["action"] == "manual_replay":
+        return bool(
+            record.next_attempt_id == proof["new_attempt_id"]
+            and record.manual_replay_history
+            and record.manual_replay_history[-1].new_attempt_id == proof["new_attempt_id"]
+        )
+    if proof["action"] == "terminal_replay":
+        return bool(
+            record.next_attempt_id == proof["new_attempt_id"]
+            and record.terminal_replay_history
+            and record.terminal_replay_history[-1].new_attempt_id == proof["new_attempt_id"]
+        )
+    return bool(
+        record.found_post_history
+        and record.found_post_history[-1].prior_attempt_id == proof["prior_attempt_id"]
+        and record.found_post_history[-1].decided_at == proof["decided_at"]
+    )
+
+
 def run(arguments: argparse.Namespace, client: Any) -> int:
     from botocore.exceptions import BotoCoreError, ClientError
 
     store = DynamoDBDeliveryStore(client, arguments.table_name)
     write_attempted = False
+    write_proof: dict[str, Any] | None = None
+
+    def before_write(proof: dict[str, Any]) -> None:
+        nonlocal write_attempted, write_proof
+        write_proof = proof
+        write_attempted = True
+
     try:
         record = store.get_delivery(arguments.candidate_id)
         if record is None:
             raise ValueError("delivery record does not exist")
         found_post = bool(getattr(arguments, "found_post", False))
-        if not arguments.apply:
-            return (
-                _run_found_post(arguments, store, record)
-                if found_post
-                else _run_unknown_replay(arguments, store, record)
-            )
-
-        write_attempted = True
-        return (
-            _run_found_post(arguments, store, record) if found_post else _run_unknown_replay(arguments, store, record)
-        )
+        terminal_replay = bool(getattr(arguments, "terminal_replay", False))
+        if found_post:
+            return _run_found_post(arguments, store, record, before_write)
+        if terminal_replay:
+            return _run_terminal_replay(arguments, store, record, before_write)
+        return _run_unknown_replay(arguments, store, record, before_write)
     except ReplayRefused:
         try:
             current = store.get_delivery(arguments.candidate_id)
@@ -200,6 +310,22 @@ def run(arguments: argparse.Namespace, client: Any) -> int:
                 stream=sys.stderr,
             )
             return EXIT_AMBIGUOUS
+        try:
+            current = store.get_delivery(arguments.candidate_id)
+        except (BotoCoreError, ClientError):
+            current = None
+        if write_proof is not None and _proof_matches(current, write_proof):
+            applied = {
+                "status": "applied_after_reread",
+                "action": write_proof["action"],
+                "candidate_id": arguments.candidate_id,
+                "new_state": write_proof["state"],
+                "new_state_version": write_proof["state_version"],
+            }
+            if "new_attempt_id" in write_proof:
+                applied["new_attempt_id"] = write_proof["new_attempt_id"]
+            _write(applied)
+            return 0
         _write(
             {
                 "status": "ambiguous",

@@ -48,7 +48,7 @@ Use on-demand capacity for the baseline. The table needs a GSI named `status-nex
 ### Delivery item
 
 - Key: `PK = CANDIDATE#<candidate_id>`, `SK = DELIVERY`.
-- Contains the exact request, destination key, state, state version, creation time, numeric next action, dispatch generation and ID, queue message ID, active, last, and reserved-next attempt IDs, network-attempt count, lease, Slack response metadata, manual replay history, found-post history, and TTL when safe.
+- Contains the exact request, destination key, state, state version, creation time, numeric next action, dispatch generation and ID, queue message ID, active, last, and reserved-next attempt IDs, network-attempt count, lease, Slack response metadata, unknown-replay history, terminal-replay history, found-post history, and TTL when safe.
 - State transitions use conditions on current state, version, and lease.
 
 The states are `pending_queue`, `queued`, `sending`, `posted`, `failed_retryable`, `failed_terminal`, and `delivery_unknown`. `posted` and `failed_terminal` may expire after the configured terminal retention. Unresolved states have no TTL or receive a retention extension. A new put over a terminal expired item must prove `expires_at < now` in its condition; DynamoDB TTL deletion is asynchronous.
@@ -65,6 +65,17 @@ worker consumes it into the next `sending` claim before another Slack call. If
 the operator instead finds the original Slack post, a separate conditional
 write appends bounded found-post evidence, records `posted`, applies terminal
 retention, and reserves no new attempt. A stale decision writes nothing.
+
+After an operator verifies an exact-request-compatible correction, a separate
+terminal replay may move one live `failed_terminal` record to immediately due
+`pending_queue`. Its dedicated history entry retains decision time, operator,
+reason, evidence, prior and reserved attempt IDs, prior bounded response class,
+prior exhausted-budget flag, and prior expiry. The conditional write proves the
+exact state version, prior attempt, still-live and unchanged terminal expiry,
+unchanged bounded outcome, absent reservation, and available 25-entry history
+capacity before removing expiry and reserving one attempt. It preserves the
+stored request, candidate, destination, release, application digest, dispatch
+generation, creation time, and historical network-attempt count.
 
 ### Destination item
 

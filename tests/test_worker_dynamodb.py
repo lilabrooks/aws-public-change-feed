@@ -42,7 +42,12 @@ from test_worker import (  # noqa: E402
 
 from aws_public_change_feed.credentials import WEBHOOK, SlackCredential  # noqa: E402
 from aws_public_change_feed.dispatch import dispatch_due_work  # noqa: E402
-from aws_public_change_feed.manual_replay import apply_unknown_replay, plan_unknown_replay  # noqa: E402
+from aws_public_change_feed.manual_replay import (  # noqa: E402
+    apply_terminal_replay,
+    apply_unknown_replay,
+    plan_terminal_replay,
+    plan_unknown_replay,
+)
 from aws_public_change_feed.outbox import (  # noqa: E402
     DeliveryRecord,
     DynamoDBDeliveryStore,
@@ -239,6 +244,63 @@ class RetryOutcomeTests(WorkerAgainstDynamoDB):
         self.assertEqual(record.network_attempt_count, max_attempts)
         self.assertIsNotNone(record.last_attempt_id)
         self.assertIsNotNone(record.expires_at)
+
+    def test_an_exhausted_terminal_replay_uses_one_reserved_call_and_returns_terminal(self):
+        max_attempts = self.inventory["slack"]["rate_control"]["max_network_attempts"]
+        reserved_attempt = "1" * 32
+        terminal = self.queued_record(
+            status=FAILED_TERMINAL,
+            next_action_at=None,
+            state_version=7,
+            dispatch_generation=1,
+            last_attempt_id="prior-attempt",
+            network_attempt_count=max_attempts,
+            slack_response={
+                "response_class": "http_503",
+                "status_code": 503,
+                "bytes_sent": True,
+                "latency_ms": 90,
+                "attempts_exhausted": True,
+            },
+            expires_at=NOW_TS + 365 * 86400,
+        )
+        replay = plan_terminal_replay(
+            terminal,
+            expected_state_version=7,
+            operator="operator@example.com",
+            reason="Approved after restoring Slack service",
+            evidence="Synthetic destination preflight succeeded",
+            clock=lambda: NOW,
+            attempt_id_factory=lambda: reserved_attempt,
+        )
+        apply_terminal_replay(self.store, replay)
+        dispatched = dispatch_due_work(
+            self.store,
+            AcceptedQueueSender(),
+            queue_url="https://sqs.example/terminal-replay.fifo",
+            now=NOW,
+            max_delivery_request_bytes=self.config["message_policy"]["max_delivery_request_bytes"],
+        )
+        self.assertEqual(dispatched.accepted, 1)
+        self.sender = FakeSlackSender(SlackResponse(status_code=503, latency_ms=90))
+        queued = self.record()
+
+        result = self.process(
+            queue_delivery=QueueDelivery(
+                request=self.request,
+                message_id=queued.queue_message_id,
+                message_group_id=self.destination_key,
+            )
+        )
+
+        self.assertEqual(result.state, FAILED_TERMINAL)
+        record = self.record()
+        self.assertEqual(record.network_attempt_count, max_attempts + 1)
+        self.assertEqual(record.last_attempt_id, reserved_attempt)
+        self.assertEqual(record.terminal_replay_history[-1].new_attempt_id, reserved_attempt)
+        self.assertIsNone(record.next_attempt_id)
+        assert record.slack_response is not None
+        self.assertIs(record.slack_response["attempts_exhausted"], True)
 
 
 class UnknownOutcomeTests(WorkerAgainstDynamoDB):
