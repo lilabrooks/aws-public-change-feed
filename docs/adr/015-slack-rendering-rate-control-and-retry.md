@@ -51,19 +51,19 @@ than the source of truth. A separate source-item URL cap or a different message
 budget would be a later product decision with its own acquisition and rendering
 evidence.
 
-### Deferred follow-up: Slack summary capacity
+### Production-preflight disposition: retain the 300-character cap
 
-Revisit the 300-character Slack summary cap before accepting the renderer-built
-Slack sample and again during production preflight. Keep the current baseline:
+The 2026-08-14 owner review retains the 300-character Slack summary cap for
+production preflight. The renderer-built Slack sample remains separate L-10
+evidence and does not reopen this limit by itself. The current baseline is that
 27 of 44 labeled corpus summaries exceed 300 characters, compared with 14 at
 the former 1,200-character cap; the normalized median is 1,047 and the maximum
-is 1,770. The review should use text produced by the normal acquisition path
-and judge operator usefulness alongside worst-case rendering capacity.
+is 1,770.
 
 Candidate changes include a distinct source-item URL bound or revised aggregate
 message-budget semantics. Either would alter the acquisition or rendering
-contract, so it requires its own chapter 04 and ADR decision. This worker-core
-repair records the cost without choosing that later change.
+contract, so it requires its own chapter 04 and ADR decision rather than an
+implicit production-preflight adjustment.
 
 The environment list remains the data-sized field that yields at render time.
 It is shortened deterministically, keeps an omitted count, and is charged for

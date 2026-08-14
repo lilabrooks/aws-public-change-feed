@@ -11,6 +11,7 @@
     "secret_store",
     "deploy_operational_sns_topic",
     "operational_sns_topic_name",
+    "operational_sns_subscriptions",
     "log_retention_days",
     "config_bucket_name",
     "release_prefix",
@@ -31,6 +32,13 @@
     "secret_store": {"enum": ["secrets_manager", "ssm_parameter_store"]},
     "deploy_operational_sns_topic": {"const": true},
     "operational_sns_topic_name": {"$ref": "#/$defs/id"},
+    "operational_sns_subscriptions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 10,
+      "uniqueItems": true,
+      "items": {"$ref": "#/$defs/operational_sns_subscription"}
+    },
     "log_retention_days": {"type": "integer", "minimum": 1, "maximum": 3653},
     "config_bucket_name": {
       "type": "string",
@@ -60,6 +68,15 @@
       "minLength": 1,
       "maxLength": 63,
       "pattern": "^[a-z0-9][a-z0-9-]*$"
+    },
+    "operational_sns_subscription": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alias", "protocol"],
+      "properties": {
+        "alias": {"$ref": "#/$defs/id"},
+        "protocol": {"const": "email"}
+      }
     },
     "region": {
       "type": "string",

@@ -4,6 +4,9 @@ deployment_region: us-east-1
 secret_store: secrets_manager
 deploy_operational_sns_topic: true
 operational_sns_topic_name: apcf-operations
+operational_sns_subscriptions:
+  - alias: primary-email
+    protocol: email
 log_retention_days: 30
 config_bucket_name: apcf-config-dev
 release_prefix: apcf/releases

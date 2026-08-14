@@ -32,8 +32,11 @@ Before trusting the runtime deployment, repeat the two checks that found every d
    occurrence. `IncompleteRuns` means the remaining-time reserve or a bounded
    conditional-state retry stopped the pass; it pages only after two
    consecutive 15-minute periods. The AWS/Lambda `Errors` alarm is a matching
-   two-period backstop. EventBridge retries can contribute samples, so two
-   breaching periods do not prove that two distinct scheduled events failed.
+   two-period backstop only while the watcher runtime is enabled.
+   `ReleaseVerificationFailures` is diagnostic and has no notification
+   actions; `WatcherFaults` owns paging for that invocation. EventBridge
+   retries can contribute samples, so two breaching periods do not prove that
+   two distinct scheduled events failed.
 4. A faulting invocation may stop before it emits the dimensionless
    `MaxFeedStalenessSeconds` aggregate. Its absence is unknown, not evidence
    that feeds are fresh. Use the invocation error and custom metric, then check
@@ -44,6 +47,10 @@ Before trusting the runtime deployment, repeat the two checks that found every d
 7. Do not relax the host allowlist, address checks, TLS, redirect, or parser limits during incident response. Add a reviewed configuration or code change with a regression fixture.
 8. Run a shadow fetch using the deployed network path. It must not update validators or create candidates.
 9. Restore service, confirm last success advances, and inspect the next normalized item count. Keep the prior ETag and Last-Modified until processing is durable.
+
+If an approved feed URL changes intentionally, configure it under a new feed
+name. Preserve the old feed's state until a separate retirement review; do not
+reuse its validators for the new location.
 
 ## Feed appears quiet
 
@@ -273,10 +280,13 @@ queue policy.
 
 ## Alarm delivery failure
 
-1. Verify topic policy, subscription state, delivery status logging, and the receiving endpoint or email confirmation.
-2. Send the approved synthetic operational notification.
-3. Infrastructure checks can prove configuration. An operator records receipt before production readiness is restored.
-4. Maintain an alternate escalation path while operational notifications are impaired.
+1. Verify that each Git-reviewed deployment descriptor contains only its stable alias and reviewed protocol, currently `email`.
+2. Supply endpoints outside Git through the sensitive `operational_sns_subscription_endpoints` map. Its keys must equal the reviewed aliases exactly; remember that the endpoint is then present in encrypted Terraform state.
+3. Before the first apply that would own an already confirmed subscription, import that exact subscription at its reviewed address, such as `aws_sns_topic_subscription.operations["primary-email"]`, under separate live authority. Do not create a duplicate subscription.
+4. Verify topic policy, subscription state, delivery status logging, and the receiving endpoint or email confirmation.
+5. Send the approved synthetic operational notification.
+6. Infrastructure checks can prove configuration. An operator records receipt before production readiness is restored.
+7. Maintain an alternate escalation path while operational notifications are impaired.
 
 ## Security incident
 

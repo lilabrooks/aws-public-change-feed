@@ -202,7 +202,10 @@ invocation so the scheduled target can retry. They do not emit `WatcherFaults`.
 Every other exception emits function-scoped `WatcherFaults` and fails with the
 same bounded outward error. Every custom watcher alarm metric has a runtime
 producer, and the watcher heartbeat alarm exists only when the watcher runtime
-is enabled.
+is enabled. The AWS/Lambda watcher `Errors` alarm also exists only when the
+watcher runtime is enabled. `ReleaseVerificationFailures` remains a diagnostic
+metric with no alarm notification actions; `WatcherFaults` owns paging for the
+same failing invocation.
 
 ### Delivery
 
@@ -243,18 +246,27 @@ Production alarms include:
 - Watcher incompletion in two consecutive 15-minute CloudWatch periods, through
   function-scoped `IncompleteRuns`.
 - AWS/Lambda watcher errors in two consecutive 15-minute CloudWatch periods as
-  a backstop. A period can include EventBridge retries and does not prove that a
-  distinct scheduled event failed.
+  a backstop, only while the watcher runtime is enabled. A period can include
+  EventBridge retries and does not prove that a distinct scheduled event failed.
 - Source-state throttling or errors.
 - Oldest `pending_queue`, `queued`, or retryable work beyond the service objective.
 - Queue age, worker errors, throttles, and DLQ depth.
 - Any `delivery_unknown` or sustained terminal delivery failures.
 - No dispatcher heartbeat and dispatcher AWS/Lambda errors, only when the dispatcher runtime is enabled.
 - No reconciler heartbeat, only when the reconciler runtime is enabled.
-- Raw-snapshot or immutable-release verification failures.
+- Raw-snapshot failures. Immutable-release verification failures retain a
+  diagnostic alarm without notification actions because `WatcherFaults` owns
+  paging for those invocations.
 - Operational notification delivery test unconfirmed.
 
 Each alarm links to the operations runbook and includes deployment ID, Region, component, and a safe diagnostic query.
+
+Operational SNS subscriptions are Terraform-managed. Git-reviewed deployment
+input owns only each alias and its allowed protocol; a sensitive Terraform map
+supplies endpoints outside Git, and its keys must equal the reviewed aliases
+exactly. Endpoints therefore enter encrypted Terraform state. Subscription
+confirmation and receipt of a synthetic notification remain operator evidence,
+not conclusions Terraform can establish.
 
 ## Backup and restore
 

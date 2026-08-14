@@ -1043,6 +1043,45 @@ class DeploymentInputTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "raw_snapshot_prefix"):
                 validator.validate_deployment_inputs(root)
 
+    def test_operational_sns_subscriptions_are_required(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        del deployment["operational_sns_subscriptions"]
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "operational_sns_subscriptions"):
+                validator.validate_deployment_inputs(root)
+
+    def test_operational_sns_subscription_rejects_unknown_fields(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        deployment["operational_sns_subscriptions"][0]["endpoint"] = "operator@example.invalid"
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "endpoint"):
+                validator.validate_deployment_inputs(root)
+
+    def test_operational_sns_subscription_aliases_are_unique(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        deployment["operational_sns_subscriptions"].append(deployment["operational_sns_subscriptions"][0].copy())
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "non-unique"):
+                validator.validate_deployment_inputs(root)
+
+    def test_operational_sns_subscription_protocol_is_email(self):
+        deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
+        deployment["operational_sns_subscriptions"][0]["protocol"] = "https"
+        with tempfile.TemporaryDirectory() as directory:
+            root = self._staged_root(directory, deployment)
+            with self.assertRaisesRegex(ValueError, "email"):
+                validator.validate_deployment_inputs(root)
+
+    def test_committed_operational_sns_descriptors_contain_no_endpoint(self):
+        for path in validator.DEPLOYMENT_INPUTS:
+            with self.subTest(path=path):
+                deployment = validator.load_yaml(ROOT / path)
+                for subscription in deployment["operational_sns_subscriptions"]:
+                    self.assertEqual(set(subscription), {"alias", "protocol"})
+
     def test_application_package_retirement_is_required(self):
         deployment = validator.load_yaml(ROOT / validator.DEPLOYMENT_INPUTS[0])
         del deployment["application_package_retirement"]

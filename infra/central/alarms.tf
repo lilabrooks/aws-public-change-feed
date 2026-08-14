@@ -95,6 +95,8 @@ resource "aws_cloudwatch_metric_alarm" "runtime_failure_queue_depth" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "feed_watcher_errors" {
+  count = local.watcher_runtime_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-feed-watcher-errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 2
@@ -524,11 +526,8 @@ resource "aws_cloudwatch_metric_alarm" "release_verification_failures" {
   threshold           = 0
   treat_missing_data  = "notBreaching"
 
-  alarm_description         = "Release verification failed for an exact versioned object. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Release failure or rollback'."
-  alarm_actions             = [aws_sns_topic.operations.arn]
-  ok_actions                = [aws_sns_topic.operations.arn]
-  insufficient_data_actions = [aws_sns_topic.operations.arn]
-  tags                      = local.common_alarm_tags
+  alarm_description = "Release verification failed for an exact versioned object. Diagnostic only; WatcherFaults owns notification paging. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Release failure or rollback'."
+  tags              = local.common_alarm_tags
 }
 
 resource "aws_cloudwatch_metric_alarm" "raw_snapshot_failures" {

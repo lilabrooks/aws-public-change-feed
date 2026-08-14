@@ -179,10 +179,15 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - Watcher faults alarm on one occurrence. Watcher incompletion and the
   AWS/Lambda error backstop alarm only after two consecutive 15-minute
   CloudWatch periods breach; neither alarm claims those samples came from two
-  distinct scheduled events.
+  distinct scheduled events. The AWS/Lambda error alarm exists only while the
+  watcher runtime is enabled.
 - A missing-heartbeat alarm exists only when its corresponding conditional
   runtime is enabled.
-- Alarm subscriptions are configured by automation and receipt of a test notification is confirmed by an operator.
+- `ReleaseVerificationFailures` retains diagnostic alarm state with no
+  notification actions; the invocation's `WatcherFaults` alarm owns paging.
+- Alarm subscriptions are configured from reviewed alias/protocol descriptors
+  and a private sensitive endpoint map with exactly matching keys. Receipt of a
+  test notification is confirmed by an operator.
 - A load test at the declared envelope records throughput, duration, concurrency, DynamoDB throttling, queue age, destination pacing, and Slack response classes.
 - Queue visibility, receive threshold, retry delay, network attempts, and reserved concurrency satisfy the tested timing model.
 - Shadow mode evaluates live snapshots without candidate or delivery writes.

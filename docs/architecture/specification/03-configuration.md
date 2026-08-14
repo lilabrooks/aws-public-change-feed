@@ -8,13 +8,22 @@
 
 - Deployment and Region identifiers.
 - Configuration bucket keys and lifecycle.
-- Operational notification topic and log retention.
+- Operational notification topic, reviewed subscription aliases and protocols,
+  and log retention.
 - Slack mode, destination metadata, credential identifiers, and rate controls.
 - Environment identity, customer label, account metadata, Regions, and route.
 - Feed network limits and approved hosts.
 - The declared support envelope.
 
 It contains secret identifiers, never secret values. Infrastructure-coupled keys are forbidden in runtime configuration.
+
+Each operational subscription descriptor is a closed object containing only a
+stable alias and the reviewed protocol. The endpoint is supplied separately to
+Terraform as the sensitive `operational_sns_subscription_endpoints` map, never
+committed to deployment configuration. Its keys must equal the descriptor
+aliases exactly. Once managed, Terraform state contains the resolved endpoint,
+so the remote-state controls and access boundary protect it as sensitive
+operational data.
 
 ### Runtime configuration
 

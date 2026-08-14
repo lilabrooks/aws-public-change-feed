@@ -14,6 +14,21 @@ resource "aws_sns_topic" "operations" {
   }
 }
 
+resource "aws_sns_topic_subscription" "operations" {
+  for_each = local.operational_sns_subscriptions
+
+  topic_arn = aws_sns_topic.operations.arn
+  protocol  = each.value.protocol
+  endpoint  = lookup(var.operational_sns_subscription_endpoints, each.key, "")
+
+  lifecycle {
+    precondition {
+      condition     = local.operational_sns_subscription_aliases == local.operational_sns_endpoint_aliases
+      error_message = "operational_sns_subscription_endpoints keys must exactly match the reviewed operational SNS subscription aliases."
+    }
+  }
+}
+
 data "aws_iam_policy_document" "operations_topic" {
   # CloudWatch alarms publish as the CloudWatch service principal. An
   # account-root grant does not authorize that service call, so keep the
