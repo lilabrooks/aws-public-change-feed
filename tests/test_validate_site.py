@@ -162,6 +162,7 @@ class SiteValidatorTests(unittest.TestCase):
     def test_pages_workflow_uses_immutable_actions_and_minimum_permissions(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8"))
         steps = workflow["jobs"]["deploy"]["steps"]
+        step_names = [step["name"] for step in steps]
         steps_by_name = {step["name"]: step for step in steps}
         workflow_pins.assert_pinned(steps_by_name["Check out repository"]["uses"], "actions/checkout")
         workflow_pins.assert_pinned(steps_by_name["Set up Python"]["uses"], "actions/setup-python")
@@ -177,10 +178,26 @@ class SiteValidatorTests(unittest.TestCase):
             steps_by_name["Install runtime dependencies"]["run"],
             "python -m pip install --no-deps --requirement requirements-lambda.txt",
         )
+        self.assertLess(
+            step_names.index("Install runtime dependencies"),
+            step_names.index("Validate public page"),
+        )
+        self.assertEqual(
+            steps_by_name["Validate public page"]["run"],
+            "python scripts/validate_site.py",
+        )
         self.assertEqual(steps_by_name["Upload public page"]["with"]["path"], "site")
         watched_paths = workflow["on"]["push"]["paths"]
-        self.assertIn("scripts/generate_slack_sample.py", watched_paths)
-        self.assertIn("requirements-lambda.txt", watched_paths)
+        self.assertEqual(
+            set(watched_paths),
+            {
+                "site/**",
+                "scripts/generate_slack_sample.py",
+                "scripts/validate_site.py",
+                "requirements-lambda.txt",
+                ".github/workflows/pages.yml",
+            },
+        )
 
     def test_quality_workflow_checks_page_sync_against_the_change_base(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/quality.yml").read_text(encoding="utf-8"))
