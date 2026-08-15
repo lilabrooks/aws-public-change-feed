@@ -283,6 +283,22 @@ class TerraformContractTests(unittest.TestCase):
         watcher_rule = watcher_rule[: watcher_rule.index("\nresource ", 1)]
         self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", watcher_rule)
 
+    def test_watcher_schedule_transport_uses_exact_runtime_enablement_condition(self):
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        condition = "count = local.watcher_runtime_enabled ? 1 : 0"
+
+        for resource_type, resource_name in (
+            ("aws_cloudwatch_event_target", "watcher"),
+            ("aws_lambda_permission", "watcher_schedule"),
+        ):
+            with self.subTest(resource=resource_name):
+                block = self.resource_block(lambda_source, resource_type, resource_name)
+                uncommented_block = re.sub(r"/\*.*?\*/", "", block, flags=re.DOTALL)
+                self.assertRegex(
+                    uncommented_block,
+                    rf"(?m)^[ \t]*{re.escape(condition)}(?:[ \t]*(?:#|//).*)?$",
+                )
+
     def test_watcher_receives_every_validated_fetch_policy_value(self):
         lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
         for name in (
