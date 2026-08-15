@@ -162,12 +162,25 @@ class SiteValidatorTests(unittest.TestCase):
     def test_pages_workflow_uses_immutable_actions_and_minimum_permissions(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8"))
         steps = workflow["jobs"]["deploy"]["steps"]
-        workflow_pins.assert_pinned(steps[0]["uses"], "actions/checkout")
-        workflow_pins.assert_pinned(steps[2]["uses"], "actions/configure-pages")
-        workflow_pins.assert_pinned(steps[3]["uses"], "actions/upload-pages-artifact")
-        workflow_pins.assert_pinned(steps[4]["uses"], "actions/deploy-pages")
+        steps_by_name = {step["name"]: step for step in steps}
+        workflow_pins.assert_pinned(steps_by_name["Check out repository"]["uses"], "actions/checkout")
+        workflow_pins.assert_pinned(steps_by_name["Set up Python"]["uses"], "actions/setup-python")
+        workflow_pins.assert_pinned(steps_by_name["Configure GitHub Pages"]["uses"], "actions/configure-pages")
+        workflow_pins.assert_pinned(steps_by_name["Upload public page"]["uses"], "actions/upload-pages-artifact")
+        workflow_pins.assert_pinned(steps_by_name["Deploy public page"]["uses"], "actions/deploy-pages")
         self.assertEqual(workflow["permissions"], {"contents": "read", "pages": "write", "id-token": "write"})
-        self.assertEqual(steps[3]["with"]["path"], "site")
+        self.assertEqual(
+            steps_by_name["Set up Python"]["with"],
+            {"python-version": "3.12", "cache": "pip", "cache-dependency-path": "requirements-lambda.txt"},
+        )
+        self.assertEqual(
+            steps_by_name["Install runtime dependencies"]["run"],
+            "python -m pip install --no-deps --requirement requirements-lambda.txt",
+        )
+        self.assertEqual(steps_by_name["Upload public page"]["with"]["path"], "site")
+        watched_paths = workflow["on"]["push"]["paths"]
+        self.assertIn("scripts/generate_slack_sample.py", watched_paths)
+        self.assertIn("requirements-lambda.txt", watched_paths)
 
     def test_quality_workflow_checks_page_sync_against_the_change_base(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/quality.yml").read_text(encoding="utf-8"))

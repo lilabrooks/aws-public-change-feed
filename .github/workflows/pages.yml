@@ -6,7 +6,9 @@ name: Deploy GitHub Pages
       - main
     paths:
       - "site/**"
+      - "scripts/generate_slack_sample.py"
       - "scripts/validate_site.py"
+      - "requirements-lambda.txt"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -31,8 +33,18 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements-lambda.txt
+
+      - name: Install runtime dependencies
+        run: python -m pip install --no-deps --requirement requirements-lambda.txt
+
       - name: Validate public page
-        run: python3 scripts/validate_site.py
+        run: python scripts/validate_site.py
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d  # v6.0.0
