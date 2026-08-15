@@ -8,7 +8,7 @@ REQUIRE_TERRAFORM ?= 0
 TERRAFORM_ROOTS := infra/bootstrap infra/central
 
 .PHONY: help install format format-check lint lint-python lint-yaml typecheck validate validate-config \
-	validate-references validate-site evaluate-corpus references-online screen-feeds terraform-check \
+	validate-references validate-site generate-slack-sample evaluate-corpus references-online screen-feeds terraform-check \
 	test whitespace check clean
 
 help:
@@ -19,6 +19,7 @@ help:
 	@echo "  lint          Run Python and YAML linters"
 	@echo "  typecheck     Run mypy"
 	@echo "  validate      Validate contracts, references, local links, review dates, and the public page"
+	@echo "  generate-slack-sample  Refresh the public sample from the canonical delivery renderer"
 	@echo "  evaluate-corpus    Score matching against the labeled corpus and approved thresholds"
 	@echo "  references-online  Check external links with Lychee (requires network)"
 	@echo "  screen-feeds       Screen live feeds against the rules (requires network)"
@@ -59,6 +60,9 @@ validate-references:
 
 validate-site:
 	$(PYTHON) scripts/validate_site.py
+
+generate-slack-sample:
+	$(PYTHON) scripts/generate_slack_sample.py --write
 
 evaluate-corpus:
 	$(PYTHON) scripts/evaluate_corpus.py

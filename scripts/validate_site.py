@@ -8,6 +8,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
 
+import generate_slack_sample
+
 ROOT = Path(__file__).resolve().parents[1]
 PAGE_PATH = Path("site/index.html")
 MERMAID_PATH = Path("site/architecture.mmd")
@@ -34,7 +36,7 @@ PUBLIC_NARRATIVE_PREFIXES = (
     "examples/",
 )
 PUBLIC_NARRATIVE_FILES = {"docs/GOAL.md"}
-REQUIRED_PAGE_IDS = {"content", "value", "contracts", "flow", "decisions", "evidence", "source"}
+REQUIRED_PAGE_IDS = {"content", "value", "contracts", "slack-sample", "flow", "decisions", "evidence", "source"}
 
 
 class PublicPageParser(HTMLParser):
@@ -192,6 +194,8 @@ def validate_repository(root: Path) -> list[str]:
     if "```mermaid" in readme_text:
         errors.append("README.md: Mermaid architecture belongs on the public page")
 
+    errors.extend(generate_slack_sample.validation_errors(root))
+
     return errors
 
 
@@ -251,7 +255,7 @@ def main() -> int:
             print(issue, file=sys.stderr)
         return 1
 
-    print("public architecture page passed structure, asset, Mermaid, and content-sync validation")
+    print("public architecture page passed structure, assets, Mermaid, Slack sample, and content-sync validation")
     return 0
 
 
