@@ -245,6 +245,76 @@ not delivery requests. Never redrive it into the delivery FIFO queue.
 6. Confirm watcher, dispatcher, and worker can still load historical releases referenced by in-flight delivery records.
 7. Record the failed and restored release IDs.
 
+## Configuration release publication
+
+Use the reviewed Terraform backend principal to initialize the remote backend
+and capture its applied outputs. Then use the release-publisher role for the
+reviewed deployment during preview and apply. The configuration file is a
+separately reviewed version-4 policy whose environment policies must cover the
+deployment environments exactly. Keep the generated inventory, canonical
+plan, plan digest, and bounded command output with the change record.
+
+1. From a clean checkout, capture the applied central outputs without editing
+   them:
+
+   ```bash
+   mkdir -p build
+   terraform -chdir=infra/central init -input=false
+   terraform -chdir=infra/central output -json > build/central-outputs.json
+   ```
+
+2. Record the exact published application package digest. Choose explicit
+   second-precision UTC values for inventory generation and pointer promotion;
+   the promotion value must follow the pointer version the preview reads.
+3. Generate and validate the inventory, read the current pointer, and write one
+   canonical plan:
+
+   ```bash
+   python3 scripts/publish_release.py preview \
+     --deployment infra/central/deployment.yaml \
+     --config <reviewed-config.yaml> \
+     --terraform-output build/central-outputs.json \
+     --inventory build/inventory.json \
+     --plan build/config-release-plan.json \
+     --application-version sha256:<64-lowercase-hex> \
+     --generated-at <YYYY-MM-DDTHH:MM:SSZ> \
+     --promoted-at <YYYY-MM-DDTHH:MM:SSZ>
+   ```
+
+   Preview performs no S3 write. It refuses a malformed or mismatched Terraform
+   output, validates the deployment, configuration, and generated inventory as
+   one bundle, and reports the release ID, object keys, pointer identity, and
+   plan SHA-256 without printing the inventory or a provider exception.
+4. Review the exact input hashes, generated inventory hash, selected package
+   digest, current pointer ETag and version, release ID, object keys, and times
+   in `build/config-release-plan.json`. Preserve the reported plan SHA-256.
+5. Apply only those plan bytes:
+
+   ```bash
+   python3 scripts/publish_release.py apply \
+     --plan build/config-release-plan.json \
+     --expected-plan-sha256 <preview-plan-sha256>
+   ```
+
+   Apply reloads and revalidates every local input, regenerates the inventory,
+   and repeats the pointer read before the first S3 write. Any difference is
+   `stale_plan`; create a fresh preview instead of editing the plan.
+6. Treat only `status=completed` as completion. A completed result records
+   `promotion.status=promoted` or `promotion.status=converged` and the exact
+   release returned by the compatibility probe. Preserve release-object version
+   IDs and prior/new pointer identities.
+7. On `promotion_superseded`, record both release IDs and start again from a
+   fresh preview. On `promotion_conflict`, the 409 re-read named another release.
+   On `pointer_vanished`, stop and escalate. On `probe_failed`, preserve the
+   pointer result and release-object versions, then repair compatibility before
+   declaring the release usable. These results can leave matching immutable
+   release objects in place; a later fresh plan adopts their exact versions.
+
+The command defines the operator path and has injected-store plus moto coverage.
+Running it against the dev bucket is a live AWS operation and requires separate
+deployment authority. Its local tests do not prove an applied release, Lambda
+execution, public-feed processing, or Slack delivery.
+
 ## Application package rollout and rollback
 
 1. Pause candidate creation at its event source. Record the current Lambda package digest and query actionable delivery records for every distinct embedded `application_version`.

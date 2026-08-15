@@ -438,6 +438,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
               <li>Live feed screening that flags any production match the corpus does not represent</li>
               <li>S3 release preconditions measured against the mock the publisher is tested on, including where that mock cannot stand in for S3</li>
               <li>Release publication and promotion reproducing the committed release from the contract bundle's own bytes</li>
+              <li>A preview-first configuration-release command that generates the deployed inventory, checks captured Terraform outputs, validates the exact bundle, applies only an unchanged plan and pointer decision, and requires the runtime compatibility probe before completion</li>
               <li>Release loading that reads exact pinned versions, verifies hashes, validates the fetched bodies against their owned schemas, and binds internal versions to the pointer</li>
               <li>Rollback that verifies a retained release before restoring it, with promotion times required to move forward so no later write can reproduce a retained version</li>
               <li>A recorded decision on where the release contract is measured, including the one property the mock contradicts and the suite that will cover it</li>
