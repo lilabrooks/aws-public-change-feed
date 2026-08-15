@@ -143,6 +143,7 @@
     <div class="compact-header-actions">
       <nav class="compact-nav" aria-label="Primary navigation">
         <a href="#contracts">Contracts</a>
+        <a href="#slack-sample">Slack sample</a>
         <a href="#flow">AWS architecture</a>
         <a href="#decisions">Reasons</a>
         <a href="#evidence">Evidence</a>
@@ -231,6 +232,49 @@
 
         <aside class="site-note" aria-label="Contract evidence boundary">
           <p><strong>Validated contracts are not production evidence.</strong> These checks prove the repository agrees with itself. Production claims still require implemented runtime code, deployment tests, measured feed quality, and live delivery evidence.</p>
+        </aside>
+      </div>
+    </section>
+
+    <section class="compact-section" id="slack-sample">
+      <div class="compact-shell">
+        <div class="compact-section-head">
+          <p class="compact-eyebrow">Slack sample</p>
+          <div>
+            <h2 class="compact-section-title">The documented message comes from the delivery renderer.</h2>
+            <p class="compact-section-copy">This sample uses the canonical candidate, inventory, deployment policy, and message limits. The site check regenerates it through the same <code>render_message</code> function the worker uses and fails when the committed output drifts.</p>
+          </div>
+        </div>
+
+        <!-- GENERATED_SLACK_SAMPLE_START -->
+        <article class="evidence-panel" data-rendered-slack-sample>
+          <h3>Canonical renderer output</h3>
+          <p data-slack-block="context" data-slack-text-type="mrkdwn" data-slack-emoji="absent">Potentially relevant AWS change candidate (medium priority)</p>
+          <p data-slack-block="section" data-slack-text-type="plain_text" data-slack-emoji="false">Amazon EKS Kubernetes version 1.34 available</p>
+          <p data-slack-block="section" data-slack-text-type="mrkdwn" data-slack-emoji="absent">&lt;https://aws.amazon.com/about-aws/whats-new/2026/example-eks-update/|View source&gt;<br>
+Amazon EKS · service-version-update</p>
+          <p data-slack-block="section" data-slack-text-type="plain_text" data-slack-emoji="false">Amazon EKS now supports Kubernetes version 1.34 in all configured Regions.</p>
+          <p data-slack-block="section" data-slack-text-type="plain_text" data-slack-emoji="false">The announcement matched the Amazon EKS service definition and the configured service-version-update rule.</p>
+          <p data-slack-block="section" data-slack-text-type="plain_text" data-slack-emoji="false">Potentially relevant: Acme (acme-prod), Globex (globex-prod), Globex (globex-staging)</p>
+          <p data-slack-block="section" data-slack-text-type="plain_text" data-slack-emoji="false">Recommended review action: Review supported Kubernetes versions and plan required cluster upgrades.</p>
+          <p data-slack-block="context" data-slack-text-type="plain_text" data-slack-emoji="false">2026-07-13T12:00:00Z · a9ba064df89aa4365e6fd3e4267c656678b6fcbf0605c2044d63f927ad88ee70</p>
+          <details>
+            <summary>Accessible fallback text</summary>
+            <p data-slack-fallback>Potentially relevant AWS change candidate (medium priority)<br>
+Amazon EKS Kubernetes version 1.34 available<br>
+Amazon EKS · service-version-update<br>
+Amazon EKS now supports Kubernetes version 1.34 in all configured Regions.<br>
+Source: https://aws.amazon.com/about-aws/whats-new/2026/example-eks-update/<br>
+Reason: The announcement matched the Amazon EKS service definition and the configured service-version-update rule.<br>
+Potentially relevant: Acme (acme-prod), Globex (globex-prod), Globex (globex-staging)<br>
+Recommended review action: Review supported Kubernetes versions and plan required cluster upgrades.<br>
+2026-07-13T12:00:00Z · a9ba064df89aa4365e6fd3e4267c656678b6fcbf0605c2044d63f927ad88ee70</p>
+          </details>
+        </article>
+        <!-- GENERATED_SLACK_SAMPLE_END -->
+
+        <aside class="site-note" aria-label="Slack sample evidence boundary">
+          <p><strong>This is static contract evidence.</strong> It proves the canonical candidate fits the renderer and documents its message shape. Live Slack posting remains part of production preflight.</p>
         </aside>
       </div>
     </section>
@@ -381,6 +425,7 @@
               <li>DynamoDB delivery and SQS FIFO producer adapters exercised against service mocks</li>
               <li>A one-minute dispatcher Lambda composition root with strict schedule validation, bounded results, function-scoped heartbeat, reserved concurrency one, and source-scoped exhausted-event handling</li>
               <li>Slack delivery worker with exact release and application-artifact checks, release-bound candidate semantics, bounded plain-text rendering, conditional outcomes, pacing state, and retry-safe response classification</li>
+              <li>A public canonical Slack sample generated through the delivery renderer, with validation that rejects page or fixture drift and unsupported block shapes</li>
               <li>FIFO Lambda handling with strict queue-body validation, remaining-time checks, ordered partial-batch failures, and fixed-name, dimensionless embedded metrics</li>
               <li>Bounded recovery with exact expired-lease conditions, no automatic replay of unknown or unproven queued work, fixed state dimensions, and a scheduled Lambda composition root</li>
               <li>A five-minute reconciler schedule with reserved concurrency one, separate exact package inputs, bounded retries, and a source-scoped standard runtime-failure queue</li>
@@ -411,7 +456,6 @@
               <li>Applied watcher, dispatcher, worker, and reconciler infrastructure, plus controlled feed, dispatch, Slack, and recovery evidence</li>
               <li>Feed, delivery, recovery, load, and security tests</li>
               <li>Production preflight and confirmed Slack destination checks</li>
-              <li>A rendered Slack message sample on this page, produced by the delivery renderer</li>
             </ul>
           </article>
         </div>

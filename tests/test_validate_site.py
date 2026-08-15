@@ -1,3 +1,5 @@
+import copy
+import json
 import shutil
 import sys
 import tempfile
@@ -8,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "tests"))
 
+import generate_slack_sample as slack_sample  # noqa: E402
 import validate_site as validator  # noqa: E402
 import workflow_pins  # noqa: E402
 import yaml  # noqa: E402
@@ -18,11 +21,84 @@ class SiteValidatorTests(unittest.TestCase):
         directory = tempfile.TemporaryDirectory()
         root = Path(directory.name)
         shutil.copytree(ROOT / "site", root / "site")
+        shutil.copytree(ROOT / "examples", root / "examples")
         shutil.copy2(ROOT / "README.md", root / "README.md")
         return directory, root
 
     def test_committed_site_passes_validation(self):
         self.assertEqual(validator.validate_repository(ROOT), [])
+
+    def test_committed_slack_sample_contains_the_canonical_candidate(self):
+        candidate = json.loads((ROOT / "examples/alert-candidate.json").read_text(encoding="utf-8"))
+        page = (ROOT / "site/index.html").read_text(encoding="utf-8")
+        self.assertIn(candidate["candidate_id"], page)
+        self.assertEqual(slack_sample.validation_errors(ROOT), [])
+
+    def test_hand_edited_slack_sample_is_rejected(self):
+        directory, root = self.make_repository()
+        with directory:
+            page = root / "site/index.html"
+            source = page.read_text(encoding="utf-8")
+            candidate = json.loads((root / "examples/alert-candidate.json").read_text(encoding="utf-8"))
+            page.write_text(source.replace(candidate["candidate_id"], "0" * 64, 1), encoding="utf-8")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("renderer-generated Slack sample is stale" in error for error in errors))
+
+    def test_canonical_fixture_change_makes_the_sample_stale(self):
+        directory, root = self.make_repository()
+        with directory:
+            candidate_path = root / "examples/alert-candidate.json"
+            candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+            candidate["announcement"]["title"] = "Changed canonical title"
+            candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("renderer-generated Slack sample is stale" in error for error in errors))
+
+    def test_slack_sample_refuses_a_source_outside_the_approved_hosts(self):
+        directory, root = self.make_repository()
+        with directory:
+            candidate_path = root / "examples/alert-candidate.json"
+            candidate = json.loads(candidate_path.read_text(encoding="utf-8"))
+            candidate["announcement"]["url"] = "https://example.invalid/unapproved"
+            candidate_path.write_text(json.dumps(candidate), encoding="utf-8")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("stored source URL failed the canonical HTTPS policy" in error for error in errors))
+
+    def test_generated_sample_markers_are_required(self):
+        directory, root = self.make_repository()
+        with directory:
+            page = root / "site/index.html"
+            source = page.read_text(encoding="utf-8").replace(slack_sample.START_MARKER, "", 1)
+            page.write_text(source, encoding="utf-8")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("one complete generated Slack sample marker pair" in error for error in errors))
+
+    def test_slack_sample_refuses_an_unsupported_block_shape(self):
+        payload = {"text": "fallback", "mrkdwn": False, "blocks": [{"type": "divider"}]}
+        with self.assertRaisesRegex(slack_sample.SampleGenerationError, "unsupported type"):
+            slack_sample.project_payload(payload)
+
+    def test_slack_sample_refuses_an_unsupported_text_field(self):
+        payload = {
+            "text": "fallback",
+            "mrkdwn": False,
+            "blocks": [
+                {
+                    "type": "section",
+                    "text": {"type": "plain_text", "text": "sample", "emoji": False, "verbatim": True},
+                }
+            ],
+        }
+        with self.assertRaisesRegex(slack_sample.SampleGenerationError, "exact supported plain_text shape"):
+            slack_sample.project_payload(payload)
+
+    def test_slack_sample_escapes_renderer_text(self):
+        payload = slack_sample.canonical_payload(ROOT)
+        mutated = copy.deepcopy(payload)
+        mutated["blocks"][1]["text"]["text"] = "<script>alert('sample')</script>"
+        projected = slack_sample.project_payload(mutated)
+        self.assertNotIn("<script>", projected)
+        self.assertIn("&lt;script&gt;", projected)
 
     def test_embedded_mermaid_must_match_committed_source(self):
         directory, root = self.make_repository()
