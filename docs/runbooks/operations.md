@@ -263,6 +263,10 @@ plan, plan digest, and bounded command output with the change record.
    terraform -chdir=infra/central output -json > build/central-outputs.json
    ```
 
+   `tests/fixtures/terraform-output.dev.json` is non-secret test data for the
+   local loader proof. It cannot replace a fresh output capture for preview or
+   apply.
+
 2. Record the exact published application package digest. Choose explicit
    second-precision UTC values for inventory generation and pointer promotion;
    the promotion value must follow the pointer version the preview reads.
@@ -272,7 +276,7 @@ plan, plan digest, and bounded command output with the change record.
    ```bash
    python3 scripts/publish_release.py preview \
      --deployment infra/central/deployment.yaml \
-     --config <reviewed-config.yaml> \
+     --config config/dev.yaml \
      --terraform-output build/central-outputs.json \
      --inventory build/inventory.json \
      --plan build/config-release-plan.json \
