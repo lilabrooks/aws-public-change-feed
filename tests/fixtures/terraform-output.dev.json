@@ -1,0 +1,17 @@
+{
+  "config_bucket_name": {
+    "sensitive": false,
+    "type": "string",
+    "value": "apcf-config-dev"
+  },
+  "release_prefix": {
+    "sensitive": false,
+    "type": "string",
+    "value": "apcf/releases/"
+  },
+  "source_state_table": {
+    "sensitive": false,
+    "type": "string",
+    "value": "apcf-source-state-dev"
+  }
+}

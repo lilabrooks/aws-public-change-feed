@@ -27,6 +27,7 @@ from aws_public_change_feed.releases import (  # noqa: E402
 )
 
 APPLICATION_VERSION = f"sha256:{'a' * 64}"
+DEV_GENERATED_AT = "2026-08-15T12:00:00Z"
 GENERATED_AT = "2026-08-15T16:00:00Z"
 PROMOTED_AT = "2026-08-15T16:01:00Z"
 LATER_PROMOTION = "2026-08-15T16:02:00Z"
@@ -117,29 +118,13 @@ class PublishReleaseTests(unittest.TestCase):
         self.inventory_path = self.root / "inventory.json"
         self.plan_path = self.root / "release-plan.json"
         self.deployment = yaml.safe_load((ROOT / "infra/central/deployment.yaml").read_text(encoding="utf-8"))
-        self.config = yaml.safe_load((ROOT / "examples/config.yaml").read_text(encoding="utf-8"))
-        self.config["environment_policies"] = {
-            "dev": {"feed_monitoring": "enabled", "profile": "standard-customer-stack"}
-        }
+        self.config = yaml.safe_load((ROOT / "config/dev.yaml").read_text(encoding="utf-8"))
         self._write_inputs()
 
     def _write_inputs(self) -> None:
         self.deployment_path.write_text(yaml.safe_dump(self.deployment, sort_keys=False), encoding="utf-8")
         self.config_path.write_text(yaml.safe_dump(self.config, sort_keys=False), encoding="utf-8")
-        outputs = {
-            "config_bucket_name": {
-                "sensitive": False,
-                "type": "string",
-                "value": self.deployment["config_bucket_name"],
-            },
-            "release_prefix": {
-                "sensitive": False,
-                "type": "string",
-                "value": f"{self.deployment['release_prefix']}/",
-            },
-            "source_state_table": {"sensitive": False, "type": "string", "value": "apcf-source-state-dev"},
-        }
-        self.terraform_output_path.write_text(json.dumps(outputs, sort_keys=True), encoding="utf-8")
+        self.terraform_output_path.write_bytes((ROOT / "tests/fixtures/terraform-output.dev.json").read_bytes())
 
     def preview(self, store: MemoryStore, *, promoted_at: str = PROMOTED_AT) -> tuple[dict, str]:
         plan, inventory_body = publisher.create_preview(
@@ -154,6 +139,75 @@ class PublishReleaseTests(unittest.TestCase):
         )
         digest = publisher.write_preview(self.plan_path, self.inventory_path, plan, inventory_body)
         return plan, digest
+
+    def _load_committed_dev_bundle(self, inventory_path: Path) -> publisher.LocalReleaseInputs:
+        return publisher.load_local_inputs(
+            deployment_path=ROOT / "infra/central/deployment.yaml",
+            config_path=ROOT / "config/dev.yaml",
+            terraform_output_path=ROOT / "tests/fixtures/terraform-output.dev.json",
+            inventory_path=inventory_path,
+            generated_at=DEV_GENERATED_AT,
+        )
+
+    def test_committed_dev_bundle_loads_with_exact_inventory_projection(self) -> None:
+        local = self._load_committed_dev_bundle(self.inventory_path)
+        deployment = yaml.safe_load((ROOT / "infra/central/deployment.yaml").read_text(encoding="utf-8"))
+        expected_inventory = {
+            "schema_version": 3,
+            "deployment_id": deployment["deployment_id"],
+            "generated_at": DEV_GENERATED_AT,
+            "deployment_region": deployment["deployment_region"],
+            "slack": deployment["slack"],
+            "environments": [
+                {
+                    "id": environment["id"],
+                    "customer": environment["customer"],
+                    "account_id": environment["account_id"],
+                    "regions": environment["regions"],
+                    "route_id": environment["route_id"],
+                }
+                for environment in deployment["environments"]
+            ],
+        }
+        expected_bytes = publisher.canonical_json(expected_inventory) + b"\n"
+        loaded_inventory = json.loads(local.inventory_body)
+
+        self.assertEqual(local.inventory_body, expected_bytes)
+        self.assertEqual(
+            hashlib.sha256(local.inventory_body).hexdigest(),
+            "72f2618adfb62aef51c89046d9951257b39db074cf1dfa35b7709294d8686c6a",
+        )
+        self.assertEqual(local.deployment_path, (ROOT / "infra/central/deployment.yaml").resolve())
+        self.assertEqual(local.config_path, (ROOT / "config/dev.yaml").resolve())
+        self.assertEqual(
+            local.terraform_output_path,
+            (ROOT / "tests/fixtures/terraform-output.dev.json").resolve(),
+        )
+        self.assertEqual(local.inventory_path, self.inventory_path.resolve())
+        self.assertEqual([environment["id"] for environment in loaded_inventory["environments"]], ["dev"])
+        self.assertEqual(list(loaded_inventory["slack"]["routes"]), ["dev-alerts"])
+        self.assertEqual(set(local.config["environment_policies"]), {"dev"})
+
+    def test_example_config_substitution_is_refused_while_examples_remain_valid(self) -> None:
+        self._load_committed_dev_bundle(self.inventory_path)
+
+        with self.assertRaises(publisher.ReleaseCommandError) as raised:
+            publisher.load_local_inputs(
+                deployment_path=ROOT / "infra/central/deployment.yaml",
+                config_path=ROOT / "examples/config.yaml",
+                terraform_output_path=ROOT / "tests/fixtures/terraform-output.dev.json",
+                inventory_path=self.inventory_path,
+                generated_at=DEV_GENERATED_AT,
+            )
+        self.assertEqual(raised.exception.status, "invalid_input")
+
+        validation = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/validate_config.py")],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(validation.returncode, 0, validation.stdout + validation.stderr)
 
     def test_inventory_is_the_exact_canonical_deployment_projection(self) -> None:
         inventory = publisher.generate_inventory(self.deployment, GENERATED_AT)
@@ -186,10 +240,7 @@ class PublishReleaseTests(unittest.TestCase):
         for mutation in ("missing_environment_field", "extra_deployment_field", "unknown_config_field"):
             with self.subTest(mutation=mutation):
                 deployment = yaml.safe_load((ROOT / "infra/central/deployment.yaml").read_text(encoding="utf-8"))
-                config = yaml.safe_load((ROOT / "examples/config.yaml").read_text(encoding="utf-8"))
-                config["environment_policies"] = {
-                    "dev": {"feed_monitoring": "enabled", "profile": "standard-customer-stack"}
-                }
+                config = yaml.safe_load((ROOT / "config/dev.yaml").read_text(encoding="utf-8"))
                 if mutation == "missing_environment_field":
                     del deployment["environments"][0]["route_id"]
                 elif mutation == "extra_deployment_field":
@@ -537,6 +588,8 @@ class PublishReleaseTests(unittest.TestCase):
         self.assertIn("release-publisher role", section)
         self.assertLess(section.index(init_command), section.index(output_command))
         self.assertLess(section.index(output_command), section.index(preview_command))
+        self.assertIn("--config config/dev.yaml", section)
+        self.assertIn("tests/fixtures/terraform-output.dev.json", section)
 
 
 class PublishReleaseMotoTests(unittest.TestCase):
@@ -545,33 +598,14 @@ class PublishReleaseMotoTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             deployment = yaml.safe_load((ROOT / "infra/central/deployment.yaml").read_text(encoding="utf-8"))
-            config = yaml.safe_load((ROOT / "examples/config.yaml").read_text(encoding="utf-8"))
-            config["environment_policies"] = {
-                "dev": {"feed_monitoring": "enabled", "profile": "standard-customer-stack"}
-            }
+            config = yaml.safe_load((ROOT / "config/dev.yaml").read_text(encoding="utf-8"))
             deployment_path = root / "deployment.yaml"
             config_path = root / "config.yaml"
             outputs_path = root / "terraform-output.json"
             inventory_path = root / "inventory.json"
             deployment_path.write_text(yaml.safe_dump(deployment, sort_keys=False), encoding="utf-8")
             config_path.write_text(yaml.safe_dump(config, sort_keys=False), encoding="utf-8")
-            outputs_path.write_text(
-                json.dumps(
-                    {
-                        "config_bucket_name": {
-                            "sensitive": False,
-                            "type": "string",
-                            "value": deployment["config_bucket_name"],
-                        },
-                        "release_prefix": {
-                            "sensitive": False,
-                            "type": "string",
-                            "value": f"{deployment['release_prefix']}/",
-                        },
-                    }
-                ),
-                encoding="utf-8",
-            )
+            outputs_path.write_bytes((ROOT / "tests/fixtures/terraform-output.dev.json").read_bytes())
             client = boto3.client("s3", region_name=deployment["deployment_region"])
             client.create_bucket(Bucket=deployment["config_bucket_name"])
             client.put_bucket_versioning(
