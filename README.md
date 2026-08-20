@@ -52,6 +52,13 @@ The applied Terraform foundation includes the config bucket, DynamoDB tables, FI
 4. Inspect the executable contracts in [`schemas/`](schemas/) and [`examples/`](examples/).
 5. Run `make evaluate-corpus` to score matching against [`corpus/`](corpus/).
 
+The evaluator and live-feed screener both select the reviewed
+[`config/dev.yaml`](config/dev.yaml) policy. Their Make recipes pass that path
+explicitly; direct script calls use it by default and accept another reviewed
+path with `--config`. Relative paths resolve from `--root`, and absolute paths
+are accepted. The files under [`examples/`](examples/) remain the independent
+executable contract bundle.
+
 ## Local validation
 
 Python 3.12 or newer is required.
@@ -73,7 +80,9 @@ make references-online
 make screen-feeds
 ```
 
-`screen-feeds` fetches the live feeds through the runtime acquisition path and reports every match, flagging any the corpus does not represent.
+`screen-feeds` loads feeds, services, and risk rules from `config/dev.yaml`,
+then fetches the live feeds through the runtime acquisition path and reports
+every match, flagging any the corpus does not represent.
 
 References verified: 2026-07-13.
 

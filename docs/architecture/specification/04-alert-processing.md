@@ -87,6 +87,13 @@ When two aliases refer to different services in the same item, evaluate each ser
 
 Every matcher change is evaluated against a versioned historical corpus containing positives, hard negatives, overlapping services, generic AWS prose, punctuation variants, Unicode, HTML, edits, and security guidance. Promotion records precision and recall per service and risk type plus the approved thresholds. [ADR-018](../../adr/018-corpus-evaluation-and-matching-thresholds.md) sets those thresholds and the corpus rules. The corpus lives in `corpus/announcements.json`, the thresholds in `corpus/thresholds.json`, and `scripts/evaluate_corpus.py` produces the promotion record.
 
+The corpus evaluator and live-feed screener load feeds, services, and risk
+rules from one selected policy path. Repository commands select
+`config/dev.yaml` explicitly; direct invocations default to that path relative
+to `--root` and may select another reviewed path with `--config`. Contract
+validation and isolated vectors continue to load the independent `examples/`
+bundle by their fixed fixture paths.
+
 ## Environment and route mapping
 
 For each matched service:

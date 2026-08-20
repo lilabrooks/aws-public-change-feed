@@ -32,27 +32,34 @@ from aws_public_change_feed.matching import (  # noqa: E402
 )
 from aws_public_change_feed.state import InMemoryFeedStateStore  # noqa: E402
 
-CONFIG_PATH = Path("examples/config.yaml")
+DEFAULT_CONFIG_PATH = Path("config/dev.yaml")
 DEPLOYMENT_PATH = Path("infra/central/deployment.yaml")
 CORPUS_PATH = Path("corpus/announcements.json")
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Screen live feeds against the configured matching rules.")
     parser.add_argument("--root", type=Path, default=ROOT, help="repository root")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="policy path, relative to --root unless absolute (default: config/dev.yaml)",
+    )
     parser.add_argument(
         "--fail-on-unlabeled",
         action="store_true",
         help="exit non-zero when a production match is not represented in the corpus",
     )
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     root = args.root.resolve()
 
-    with (root / CONFIG_PATH).open(encoding="utf-8") as handle:
+    config_path = args.config if args.config.is_absolute() else root / args.config
+    with config_path.open(encoding="utf-8") as handle:
         configuration = yaml.safe_load(handle)
     with (root / DEPLOYMENT_PATH).open(encoding="utf-8") as handle:
         deployment = yaml.safe_load(handle)

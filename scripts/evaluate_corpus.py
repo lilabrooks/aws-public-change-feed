@@ -25,7 +25,7 @@ from aws_public_change_feed.schema_formats import contract_format_checker  # noq
 
 CORPUS_PATH = Path("corpus/announcements.json")
 THRESHOLDS_PATH = Path("corpus/thresholds.json")
-CONFIG_PATH = Path("examples/config.yaml")
+DEFAULT_CONFIG_PATH = Path("config/dev.yaml")
 CORPUS_SCHEMA_PATH = Path("schemas/corpus.schema.json")
 THRESHOLDS_SCHEMA_PATH = Path("schemas/corpus-thresholds.schema.json")
 
@@ -59,15 +59,21 @@ def duplicate_ids(corpus_path: Path) -> list[str]:
     return duplicates
 
 
-def parse_args() -> argparse.Namespace:
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Evaluate matching against the labeled corpus.")
     parser.add_argument("--root", type=Path, default=ROOT, help="repository root")
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG_PATH,
+        help="policy path, relative to --root unless absolute (default: config/dev.yaml)",
+    )
     parser.add_argument("--json", action="store_true", help="emit the machine-readable summary")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
-def main() -> int:
-    args = parse_args()
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
     root = args.root.resolve()
 
     corpus_path = root / CORPUS_PATH
@@ -86,7 +92,8 @@ def main() -> int:
             print(issue, file=sys.stderr)
         return 1
 
-    with (root / CONFIG_PATH).open(encoding="utf-8") as handle:
+    config_path = args.config if args.config.is_absolute() else root / args.config
+    with config_path.open(encoding="utf-8") as handle:
         configuration = yaml.safe_load(handle)
 
     report = evaluate_corpus(

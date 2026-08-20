@@ -65,13 +65,13 @@ generate-slack-sample:
 	$(PYTHON) scripts/generate_slack_sample.py --write
 
 evaluate-corpus:
-	$(PYTHON) scripts/evaluate_corpus.py
+	$(PYTHON) scripts/evaluate_corpus.py --config config/dev.yaml
 
 references-online: validate-references
 	$(LYCHEE) .
 
 screen-feeds:
-	$(PYTHON) scripts/screen_feeds.py
+	$(PYTHON) scripts/screen_feeds.py --config config/dev.yaml
 
 # One recipe line keeps the absent-binary guard and Terraform loop in one shell.
 # Split across two lines Make runs two shells, so the loop would still run after

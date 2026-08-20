@@ -168,7 +168,10 @@ Historical corpus text has one legitimate production path:
 
 1. `_rss_items` in [`feedparse.py`](../src/aws_public_change_feed/feedparse.py) takes RSS `<description>`; `_atom_entries` takes Atom `<summary>` or `<content>`.
 2. `normalize_item` in [`announcements.py`](../src/aws_public_change_feed/announcements.py) sanitizes and truncates at the production limits.
-3. `make screen-feeds` reaches live text through that same `FeedWatcher`, in [`screen_feeds.py`](../scripts/screen_feeds.py).
+3. `make screen-feeds` loads feeds, services, and risk rules from the reviewed
+   [`config/dev.yaml`](../config/dev.yaml) policy, then reaches live text
+   through that same `FeedWatcher`, in
+   [`screen_feeds.py`](../scripts/screen_feeds.py).
 
 Text arriving any other way is a string the matcher never sees. This is not hypothetical: corpus text staged by a different code path once made reported precision and recall describe text the runtime never encounters.
 
@@ -203,8 +206,13 @@ Proposing a risk term from what the server tells you is the one path that touche
 1. Use the server to locate announcements of the change type, then follow the result URLs to read the announcements themselves. A `current_awareness` summary is a pointer, not a quotation: any phrase taken from it is a hypothesis about wording, and possibly the summarizer's wording rather than AWS's.
 2. Screen each candidate term against the live feeds with `make screen-feeds`, which fetches through the runtime acquisition path so the text screened is the text the matcher sees. Screening against anything else is what previously hid a false positive.
 3. Judge the term on true positives against false positives in that sample. A term with no true positive and any false positive is removed rather than patched with a `none` exclusion, because an exclusion only chases one phrase.
-4. Only then edit `examples/config.yaml`, recalculate the config hash, the derived `release_id`, and the release references in the three dependent fixtures.
-5. Rerun `make evaluate-corpus` and record the figures. Corpus recall after a term change is close to circular, since the terms were chosen to close those items.
+4. Only then edit `config/dev.yaml`. The files under `examples/` are an
+   independent contract fixture and change only when that fixture itself must
+   demonstrate a revised contract; any such fixture edit also recalculates its
+   config hash, derived `release_id`, and dependent release references.
+5. Rerun `make evaluate-corpus`, which explicitly selects `config/dev.yaml`,
+   and record the figures. Corpus recall after a term change is close to
+   circular, since the terms were chosen to close those items.
 
 The two measurements answer different questions and neither replaces the other. The production-normalized live screen is the independent check on immediate false-positive risk in the observed feed sample; it reports current matches and an unlabeled count, not a quality rate. The corpus report remains the controlled precision and recall measure. A quiet screen is evidence about the base rate in that window, not proof a term is safe.
 

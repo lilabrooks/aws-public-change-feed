@@ -87,6 +87,7 @@ Three differences between the hosts are deliberate:
 - `docs/adr/`: accepted architectural decisions.
 - `docs/runbooks/`: operational response procedures.
 - `schemas/`: machine-readable contracts.
+- `config/`: reviewed environment policy inputs, including the canonical dev policy.
 - `examples/`: canonical valid fixtures.
 - `scripts/`: local validators.
 - `tests/`: regression coverage.

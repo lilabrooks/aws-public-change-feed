@@ -1,8 +1,11 @@
+import io
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import replace
 from pathlib import Path
 
@@ -152,6 +155,10 @@ class EvaluationTests(unittest.TestCase):
 
 
 class CommittedCorpusTests(unittest.TestCase):
+    def test_evaluator_defaults_to_the_dev_policy_relative_to_root(self):
+        args = harness.parse_args([])
+        self.assertEqual(args.config, Path("config/dev.yaml"))
+
     def test_corpus_passes_its_schema(self):
         self.assertEqual(harness.validate_document(CORPUS_PATH, ROOT / "schemas/corpus.schema.json"), [])
 
@@ -212,8 +219,8 @@ class CommittedCorpusTests(unittest.TestCase):
         }
         self.assertEqual(required - categories, set())
 
-    def test_expected_services_and_risk_types_exist_in_the_configuration(self):
-        with (ROOT / "examples/config.yaml").open(encoding="utf-8") as handle:
+    def test_expected_services_and_risk_types_exist_in_the_selected_dev_policy(self):
+        with (ROOT / harness.DEFAULT_CONFIG_PATH).open(encoding="utf-8") as handle:
             configuration = yaml.safe_load(handle)
         service_ids = {service.id for service in load_services(configuration)}
         risk_types = {entry.risk_type for entry in load_risk_rules(configuration)}
@@ -231,6 +238,57 @@ class CommittedCorpusTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_an_explicit_root_relative_policy_controls_the_evaluation(self):
+        with (ROOT / "config/dev.yaml").open(encoding="utf-8") as handle:
+            configuration = yaml.safe_load(handle)
+        for service in configuration["services"].values():
+            service["aliases"] = ["service alias absent from the corpus"]
+
+        with tempfile.TemporaryDirectory() as directory:
+            selected_root = Path(directory)
+            shutil.copytree(ROOT / "corpus", selected_root / "corpus")
+            shutil.copytree(ROOT / "schemas", selected_root / "schemas")
+            selected = selected_root / "selected.yaml"
+            selected.write_text(yaml.safe_dump(configuration, sort_keys=False), encoding="utf-8")
+            relative = selected.relative_to(selected_root)
+            output = io.StringIO()
+            errors = io.StringIO()
+            with redirect_stdout(output), redirect_stderr(errors):
+                result = harness.main(["--root", str(selected_root), "--config", str(relative)])
+
+        self.assertEqual(result, 1)
+        self.assertIn("recall 0.000", output.getvalue())
+        self.assertIn("recall 0.000", errors.getvalue())
+
+
+class CommandPolicyTests(unittest.TestCase):
+    def test_make_recipes_select_the_dev_policy_explicitly(self):
+        lines = (ROOT / "Makefile").read_text(encoding="utf-8").splitlines()
+        expected = {
+            "evaluate-corpus:": "\t$(PYTHON) scripts/evaluate_corpus.py --config config/dev.yaml",
+            "screen-feeds:": "\t$(PYTHON) scripts/screen_feeds.py --config config/dev.yaml",
+        }
+        for target, recipe in expected.items():
+            with self.subTest(target=target):
+                position = lines.index(target)
+                self.assertEqual(lines[position + 1], recipe)
+
+    def test_readme_and_cli_help_document_both_config_path_forms(self):
+        text = (ROOT / "README.md").read_text(encoding="utf-8")
+        self.assertIn("Relative paths resolve from `--root`", text)
+        self.assertRegex(text, r"absolute paths\s+are accepted")
+        for script in ("scripts/evaluate_corpus.py", "scripts/screen_feeds.py"):
+            with self.subTest(script=script):
+                result = subprocess.run(
+                    [sys.executable, script, "--help"],
+                    cwd=ROOT,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("relative to --root unless absolute", result.stdout)
 
 
 class CorpusRejectionTests(unittest.TestCase):
