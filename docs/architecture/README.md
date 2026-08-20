@@ -72,6 +72,7 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 │   └── runbooks/                Operational procedures
 ├── infra/                       Terraform roots (bootstrap and central built)
 ├── schemas/                     JSON Schema contracts
+├── config/                      Reviewed environment policy inputs
 ├── examples/                    Canonical executable contract fixtures
 ├── corpus/                      Labeled announcements and approved thresholds
 ├── src/                         Python runtime packages

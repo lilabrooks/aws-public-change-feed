@@ -435,7 +435,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
               <li>Slack HTTP transport for incoming-webhook and bot-token modes, sharing feed acquisition&rsquo;s address validation and pinned TLS connection, reporting only observed facts, and proving its no-bytes-sent claim row by row against a truth table</li>
               <li>Credential readers for both accepted secret stores, Secrets Manager and SSM SecureString, requiring an encrypted parameter type, returning the stored value whole, and keeping it out of every message, repr, and log</li>
               <li>Permanent credential faults resolved terminally while transient store failures reschedule with a bounded delay, no Slack call, and no pacing advance</li>
-              <li>Live feed screening that flags any production match the corpus does not represent</li>
+              <li>Corpus evaluation and live feed screening that explicitly load the reviewed dev policy, with screening flagging any production match the corpus does not represent</li>
               <li>S3 release preconditions measured against the mock the publisher is tested on, including where that mock cannot stand in for S3</li>
               <li>Release publication and promotion reproducing the committed release from the contract bundle's own bytes</li>
               <li>A preview-first configuration-release command that generates the deployed inventory, checks captured Terraform outputs, validates the exact bundle, applies only an unchanged plan and pointer decision, and requires the runtime compatibility probe before completion</li>
