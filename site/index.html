@@ -437,6 +437,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
               <li>Permanent credential faults resolved terminally while transient store failures reschedule with a bounded delay, no Slack call, and no pacing advance</li>
               <li>Corpus evaluation and live feed screening that explicitly load the reviewed dev policy, with screening flagging any production match the corpus does not represent</li>
               <li>S3 release preconditions measured against the mock the publisher is tested on, including where that mock cannot stand in for S3</li>
+              <li>Source-level active-manifest absence detection through one exact-key, one-result S3 list probe after an ambiguous current read, with deployment proof retained for the next ledger</li>
               <li>Release publication and promotion reproducing the committed release from the contract bundle's own bytes</li>
               <li>A preview-first configuration-release command that generates the deployed inventory, checks captured Terraform outputs, validates the exact bundle, applies only an unchanged plan and pointer decision, and requires the runtime compatibility probe before completion</li>
               <li>Release loading that reads exact pinned versions, verifies hashes, validates the fetched bodies against their owned schemas, and binds internal versions to the pointer</li>

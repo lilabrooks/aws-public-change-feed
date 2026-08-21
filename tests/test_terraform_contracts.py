@@ -540,6 +540,30 @@ class TerraformContractTests(unittest.TestCase):
         heartbeat = heartbeat[: heartbeat.index("\nresource ", 1)]
         self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", heartbeat)
 
+    def test_publisher_and_watcher_list_only_the_active_manifest_key(self):
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        publisher = iam[iam.index('data "aws_iam_policy_document" "release_publisher"') :]
+        publisher = publisher[: publisher.index('\ndata "aws_iam_policy_document"', 1)]
+        watcher = iam[iam.index('data "aws_iam_policy_document" "feed_watcher"') :]
+        watcher = watcher[: watcher.index('\ndata "aws_iam_policy_document"', 1)]
+
+        for name, policy in (("publisher", publisher), ("watcher", watcher)):
+            with self.subTest(role=name):
+                start = policy.index('sid       = "ListActiveManifestKey"')
+                end = policy.index("\n  statement {", start)
+                statement = policy[start:end]
+                self.assertIn('actions   = ["s3:ListBucket"]', statement)
+                self.assertIn("resources = [aws_s3_bucket.config.arn]", statement)
+                self.assertIn('test     = "StringEquals"', statement)
+                self.assertIn('variable = "s3:prefix"', statement)
+                self.assertIn("values   = [local.active_versions_key]", statement)
+                self.assertIn('test     = "NumericLessThanEquals"', statement)
+                self.assertIn('variable = "s3:max-keys"', statement)
+                self.assertIn('values   = ["1"]', statement)
+                self.assertEqual(statement.count("s3:ListBucket"), 1)
+                self.assertEqual(policy.count('"s3:ListBucket"'), 1)
+                self.assertNotIn('"s3:ListBucketVersions"', policy)
+
     def test_worker_metric_names_match_the_operator_alarms(self):
         runtime = (ROOT / "src/aws_public_change_feed/slack_worker_runtime.py").read_text(encoding="utf-8")
         alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")

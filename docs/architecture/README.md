@@ -35,8 +35,12 @@ The [goal](../GOAL.md) defines the outcome and milestones. The [operations runbo
 - [ADR-020: Exact application-version gate for delivery](../adr/020-exact-application-version-gate-for-delivery.md)
 - [ADR-021: Audited replay of exact terminal delivery records](../adr/021-audited-terminal-record-replay.md)
 - [ADR-022: Preview-first application package retirement](../adr/022-preview-first-application-package-retirement.md)
+- [ADR-023: Scoped active-manifest absence detection (Proposed)](../adr/023-scoped-active-manifest-absence-detection.md)
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
+
+ADR-023 is Proposed. Its candidate source and proof can be reviewed while the
+repository owner decides whether to accept the trust-boundary change.
 
 ## Machine-readable architecture
 
@@ -68,7 +72,7 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 │   ├── architecture/
 │   │   ├── README.md            This index
 │   │   └── specification/       Normative requirements, in order
-│   ├── adr/                     Accepted decisions and superseded archive
+│   ├── adr/                     Decision records and superseded archive
 │   └── runbooks/                Operational procedures
 ├── infra/                       Terraform roots (bootstrap and central built)
 ├── schemas/                     JSON Schema contracts
