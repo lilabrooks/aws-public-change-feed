@@ -51,7 +51,7 @@ existence probe before it classifies the result. The probe calls
 Only an exact returned key proves existence. No exact match is
 `ObjectMissing`; an exact match preserves the original read denial. A failed
 or malformed probe remains a refusal. Reads by exact `versionId` never use
-this probe. [Proposed ADR-023](../../adr/023-scoped-active-manifest-absence-detection.md)
+this probe. [ADR-023](../../adr/023-scoped-active-manifest-absence-detection.md)
 records the trust-boundary choice.
 
 ### Configuration bucket layout

@@ -1,6 +1,6 @@
 # ADR-023: Scoped active-manifest absence detection
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-08-21
 - Owner: Lila Brooks
 - Relates to: [ADR-019](019-s3-preconditions-for-release-publication-and-promotion.md)
@@ -35,7 +35,7 @@ separate semantics and permissions.
 - Make failed or malformed provider results visible.
 - Keep deployment proof separate from source proof.
 
-## Proposed decision
+## Decision
 
 After `GetObject` returns HTTP 403 for an unversioned read, `S3ObjectStore`
 will issue one `ListObjectsV2` request against the same bucket with:
