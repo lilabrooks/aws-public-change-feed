@@ -92,11 +92,16 @@ exception attached for a chain walker to reach.
 - Create objects only under new release prefixes.
 - Read back exact versions, which needs `s3:GetObjectVersion`.
 - Conditionally update the active manifest key, which needs `s3:GetObject` for the precondition read alongside `s3:PutObject`.
+- Probe active-manifest absence after a current-read 403, which needs
+  `s3:ListBucket` on the configuration bucket with the complete manifest key
+  required as `s3:prefix` and `s3:max-keys` bounded to 1.
 - No Slack credential access.
 
 ### Feed watcher
 
 - Read the active manifest and exact release object versions, needing `s3:GetObject` for the pointer and `s3:GetObjectVersion` for the release objects.
+- Use the same exact-key, one-result `s3:ListBucket` probe for an ambiguous
+  current-pointer 403.
 - Read and conditionally update source state.
 - Put candidate and delivery records and response-run markers.
 - Write bounded raw snapshots under the designated prefix.

@@ -250,12 +250,41 @@ class S3ObjectStore:
         try:
             response = self._client.get_object(**arguments)
         except ClientError as error:
+            if version_id is None and self._status_of(error) == 403:
+                self._raise_current_read_outcome(key, error)
             raise self._translate(error) from error
         return StoredObject(
             body=response["Body"].read(),
             etag=str(response["ETag"]),
             version_id=str(response["VersionId"]),
         )
+
+    def _raise_current_read_outcome(self, key: str, read_error: Exception) -> None:
+        """Resolve an ambiguous current-object 403 with one exact-key probe."""
+
+        from botocore.exceptions import ClientError
+
+        try:
+            response = self._client.list_objects_v2(Bucket=self._bucket, Prefix=key, MaxKeys=1)
+        except ClientError as list_error:
+            raise list_error from read_error
+
+        if not isinstance(response, dict):
+            raise read_error
+        contents = response.get("Contents", [])
+        if not isinstance(contents, list) or len(contents) > 1:
+            raise read_error
+
+        exact_key_found = False
+        for item in contents:
+            if not isinstance(item, dict) or not isinstance(item.get("Key"), str):
+                raise read_error
+            if item["Key"] == key:
+                exact_key_found = True
+
+        if exact_key_found:
+            raise read_error
+        raise ObjectMissing(str(read_error)) from read_error
 
     def replace(self, key: str, body: bytes, *, if_match: str) -> str:
         from botocore.exceptions import ClientError

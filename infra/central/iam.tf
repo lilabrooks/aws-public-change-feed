@@ -58,6 +58,24 @@ resource "aws_iam_role" "recovery_reconciler" {
 
 data "aws_iam_policy_document" "release_publisher" {
   statement {
+    sid       = "ListActiveManifestKey"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.config.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:prefix"
+      values   = [local.active_versions_key]
+    }
+
+    condition {
+      test     = "NumericLessThanEquals"
+      variable = "s3:max-keys"
+      values   = ["1"]
+    }
+  }
+
+  statement {
     sid       = "ReadActiveManifest"
     actions   = ["s3:GetObject"]
     resources = ["${aws_s3_bucket.config.arn}/${local.active_versions_key}"]
@@ -111,6 +129,24 @@ data "aws_iam_policy_document" "application_artifact_retirement" {
 }
 
 data "aws_iam_policy_document" "feed_watcher" {
+  statement {
+    sid       = "ListActiveManifestKey"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.config.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:prefix"
+      values   = [local.active_versions_key]
+    }
+
+    condition {
+      test     = "NumericLessThanEquals"
+      variable = "s3:max-keys"
+      values   = ["1"]
+    }
+  }
+
   statement {
     sid       = "ReadActiveManifest"
     actions   = ["s3:GetObject"]

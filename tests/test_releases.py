@@ -29,6 +29,7 @@ from pathlib import Path
 
 import boto3
 import yaml
+from botocore.exceptions import ClientError
 from moto import mock_aws
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -76,6 +77,35 @@ def pointer_bytes(release_id, promoted_at=PROMOTED):
 def load_deployment():
     with (ROOT / "examples" / "deployment.yaml").open(encoding="utf-8") as handle:
         return yaml.safe_load(handle)
+
+
+def s3_error(status, code, operation="GetObject"):
+    return ClientError(
+        {
+            "Error": {"Code": code, "Message": code},
+            "ResponseMetadata": {"HTTPStatusCode": status},
+        },
+        operation,
+    )
+
+
+class ReadProbeClient:
+    def __init__(self, read_error, *, list_response=None, list_error=None):
+        self.read_error = read_error
+        self.list_response = list_response if list_response is not None else {}
+        self.list_error = list_error
+        self.get_calls = []
+        self.list_calls = []
+
+    def get_object(self, **arguments):
+        self.get_calls.append(arguments)
+        raise self.read_error
+
+    def list_objects_v2(self, **arguments):
+        self.list_calls.append(arguments)
+        if self.list_error is not None:
+            raise self.list_error
+        return self.list_response
 
 
 class RecordingStore:
@@ -266,6 +296,92 @@ class PublicationAgainstS3Tests(unittest.TestCase):
     def test_the_adapter_translates_a_missing_object(self):
         with self.assertRaises(ObjectMissing):
             self.store.read("never-written.json")
+
+
+class S3ReadClassificationTests(unittest.TestCase):
+    def store(self, client):
+        return S3ObjectStore(client, BUCKET)
+
+    def test_direct_404_is_missing_without_a_list_probe(self):
+        client = ReadProbeClient(s3_error(404, "NoSuchKey"))
+
+        with self.assertRaises(ObjectMissing):
+            self.store(client).read(POINTER)
+
+        self.assertEqual(client.list_calls, [])
+
+    def test_current_403_with_no_exact_key_is_missing(self):
+        client = ReadProbeClient(s3_error(403, "AccessDenied"), list_response={})
+
+        with self.assertRaises(ObjectMissing):
+            self.store(client).read(POINTER)
+
+        self.assertEqual(client.list_calls, [{"Bucket": BUCKET, "Prefix": POINTER, "MaxKeys": 1}])
+
+    def test_prefix_sibling_does_not_count_as_the_exact_key(self):
+        client = ReadProbeClient(
+            s3_error(403, "AccessDenied"),
+            list_response={"Contents": [{"Key": f"{POINTER}.backup"}]},
+        )
+
+        with self.assertRaises(ObjectMissing):
+            self.store(client).read(POINTER)
+
+    def test_visible_exact_key_preserves_the_get_denial(self):
+        denied = s3_error(403, "AccessDenied")
+        client = ReadProbeClient(denied, list_response={"Contents": [{"Key": POINTER}]})
+
+        with self.assertRaises(ClientError) as raised:
+            self.store(client).read(POINTER)
+
+        self.assertIs(raised.exception, denied)
+
+    def test_list_failure_is_reported_as_the_provider_failure(self):
+        list_error = s3_error(500, "InternalError", "ListObjectsV2")
+        client = ReadProbeClient(s3_error(403, "AccessDenied"), list_error=list_error)
+
+        with self.assertRaises(ClientError) as raised:
+            self.store(client).read(POINTER)
+
+        self.assertIs(raised.exception, list_error)
+
+    def test_malformed_list_response_preserves_the_get_denial(self):
+        variants: tuple[object, ...] = (
+            [],
+            {"Contents": {}},
+            {"Contents": [{}]},
+            {"Contents": [{"Key": 7}]},
+            {"Contents": [{"Key": POINTER}, {"Key": f"{POINTER}.backup"}]},
+        )
+        for response in variants:
+            with self.subTest(response=response):
+                denied = s3_error(403, "AccessDenied")
+                client = ReadProbeClient(denied, list_response=response)
+
+                with self.assertRaises(ClientError) as raised:
+                    self.store(client).read(POINTER)
+
+                self.assertIs(raised.exception, denied)
+
+    def test_versioned_403_preserves_the_denial_without_listing(self):
+        denied = s3_error(403, "AccessDenied")
+        client = ReadProbeClient(denied)
+
+        with self.assertRaises(ClientError) as raised:
+            self.store(client).read(POINTER, version_id="v1")
+
+        self.assertIs(raised.exception, denied)
+        self.assertEqual(client.list_calls, [])
+
+    def test_non_403_failure_preserves_the_error_without_listing(self):
+        failed = s3_error(500, "InternalError")
+        client = ReadProbeClient(failed)
+
+        with self.assertRaises(ClientError) as raised:
+            self.store(client).read(POINTER)
+
+        self.assertIs(raised.exception, failed)
+        self.assertEqual(client.list_calls, [])
 
 
 class InjectedOutcomeTests(unittest.TestCase):

@@ -20,7 +20,16 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - Given a first promotion into a deployment with no pointer, the write uses `If-None-Match: *`, and a `412` there sends the publisher back to the `If-Match` path.
 - Given `409` on promotion, the publisher re-reads the pointer and records convergence on the desired release rather than attributing the write to itself.
 - Given `404` on an `If-Match` promotion, publication stops and raises an operational alarm, and no automatic fallback to `If-None-Match` re-creates a deleted pointer.
+- Given 403 on an unversioned active-pointer read, the adapter lists with the
+  complete key as `Prefix` and `MaxKeys=1`; no exact key becomes
+  `ObjectMissing`, an exact key preserves the read denial, and a failed or
+  malformed probe remains a refusal.
+- Given a direct 404, a read with `versionId`, or a non-403 failure, the adapter
+  issues no list request and preserves the existing classification.
 - Given a read that supplies a `versionId`, the role holds `s3:GetObjectVersion`; a policy granting only `s3:GetObject` fails that read.
+- Given release-publisher and feed-watcher IAM, each list grant names only the
+  configuration bucket and requires the complete active-manifest prefix plus a
+  maximum result count of 1.
 - Given a rollback, the publisher reads the historical pointer version by ID and writes a new pointer carrying a fresh `promoted_at`, so the restored pointer never reproduces the ETag of the version it restores.
 - Given concurrent publishers promoting different releases, exactly one pointer version wins each compare-and-swap and the loser stops without overwriting.
 
@@ -218,7 +227,12 @@ Each step ends with executable evidence before the next layer treats it as a dep
 - Every delivery transition, queue duplicate, state-write failure after SQS acceptance, `429`, bounded retry, terminal error, timeout, worker crash, stale lease, DLQ, found-post reconciliation, unknown replay, and terminal replay.
 - Release hash mismatch, incompatible version, concurrent promotion, retained rollback, and expired terminal replacement.
 - Precondition responses for release publication: `412` on create with matching and mismatching hashes, `412` on a stale promotion ETag, `409` on promotion with the desired release both present and absent on re-read, `404` on `If-Match` against a missing pointer, and a first promotion through `If-None-Match: *`.
+- Current-pointer read variants: direct 404, 403 with no exact key, 403 with an
+  exact key, a prefix sibling, list failure, malformed list response,
+  versioned 403, and another provider status.
 - An IAM policy granting `s3:GetObject` but not `s3:GetObjectVersion`, to prove exact-version reads fail closed.
+- Publisher and watcher IAM variants with either exact-key list grant removed,
+  the prefix widened, the result bound removed, or the list action widened.
 
 ## Generation rules
 

@@ -239,7 +239,7 @@ not delivery requests. Never redrive it into the delivery FIFO queue.
 
 1. Identify the active manifest S3 version and the last known good immutable release.
 2. Verify object keys, object version IDs, hashes, schema versions, and application compatibility.
-3. Read the failure code before acting, because they mean different things. `412` means another publisher promoted first: stop, and record both release IDs rather than retrying. `409` leaves the outcome unknown: re-read the pointer and treat the release it names as the current state. `404` means the pointer is missing or carries a delete marker: stop and escalate, and never re-create it by switching to a create precondition.
+3. Read the failure code before acting, because they mean different things. `412` means another publisher promoted first: stop, and record both release IDs rather than retrying. `409` leaves the outcome unknown: re-read the pointer and treat the release it names as the current state. `404` means the pointer is missing or carries a delete marker: stop and escalate, and never re-create it by switching to a create precondition. A 403 on the preceding current-pointer read triggers one exact-key, one-result list probe. No exact key enters the first-promotion decision. An exact key, a failed probe, or a malformed response remains a refusal and requires a permission investigation.
 4. Promote the retained prior pointer version through the normal conditional process, writing it forward as a new document with a fresh `promoted_at` rather than republishing the historical bytes.
 5. Run a read-only load and shadow match probe.
 6. Confirm watcher, dispatcher, and worker can still load historical releases referenced by in-flight delivery records.

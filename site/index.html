@@ -360,7 +360,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <p class="compact-eyebrow">Why this architecture</p>
           <div>
             <h2 class="compact-section-title">The design follows the evidence and failure model.</h2>
-            <p class="compact-section-copy">Eighteen accepted ADRs govern the current architecture. ADR-017 narrowed an earlier design to public-feed intelligence and Slack delivery, removing account-scoped health, cost, and external-adapter paths from the product.</p>
+            <p class="compact-section-copy">Nineteen accepted ADRs govern the current architecture. ADR-017 narrowed an earlier design to public-feed intelligence and Slack delivery, removing account-scoped health, cost, and external-adapter paths from the product.</p>
           </div>
         </div>
 
@@ -412,7 +412,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <article class="evidence-panel">
             <h3>Available evidence</h3>
             <ul class="site-list">
-              <li>6 numbered specifications and 17 accepted ADRs</li>
+              <li>6 numbered specifications and 19 accepted ADRs</li>
               <li>6 strict schemas with one valid cross-file example bundle</li>
               <li>Deterministic matching scored against a labeled corpus of real and authored announcements</li>
               <li>Feed acquisition with host allowlisting, address validation, and DOCTYPE-refusing parsing</li>
@@ -437,6 +437,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
               <li>Permanent credential faults resolved terminally while transient store failures reschedule with a bounded delay, no Slack call, and no pacing advance</li>
               <li>Corpus evaluation and live feed screening that explicitly load the reviewed dev policy, with screening flagging any production match the corpus does not represent</li>
               <li>S3 release preconditions measured against the mock the publisher is tested on, including where that mock cannot stand in for S3</li>
+              <li>Source-level active-manifest absence detection through one exact-key, one-result S3 list probe after an ambiguous current read, with deployment proof retained for the next ledger</li>
               <li>Release publication and promotion reproducing the committed release from the contract bundle's own bytes</li>
               <li>A preview-first configuration-release command that generates the deployed inventory, checks captured Terraform outputs, validates the exact bundle, applies only an unchanged plan and pointer decision, and requires the runtime compatibility probe before completion</li>
               <li>Release loading that reads exact pinned versions, verifies hashes, validates the fetched bodies against their owned schemas, and binds internal versions to the pointer</li>

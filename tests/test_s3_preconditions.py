@@ -1,4 +1,4 @@
-"""Bind the S3 mock to the ADR-019 header contract.
+"""Bind the S3 mock to the ADR-019 and proposed ADR-023 S3 contracts.
 
 Milestone 2 writes a publisher against the preconditions ADR-019 specifies. The
 publisher will be tested against `moto`, so the mock is what the acceptance
@@ -6,15 +6,15 @@ tests actually measure. That makes mock fidelity load-bearing: a `moto` release
 that accepted a stale `If-Match`, or returned 412 where S3 returns 404, would
 turn every promotion test green while the contract was broken.
 
-So each test here names one ADR-019 clause and asserts what the mock does with
-it. This is the same shape as `test_identity.py`, which recomputes committed
-identities from the fixture rather than from the runtime: bind the thing under
-trust to the contract, never to itself.
+Each test names one contract clause and asserts what the mock does with it. This
+is the same shape as `test_identity.py`, which recomputes committed identities
+from the fixture rather than from the runtime: bind the thing under trust to
+the contract, never to itself.
 
-These tests exercise `moto` alone. No repository code is imported, because none
-exists yet -- that is the point. When the publisher lands it is tested against
-the behavior proven here, and if a dependency bump breaks one of these, the
-failure names the clause rather than surfacing as a confusing publisher error.
+These tests exercise `moto` alone. Adapter behavior lives in
+`test_releases.py`; this file measures the backend semantics that behavior
+depends on. A dependency change that alters one fails under the clause's name
+instead of surfacing later as a confusing publisher error.
 
 Two limits are recorded rather than worked around, because reading a passing
 suite as broader evidence than it is would be the worse failure: `moto` does
@@ -171,6 +171,18 @@ class S3PreconditionContractTests(unittest.TestCase):
         with self.assertRaises(ClientError) as raised:
             self.put(key, b'{"release":"r2"}', IfNoneMatch="*")
         self.assertEqual(error_of(raised), (412, "PreconditionFailed"))
+
+    def test_exact_key_sorts_before_a_prefix_sibling_in_a_one_key_probe(self):
+        """Proposed ADR-023: MaxKeys 1 can still distinguish the exact key."""
+
+        sibling = f"{POINTER}.backup"
+        self.put(sibling, b"sibling")
+        sibling_only = self.s3.list_objects_v2(Bucket=BUCKET, Prefix=POINTER, MaxKeys=1)
+        self.assertEqual([item["Key"] for item in sibling_only["Contents"]], [sibling])
+
+        self.put(POINTER, b"pointer")
+        with_exact = self.s3.list_objects_v2(Bucket=BUCKET, Prefix=POINTER, MaxKeys=1)
+        self.assertEqual([item["Key"] for item in with_exact["Contents"]], [POINTER])
 
     # --- Rollback --------------------------------------------------------
 
