@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.example.invalid/aws-public-change-feed/work-sequence.schema.json",
+  "title": "Repository work sequence",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "repository", "backlog_generation", "stages"],
+  "properties": {
+    "version": {"const": 1},
+    "repository": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$"
+    },
+    "backlog_generation": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "stages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/stage"}
+    }
+  },
+  "$defs": {
+    "stable_id": {
+      "type": "string",
+      "pattern": "^[A-Z][A-Z0-9]*(?:-[A-Z0-9]+)+$"
+    },
+    "stage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "github_milestone", "terminal_item", "sequence"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "github_milestone": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "terminal_item": {
+          "oneOf": [
+            {"$ref": "#/$defs/stable_id"},
+            {"type": "null"}
+          ]
+        },
+        "sequence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/stable_id"}
+        }
+      }
+    }
+  }
+}

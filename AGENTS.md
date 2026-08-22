@@ -48,6 +48,19 @@ Use “potentially relevant” for environment matches. Public announcements do 
 - Adding or removing a risk term reruns `make screen-feeds` when network is available, and every reported unlabeled match is either labeled into the corpus or traced to the rule that fired. A term with no true positive and any false positive is removed rather than excluded case by case.
 - Keep `docs/architecture/README.md` current when specification chapters or ADRs are added or renamed. It is the single index and the human reading order.
 
+## Work selection
+
+- When the user asks you to choose or continue the next repository backlog
+  item without naming one, run `make next-work` first. It audits the active
+  GitHub backlog, loads `.github/work-sequence.yaml`, and checks that governed
+  milestone assignments match the versioned sequence.
+- A `ready` result names the only item the sequence currently permits. A
+  `blocked` result is a stop condition; report its owner, trigger, or dependency
+  reason without skipping into a later stage. An explicitly named user task
+  remains the controlling scope.
+- The selector is read-only. Implementation authority and every GitHub, AWS,
+  Slack, publication, or merge mutation remain separate.
+
 ## Verification
 
 Use Python 3.12 or newer. Before handing off a change, run:
