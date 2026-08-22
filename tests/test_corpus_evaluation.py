@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 import shutil
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,7 @@ from aws_public_change_feed.corpus import (  # noqa: E402
 )
 from aws_public_change_feed.evaluation import Score, evaluate_corpus, format_report  # noqa: E402
 from aws_public_change_feed.matching import load_risk_rules, load_services, match_announcement  # noqa: E402
+from aws_public_change_feed.normalize import normalize_text  # noqa: E402
 
 CORPUS_PATH = ROOT / "corpus/announcements.json"
 THRESHOLDS_PATH = ROOT / "corpus/thresholds.json"
@@ -227,6 +229,18 @@ class CommittedCorpusTests(unittest.TestCase):
             match_announcement(entry.announcement, load_services(configuration), load_risk_rules(configuration)),
             (),
         )
+
+    def test_slack_summary_baseline_matches_current_corpus(self):
+        lengths = [len(normalize_text(entry.summary)) for entry in load_corpus(CORPUS_PATH)]
+        current_baseline = (
+            f"The current baseline is that {sum(length > 300 for length in lengths)} of {len(lengths)} labeled "
+            f"corpus summaries exceed 300 characters, compared with {sum(length > 1_200 for length in lengths)} "
+            f"at the former 1,200-character cap; the normalized median is "
+            f"{int(statistics.median(lengths)):,} and the maximum is {max(lengths):,}."
+        )
+        decision = (ROOT / "docs/adr/015-slack-rendering-rate-control-and-retry.md").read_text(encoding="utf-8")
+
+        self.assertIn(current_baseline, " ".join(decision.split()))
 
     def test_corpus_covers_the_categories_chapter_04_requires(self):
         categories = {entry.category for entry in load_corpus(CORPUS_PATH)}
