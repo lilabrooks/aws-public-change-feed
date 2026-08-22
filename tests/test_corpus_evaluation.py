@@ -1,3 +1,4 @@
+import hashlib
 import io
 import json
 import shutil
@@ -34,7 +35,7 @@ from aws_public_change_feed.corpus import (  # noqa: E402
     load_thresholds,
 )
 from aws_public_change_feed.evaluation import Score, evaluate_corpus, format_report  # noqa: E402
-from aws_public_change_feed.matching import load_risk_rules, load_services  # noqa: E402
+from aws_public_change_feed.matching import load_risk_rules, load_services, match_announcement  # noqa: E402
 
 CORPUS_PATH = ROOT / "corpus/announcements.json"
 THRESHOLDS_PATH = ROOT / "corpus/thresholds.json"
@@ -203,6 +204,29 @@ class CommittedCorpusTests(unittest.TestCase):
             with self.subTest(item=entry.id):
                 self.assertEqual(sanitize(entry.summary, MAX_SUMMARY_CHARACTERS), entry.summary)
                 self.assertEqual(sanitize(entry.title, MAX_TITLE_CHARACTERS), entry.title)
+
+    def test_lambda_microvms_regional_availability_is_not_security_guidance(self):
+        with (ROOT / harness.DEFAULT_CONFIG_PATH).open(encoding="utf-8") as handle:
+            configuration = yaml.safe_load(handle)
+        entry = next(
+            item for item in load_corpus(CORPUS_PATH) if item.id == "aws-lambda-microvms-regional-availability"
+        )
+
+        self.assertEqual(entry.provenance, "historical")
+        self.assertEqual(entry.category, "hard-negative")
+        self.assertEqual(entry.expected_matches, ())
+        self.assertEqual(
+            entry.canonical_url,
+            "https://aws.amazon.com/about-aws/whats-new/2026/08/lambda-microvms-5-additional-regions",
+        )
+        self.assertEqual(
+            hashlib.sha256(f"{entry.title}\0{entry.summary}".encode()).hexdigest(),
+            "aa2649e143fa1f6d94c4ceec85a27a8f72c80f661446e97a3d043d725546a7e4",
+        )
+        self.assertEqual(
+            match_announcement(entry.announcement, load_services(configuration), load_risk_rules(configuration)),
+            (),
+        )
 
     def test_corpus_covers_the_categories_chapter_04_requires(self):
         categories = {entry.category for entry in load_corpus(CORPUS_PATH)}

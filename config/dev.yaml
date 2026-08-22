@@ -144,7 +144,6 @@ risk_rules:
       - summary
     match:
       any:
-        - vulnerability
         - vulnerabilities
         - CVE
         - CVEs
