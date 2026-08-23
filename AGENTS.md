@@ -89,6 +89,16 @@ Three differences between the hosts are deliberate:
 - The AWS MCP server is declared twice, in `.mcp.json` for Claude Code and `.codex/config.toml` for Codex, because the hosts read different files and share no format. A change to one needs the same change to the other. Codex loads project configuration for trusted projects only, so trust the project if the server does not appear.
 - `.claude/settings.json` denies reading `.env` files and denies the server's four account-capable tools. Codex has no equivalent project setting, so those controls protect Claude Code sessions only. On Codex the tools are merely unusable while nobody authenticates, which is a weaker guarantee. Treat both as a convenience rather than an enforced boundary on either host, keep secrets out of the repository regardless, and do not authenticate the server.
 
+## Automatic governing-skill audit
+
+Automatic governing-skill audit: enabled
+Repository ID: `aws-public-change-feed`
+
+This opt-in authorizes the installed ledger skill to launch at most one
+read-only audit subagent per execution epoch under its automatic-audit decision
+contract. It grants no provider dispatch, external disclosure, repository or
+backlog mutation, AWS, Slack, or GitHub action, publication, or merge authority.
+
 ## Repository layout
 
 - `README.md`: human entry point and current status.
