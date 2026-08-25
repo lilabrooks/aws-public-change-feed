@@ -56,8 +56,8 @@ evidence.
 The 2026-08-14 owner review retains the 300-character Slack summary cap for
 production preflight. The renderer-built Slack sample remains separate L-10
 evidence and does not reopen this limit by itself. The current baseline is that
-28 of 45 labeled corpus summaries exceed 300 characters, compared with 15 at
-the former 1,200-character cap; the normalized median is 1,056 and the maximum
+30 of 47 labeled corpus summaries exceed 300 characters, compared with 17 at
+the former 1,200-character cap; the normalized median is 1,073 and the maximum
 is 1,770.
 
 Candidate changes include a distinct source-item URL bound or revised aggregate

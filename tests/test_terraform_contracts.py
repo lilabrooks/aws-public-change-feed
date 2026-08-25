@@ -34,7 +34,7 @@ class TerraformContractTests(unittest.TestCase):
             (file_name, match.group(1))
             for file_name, source in sorted(terraform_sources.items())
             for match in re.finditer(
-                r'(?m)^resource "aws_cloudwatch_metric_alarm" "([^"\n]+)" \{$',
+                r'(?m)^resource "aws_cloudwatch_metric_alarm" "([^"\n]+)" \{(?:[ \t]*(?://|#).*)?$',
                 source,
             )
         ]
@@ -834,7 +834,8 @@ class TerraformContractTests(unittest.TestCase):
         rollout = re.sub(r"\s+", " ", rollout)
 
         for required in (
-            "The repository does not yet supply executable feed, dispatch, or destination preflight commands.",
+            "`scripts/preflight_delivery.py preview` binds the reviewed dev deployment",
+            "`candidate_cap_exceeded` and stops before dispatch.",
             "`WatcherFaults`, only when the watcher runtime is enabled.",
             "`IncompleteRuns`, only when the watcher runtime is enabled.",
         ):
@@ -842,7 +843,9 @@ class TerraformContractTests(unittest.TestCase):
                 self.assertIn(required, specification)
 
         for required in (
-            "This repository does not yet supply those executable preflight commands",
+            "python3 scripts/preflight_delivery.py preview",
+            "--deployment infra/central/deployment.yaml",
+            "`no_positive_match` ends the attempt without extending the sample.",
             "paging from those alarms begins after step 7 enables the delivery cohort",
         ):
             with self.subTest(runbook=required):
@@ -864,6 +867,11 @@ resource "aws_cloudwatch_metric_alarm" "undocumented_delivery_gate" {
 """
         undocumented_worker_alarm = undocumented_watcher_alarm.replace(
             "local.watcher_trigger_enabled", "local.worker_trigger_enabled"
+        )
+        trailing_comment_alarm = undocumented_watcher_alarm.replace(
+            " {\n",
+            " { # formatted source comment\n",
+            1,
         )
         for_each_alarm = undocumented_watcher_alarm.replace(
             "count = local.watcher_trigger_enabled ? 1 : 0",
@@ -935,6 +943,7 @@ resource "aws_cloudwatch_metric_alarm" "undocumented_delivery_gate" {
         for name, sources, runbook_step in (
             ("new watcher alarm", sources_with_alarm(undocumented_watcher_alarm), step_6),
             ("new worker alarm", sources_with_alarm(undocumented_worker_alarm), step_6),
+            ("trailing declaration comment", sources_with_alarm(trailing_comment_alarm), step_6),
             ("for_each selector", sources_with_alarm(for_each_alarm), documented_gate_step),
             ("one-hop alias", sources_with_alarm(one_hop_alias_alarm), documented_gate_step),
             ("two-hop alias", sources_with_alarm(two_hop_alias_alarm), documented_gate_step),
