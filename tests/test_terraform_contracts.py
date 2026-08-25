@@ -25,6 +25,86 @@ class TerraformContractTests(unittest.TestCase):
         end = source.find("\nvariable ", start + 1)
         return source[start:] if end == -1 else source[start:end]
 
+    @staticmethod
+    def terraform_root_sources():
+        return {path.name: path.read_text(encoding="utf-8") for path in sorted((ROOT / "infra/central").glob("*.tf"))}
+
+    def assert_delivery_trigger_alarm_inventory_matches_runbook(self, terraform_sources, step_6):
+        alarm_declarations = [
+            (file_name, match.group(1))
+            for file_name, source in sorted(terraform_sources.items())
+            for match in re.finditer(
+                r'(?m)^resource "aws_cloudwatch_metric_alarm" "([^"\n]+)" \{$',
+                source,
+            )
+        ]
+        self.assertEqual(
+            {file_name for file_name, _ in alarm_declarations},
+            {"alarms.tf"},
+            msg="root CloudWatch alarm declarations must remain in alarms.tf",
+        )
+        alarm_names = [name for _, name in alarm_declarations]
+        self.assertEqual(
+            len(alarm_names),
+            len(set(alarm_names)),
+            msg="root CloudWatch alarm resource names must be unique",
+        )
+
+        alarms = terraform_sources["alarms.tf"]
+        delivery_count = re.compile(r"local\.(?:watcher|dispatcher|worker)_trigger_enabled \? 1 : 0")
+        delivery_trigger_alarms = set()
+        for name in alarm_names:
+            block = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", name)
+            cardinality_selectors = re.findall(r"(?m)^  (count|for_each)[ \t]*=[ \t]*(.*)$", block)
+            if not cardinality_selectors:
+                continue
+            if cardinality_selectors == [("count", "local.reconciler_trigger_enabled ? 1 : 0")]:
+                continue
+            if (
+                len(cardinality_selectors) == 1
+                and cardinality_selectors[0][0] == "count"
+                and delivery_count.fullmatch(cardinality_selectors[0][1])
+            ):
+                delivery_trigger_alarms.add(name)
+                continue
+            self.fail(f"root CloudWatch alarm {name} has an unclassified cardinality selector: {cardinality_selectors}")
+
+        documented_addresses = re.findall(r"`aws_cloudwatch_metric_alarm\.([a-z0-9_]+)`", step_6)
+        documented_pairs = re.findall(
+            r"`aws_cloudwatch_metric_alarm\.([a-z0-9_]+)` \(`(apcf-<deployment>-[a-z0-9-]+)`\)",
+            step_6,
+        )
+        self.assertEqual(
+            len(documented_pairs),
+            len(documented_addresses),
+            msg="runbook step 6 must pair every alarm address occurrence with a parseable CloudWatch name",
+        )
+        pair_addresses = [address for address, _ in documented_pairs]
+        self.assertEqual(
+            len(pair_addresses),
+            len(set(pair_addresses)),
+            msg="runbook step 6 must name every alarm address exactly once",
+        )
+        documented_alarms = dict(documented_pairs)
+        source_alarm_names = {}
+        for name in delivery_trigger_alarms:
+            block = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", name)
+            match = re.search(r'(?m)^[ \t]*alarm_name[ \t]*=[ \t]*"([^"]+)"$', block)
+            if match is None:
+                self.fail(f"delivery-gated alarm {name} must declare alarm_name")
+            source_alarm_names[name] = match.group(1).replace("${local.deployment_id}", "<deployment>")
+
+        self.assertEqual(
+            set(documented_alarms),
+            set(source_alarm_names),
+            msg="runbook step 6 must name exactly every delivery-gated alarm resource",
+        )
+        self.assertEqual(
+            documented_alarms,
+            source_alarm_names,
+            msg="runbook step 6 must pair every delivery-gated alarm with its CloudWatch name pattern",
+        )
+
     def assert_dimensionless_alarm(self, block):
         self.assertIsNone(
             re.search(r"(?m)^[ \t]*dimensions[ \t]*=", block),
@@ -198,6 +278,9 @@ class TerraformContractTests(unittest.TestCase):
             "maximum_batching_window_in_seconds = local.worker_batch_window_seconds",
             lambda_source,
         )
+        mapping = self.resource_block(lambda_source, "aws_lambda_event_source_mapping", "slack_worker")
+        self.assertIn("count = local.worker_runtime_enabled ? 1 : 0", mapping)
+        self.assertIn("enabled                            = local.worker_trigger_enabled", mapping)
         self.assertIn("maximum_concurrency = local.rate_control.worker_reserved_concurrency", lambda_source)
 
     def test_worker_uses_one_content_address_for_s3_version_and_runtime_gate(self):
@@ -282,6 +365,7 @@ class TerraformContractTests(unittest.TestCase):
         watcher_rule = lambda_source[lambda_source.index('resource "aws_cloudwatch_event_rule" "watcher"') :]
         watcher_rule = watcher_rule[: watcher_rule.index("\nresource ", 1)]
         self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", watcher_rule)
+        self.assertIn('state               = local.watcher_trigger_enabled ? "ENABLED" : "DISABLED"', watcher_rule)
 
     def test_watcher_schedule_transport_uses_exact_runtime_enablement_condition(self):
         lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
@@ -352,6 +436,12 @@ class TerraformContractTests(unittest.TestCase):
             with self.subTest(resource=name):
                 block = self.resource_block(lambda_source, resource_type, name)
                 self.assertIn("count = local.dispatcher_runtime_enabled ? 1 : 0", block)
+
+        dispatcher_rule = self.resource_block(lambda_source, "aws_cloudwatch_event_rule", "dispatcher")
+        self.assertIn(
+            'state               = local.dispatcher_trigger_enabled ? "ENABLED" : "DISABLED"',
+            dispatcher_rule,
+        )
 
         dispatcher = self.resource_block(lambda_source, "aws_lambda_function", "dispatcher")
         for required in (
@@ -506,18 +596,384 @@ class TerraformContractTests(unittest.TestCase):
                         normalized_output = re.sub(r"\s+", " ", output)
                         self.assertIn(expected_message, normalized_output)
 
-    def test_dispatcher_errors_and_heartbeat_share_runtime_enablement(self):
+    def test_runtime_trigger_gate_validations_execute_in_provider_free_plans(self):
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        selected_variables = "\n\n".join(
+            self.variable_block(variables, name)
+            for name in (
+                "worker_artifact_sha256",
+                "worker_artifact_version_id",
+                "watcher_artifact_sha256",
+                "watcher_artifact_version_id",
+                "dispatcher_artifact_sha256",
+                "dispatcher_artifact_version_id",
+                "reconciler_artifact_sha256",
+                "reconciler_artifact_version_id",
+                "delivery_triggers_enabled",
+                "reconciler_trigger_enabled",
+            )
+        )
+        digest = "a" * 64
+        delivery_artifacts = (
+            f"worker_artifact_sha256={digest}",
+            "worker_artifact_version_id=version-1",
+            f"watcher_artifact_sha256={digest}",
+            "watcher_artifact_version_id=version-1",
+            f"dispatcher_artifact_sha256={digest}",
+            "dispatcher_artifact_version_id=version-1",
+        )
+        cases = (
+            ("default off", (), None, 0, None, "delivery_gate = false"),
+            (
+                "delivery explicit null uses default off",
+                (),
+                "null-delivery.tfvars.json",
+                0,
+                None,
+                "delivery_gate = false",
+            ),
+            (
+                "delivery gate without artifacts",
+                ("delivery_triggers_enabled=true",),
+                None,
+                1,
+                "delivery_triggers_enabled requires complete worker, watcher, and dispatcher artifact pairs.",
+                None,
+            ),
+            (
+                "delivery gate with exact cohort",
+                (*delivery_artifacts, "delivery_triggers_enabled=true"),
+                None,
+                0,
+                None,
+                "delivery_gate = true",
+            ),
+            (
+                "delivery explicit null with exact cohort stays off",
+                delivery_artifacts,
+                "null-delivery.tfvars.json",
+                0,
+                None,
+                "delivery_gate = false",
+            ),
+            (
+                "reconciler gate without artifact",
+                ("reconciler_trigger_enabled=true",),
+                None,
+                1,
+                "reconciler_trigger_enabled requires a complete reconciler artifact pair.",
+                None,
+            ),
+            (
+                "reconciler gate with artifact",
+                (
+                    f"reconciler_artifact_sha256={digest}",
+                    "reconciler_artifact_version_id=version-1",
+                    "reconciler_trigger_enabled=true",
+                ),
+                None,
+                0,
+                None,
+                "reconciler_gate = true",
+            ),
+            (
+                "reconciler explicit null with artifact stays off",
+                (
+                    f"reconciler_artifact_sha256={digest}",
+                    "reconciler_artifact_version_id=version-1",
+                ),
+                "null-reconciler.tfvars.json",
+                0,
+                None,
+                "reconciler_gate = false",
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "main.tf").write_text(
+                f'{selected_variables}\n\noutput "delivery_gate" {{\n  value = var.delivery_triggers_enabled\n}}\n'
+                'output "reconciler_gate" {\n  value = var.reconciler_trigger_enabled\n}\n',
+                encoding="utf-8",
+            )
+            (root / "null-delivery.tfvars.json").write_text('{"delivery_triggers_enabled": null}\n', encoding="utf-8")
+            (root / "null-reconciler.tfvars.json").write_text(
+                '{"reconciler_trigger_enabled": null}\n', encoding="utf-8"
+            )
+            environment = {**os.environ, "CHECKPOINT_DISABLE": "1", "TF_IN_AUTOMATION": "1"}
+            initialized = subprocess.run(
+                ("terraform", "init", "-backend=false", "-input=false", "-no-color"),
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            self.assertEqual(
+                initialized.returncode,
+                0,
+                msg=f"provider-free terraform init failed:\n{initialized.stdout}\n{initialized.stderr}",
+            )
+
+            for name, values, var_file, expected_exit, expected_message, expected_output in cases:
+                with self.subTest(case=name):
+                    command = [
+                        "terraform",
+                        "plan",
+                        "-input=false",
+                        "-lock=false",
+                        "-refresh=false",
+                        "-no-color",
+                    ]
+                    command.extend(f"-var={value}" for value in values)
+                    if var_file is not None:
+                        command.append(f"-var-file={var_file}")
+                    result = subprocess.run(
+                        command,
+                        cwd=root,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        check=False,
+                    )
+                    output = f"{result.stdout}\n{result.stderr}"
+                    self.assertEqual(result.returncode, expected_exit, msg=output)
+                    if expected_message is not None:
+                        normalized_output = re.sub(r"\s+", " ", output)
+                        self.assertIn(expected_message, normalized_output)
+                    if expected_output is not None:
+                        normalized_output = re.sub(r"\s+", " ", output)
+                        self.assertIn(expected_output, normalized_output)
+
+    def test_runtime_trigger_states_are_separate_from_resource_deployment(self):
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
+        queue = (ROOT / "infra/central/sqs.tf").read_text(encoding="utf-8")
+        outputs = (ROOT / "infra/central/outputs.tf").read_text(encoding="utf-8")
+
+        for name in ("delivery_triggers_enabled", "reconciler_trigger_enabled"):
+            with self.subTest(variable=name):
+                block = self.variable_block(variables, name)
+                self.assertIn("type        = bool", block)
+                self.assertIn("default     = false", block)
+                self.assertIn("nullable    = false", block)
+
+        for runtime in ("watcher", "dispatcher", "worker"):
+            with self.subTest(delivery_trigger=runtime):
+                self.assertIn(
+                    f"{runtime}_trigger_enabled",
+                    locals_source,
+                )
+                self.assertIn(
+                    f"local.{runtime}_runtime_enabled && var.delivery_triggers_enabled",
+                    locals_source,
+                )
+        self.assertIn(
+            "reconciler_trigger_enabled        = local.reconciler_runtime_enabled && var.reconciler_trigger_enabled",
+            locals_source,
+        )
+
+        for runtime in ("watcher", "dispatcher"):
+            with self.subTest(schedule=runtime):
+                rule = self.resource_block(lambda_source, "aws_cloudwatch_event_rule", runtime)
+                self.assertIn(f"count = local.{runtime}_runtime_enabled ? 1 : 0", rule)
+                self.assertIn(
+                    f'state               = local.{runtime}_trigger_enabled ? "ENABLED" : "DISABLED"',
+                    rule,
+                )
+
+        reconciler_rule = self.resource_block(lambda_source, "aws_cloudwatch_event_rule", "reconciler")
+        self.assertNotIn("count =", reconciler_rule)
+        self.assertIn(
+            'state               = local.reconciler_trigger_enabled ? "ENABLED" : "DISABLED"',
+            reconciler_rule,
+        )
+        self.assertIn("for_each = local.watcher_runtime_enabled ? [1] : []", queue)
+        self.assertIn("for_each = local.dispatcher_runtime_enabled ? [1] : []", queue)
+
+        output = outputs[outputs.index('output "runtime_trigger_states"') :]
+        output = output[: output.index("\noutput ", 1)]
+        for runtime in ("watcher", "dispatcher", "worker", "reconciler"):
+            with self.subTest(output=runtime):
+                self.assertIn(f"{runtime}", output)
+                self.assertIn(f"local.{runtime}_trigger_enabled", output)
+
+        for alarm in (
+            "feed_watcher_errors",
+            "watcher_incomplete_runs",
+            "watcher_fault",
+            "feed_watcher_heartbeat",
+            "dispatcher_errors",
+            "dispatcher_heartbeat",
+            "reconciler_heartbeat",
+        ):
+            with self.subTest(alarm=alarm):
+                block = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", alarm)
+                runtime = "watcher" if alarm.startswith(("feed_watcher", "watcher_")) else alarm.split("_", 1)[0]
+                self.assertIn(f"count = local.{runtime}_trigger_enabled ? 1 : 0", block)
+
+        for alarm in ("delivery_queue_age", "delivery_dlq_depth", "worker_errors", "delivery_unknown"):
+            with self.subTest(always_observed_alarm=alarm):
+                block = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", alarm)
+                self.assertNotIn("count = local.", block)
+
+    def test_runtime_trigger_rollout_docs_expose_staging_limits(self):
+        specification = (ROOT / "docs/architecture/specification/05-security-and-operations.md").read_text(
+            encoding="utf-8"
+        )
+        runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
+        terraform_sources = self.terraform_root_sources()
+        specification = re.sub(r"\s+", " ", specification)
+        rollout = runbook[runbook.index("## Application package rollout and rollback") :]
+        rollout = rollout[: rollout.index("\n## Manual source replay")]
+        step_6 = rollout[rollout.index("\n6. ") : rollout.index("\n7. ")]
+        rollout = re.sub(r"\s+", " ", rollout)
+
+        for required in (
+            "The repository does not yet supply executable feed, dispatch, or destination preflight commands.",
+            "`WatcherFaults`, only when the watcher runtime is enabled.",
+            "`IncompleteRuns`, only when the watcher runtime is enabled.",
+        ):
+            with self.subTest(specification=required):
+                self.assertIn(required, specification)
+
+        for required in (
+            "This repository does not yet supply those executable preflight commands",
+            "paging from those alarms begins after step 7 enables the delivery cohort",
+        ):
+            with self.subTest(runbook=required):
+                self.assertIn(required, rollout)
+
+        self.assert_delivery_trigger_alarm_inventory_matches_runbook(terraform_sources, step_6)
+
+    def test_rollout_alarm_inventory_rejects_source_and_runbook_drift(self):
+        terraform_sources = self.terraform_root_sources()
+        alarms = terraform_sources["alarms.tf"]
+        runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
+        rollout = runbook[runbook.index("## Application package rollout and rollback") :]
+        step_6 = rollout[rollout.index("\n6. ") : rollout.index("\n7. ")]
+        undocumented_watcher_alarm = """
+resource "aws_cloudwatch_metric_alarm" "undocumented_delivery_gate" {
+  count = local.watcher_trigger_enabled ? 1 : 0
+  alarm_name = "apcf-${local.deployment_id}-undocumented-delivery-gate"
+}
+"""
+        undocumented_worker_alarm = undocumented_watcher_alarm.replace(
+            "local.watcher_trigger_enabled", "local.worker_trigger_enabled"
+        )
+        for_each_alarm = undocumented_watcher_alarm.replace(
+            "count = local.watcher_trigger_enabled ? 1 : 0",
+            'for_each = local.watcher_trigger_enabled ? toset(["1"]) : toset([])',
+        )
+        one_hop_alias_alarm = undocumented_watcher_alarm.replace(
+            "count = local.watcher_trigger_enabled ? 1 : 0",
+            "count = local.watcher_gate_alias ? 1 : 0",
+        )
+        two_hop_alias_alarm = undocumented_watcher_alarm.replace(
+            "count = local.watcher_trigger_enabled ? 1 : 0",
+            "count = local.watcher_gate_alias_2 ? 1 : 0",
+        )
+        direct_variable_alarm = undocumented_watcher_alarm.replace(
+            "count = local.watcher_trigger_enabled ? 1 : 0",
+            "count = var.delivery_triggers_enabled ? 1 : 0",
+        )
+        multiline_alarm = undocumented_watcher_alarm.replace(
+            "count = local.watcher_trigger_enabled ? 1 : 0",
+            "count = (\n    local.watcher_trigger_enabled ? 1 : 0\n  )",
+        )
+        inverted_count_alarm = undocumented_watcher_alarm.replace(
+            "count = local.watcher_trigger_enabled ? 1 : 0",
+            "count = local.watcher_trigger_enabled ? 0 : 1",
+        )
+        documented_gate_pair = (
+            "`aws_cloudwatch_metric_alarm.undocumented_delivery_gate` (`apcf-<deployment>-undocumented-delivery-gate`)"
+        )
+        documented_gate_step = f"{step_6} {documented_gate_pair}"
+        canonical_worker_sources = dict(terraform_sources)
+        canonical_worker_sources["alarms.tf"] = f"{alarms}\n{undocumented_worker_alarm}"
+        self.assert_delivery_trigger_alarm_inventory_matches_runbook(
+            canonical_worker_sources,
+            documented_gate_step,
+        )
+
+        stale_runbook = (
+            f"{step_6} `aws_cloudwatch_metric_alarm.documented_only_gate` (`apcf-<deployment>-documented-only-gate`)"
+        )
+        removed_alarm = step_6.replace(
+            "`aws_cloudwatch_metric_alarm.watcher_fault` (`apcf-<deployment>-watcher-fault`), ",
+            "",
+        )
+        wrong_cloudwatch_name = step_6.replace(
+            "`apcf-<deployment>-outbox-dispatcher-heartbeat`",
+            "`apcf-<deployment>-dispatcher-heartbeat`",
+        )
+        watcher_fault_pair = "`aws_cloudwatch_metric_alarm.watcher_fault` (`apcf-<deployment>-watcher-fault`)"
+        duplicate_runbook_entry = step_6.replace(
+            watcher_fault_pair,
+            "`aws_cloudwatch_metric_alarm.watcher_fault` (`apcf-<deployment>-wrong-watcher-fault`), "
+            f"{watcher_fault_pair}",
+        )
+        unparsed_runbook_pair = step_6.replace(
+            watcher_fault_pair,
+            "`aws_cloudwatch_metric_alarm.watcher_fault` (`apcf-<deployment>-WRONG-watcher-fault`), "
+            f"{watcher_fault_pair}",
+        )
+        reconciler_overdocumented = (
+            f"{step_6} `aws_cloudwatch_metric_alarm.reconciler_heartbeat` "
+            "(`apcf-<deployment>-recovery-reconciler-heartbeat`)"
+        )
+
+        def sources_with_alarm(alarm_source, file_name="alarms.tf"):
+            result = dict(terraform_sources)
+            result[file_name] = f"{result.get(file_name, '')}\n{alarm_source}"
+            return result
+
+        for name, sources, runbook_step in (
+            ("new watcher alarm", sources_with_alarm(undocumented_watcher_alarm), step_6),
+            ("new worker alarm", sources_with_alarm(undocumented_worker_alarm), step_6),
+            ("for_each selector", sources_with_alarm(for_each_alarm), documented_gate_step),
+            ("one-hop alias", sources_with_alarm(one_hop_alias_alarm), documented_gate_step),
+            ("two-hop alias", sources_with_alarm(two_hop_alias_alarm), documented_gate_step),
+            ("direct variable", sources_with_alarm(direct_variable_alarm), documented_gate_step),
+            ("multiline selector", sources_with_alarm(multiline_alarm), documented_gate_step),
+            ("inverted count", sources_with_alarm(inverted_count_alarm), documented_gate_step),
+            (
+                "alarm in a second root file",
+                sources_with_alarm(undocumented_watcher_alarm, "extra_alarms.tf"),
+                documented_gate_step,
+            ),
+            ("stale runbook entry", terraform_sources, stale_runbook),
+            ("removed runbook entry", terraform_sources, removed_alarm),
+            ("wrong CloudWatch name", terraform_sources, wrong_cloudwatch_name),
+            ("duplicate runbook entry", terraform_sources, duplicate_runbook_entry),
+            ("unparsed runbook pair", terraform_sources, unparsed_runbook_pair),
+            ("reconciler overdocumented", terraform_sources, reconciler_overdocumented),
+        ):
+            with (
+                self.subTest(variant=name),
+                self.assertRaisesRegex(
+                    AssertionError,
+                    "root CloudWatch alarm|runbook step 6",
+                ),
+            ):
+                self.assert_delivery_trigger_alarm_inventory_matches_runbook(sources, runbook_step)
+
+    def test_dispatcher_errors_and_heartbeat_follow_trigger_enablement(self):
         alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
         lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
-        condition = "count = local.dispatcher_runtime_enabled ? 1 : 0"
+        function = self.resource_block(lambda_source, "aws_lambda_function", "dispatcher")
+        self.assertIn("count = local.dispatcher_runtime_enabled ? 1 : 0", function)
 
-        for resource_type, source, name in (
-            ("aws_lambda_function", lambda_source, "dispatcher"),
-            ("aws_cloudwatch_metric_alarm", alarms, "dispatcher_errors"),
-            ("aws_cloudwatch_metric_alarm", alarms, "dispatcher_heartbeat"),
-        ):
+        for name in ("dispatcher_errors", "dispatcher_heartbeat"):
             with self.subTest(resource=name):
-                self.assertIn(condition, self.resource_block(source, resource_type, name))
+                self.assertIn(
+                    "count = local.dispatcher_trigger_enabled ? 1 : 0",
+                    self.resource_block(alarms, "aws_cloudwatch_metric_alarm", name),
+                )
 
         heartbeat = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "dispatcher_heartbeat")
         self.assertIn('metric_name         = "Heartbeat"', heartbeat)
@@ -538,7 +994,7 @@ class TerraformContractTests(unittest.TestCase):
         self.assertNotIn('"dynamodb:DeleteItem"', feed_policy)
         heartbeat = alarms[alarms.index('resource "aws_cloudwatch_metric_alarm" "feed_watcher_heartbeat"') :]
         heartbeat = heartbeat[: heartbeat.index("\nresource ", 1)]
-        self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", heartbeat)
+        self.assertIn("count = local.watcher_trigger_enabled ? 1 : 0", heartbeat)
 
     def test_publisher_and_watcher_list_only_the_active_manifest_key(self):
         iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
@@ -614,9 +1070,8 @@ class TerraformContractTests(unittest.TestCase):
         heartbeat = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "reconciler_heartbeat")
         reconciler = self.resource_block(lambda_source, "aws_lambda_function", "reconciler")
 
-        condition = "count = local.reconciler_runtime_enabled ? 1 : 0"
-        self.assertIn(condition, reconciler)
-        self.assertIn(condition, heartbeat)
+        self.assertIn("count = local.reconciler_runtime_enabled ? 1 : 0", reconciler)
+        self.assertIn("count = local.reconciler_trigger_enabled ? 1 : 0", heartbeat)
 
     def test_watcher_failure_alarms_match_the_accepted_paging_policy(self):
         alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
@@ -626,15 +1081,14 @@ class TerraformContractTests(unittest.TestCase):
         incomplete = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "watcher_incomplete_runs")
         fault = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", "watcher_fault")
 
-        condition = "count = local.watcher_runtime_enabled ? 1 : 0"
+        self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", watcher)
         for resource, block in (
-            ("watcher_lambda", watcher),
             ("watcher_errors", errors),
             ("watcher_incomplete_runs", incomplete),
             ("watcher_fault", fault),
         ):
             with self.subTest(resource=resource):
-                self.assertIn(condition, block)
+                self.assertIn("count = local.watcher_trigger_enabled ? 1 : 0", block)
 
         for block in (errors, incomplete):
             with self.subTest(alarm="sustained"):

@@ -75,6 +75,7 @@ locals {
   max_delivery_request_bytes         = 245760
   worker_visibility_seconds          = 6 * local.worker_timeout_seconds + local.worker_batch_window_seconds
   worker_runtime_enabled             = var.worker_artifact_sha256 != null && var.worker_artifact_version_id != null
+  worker_trigger_enabled             = local.worker_runtime_enabled && var.delivery_triggers_enabled
   worker_artifact_key                = var.worker_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.worker_artifact_sha256}.zip"
   application_version                = var.worker_artifact_sha256 == null ? null : "sha256:${var.worker_artifact_sha256}"
 
@@ -85,6 +86,7 @@ locals {
   watcher_maximum_retry_attempts = 2
   watcher_maximum_event_age      = 900
   watcher_runtime_enabled        = var.watcher_artifact_sha256 != null && var.watcher_artifact_version_id != null
+  watcher_trigger_enabled        = local.watcher_runtime_enabled && var.delivery_triggers_enabled
   watcher_artifact_key           = var.watcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.watcher_artifact_sha256}.zip"
   watcher_application_version    = var.watcher_artifact_sha256 == null ? null : "sha256:${var.watcher_artifact_sha256}"
 
@@ -94,6 +96,7 @@ locals {
   dispatcher_maximum_retry_attempts = 2
   dispatcher_maximum_event_age      = 300
   dispatcher_runtime_enabled        = var.dispatcher_artifact_sha256 != null && var.dispatcher_artifact_version_id != null
+  dispatcher_trigger_enabled        = local.dispatcher_runtime_enabled && var.delivery_triggers_enabled
   dispatcher_artifact_key           = var.dispatcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.dispatcher_artifact_sha256}.zip"
   dispatcher_application_version    = var.dispatcher_artifact_sha256 == null ? null : "sha256:${var.dispatcher_artifact_sha256}"
 
@@ -106,6 +109,7 @@ locals {
   reconciler_maximum_retry_attempts = 2
   reconciler_maximum_event_age      = 300
   reconciler_runtime_enabled        = var.reconciler_artifact_sha256 != null && var.reconciler_artifact_version_id != null
+  reconciler_trigger_enabled        = local.reconciler_runtime_enabled && var.reconciler_trigger_enabled
   reconciler_artifact_key           = var.reconciler_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.reconciler_artifact_sha256}.zip"
   reconciler_application_version    = var.reconciler_artifact_sha256 == null ? null : "sha256:${var.reconciler_artifact_sha256}"
 

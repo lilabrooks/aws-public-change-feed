@@ -95,7 +95,7 @@ resource "aws_cloudwatch_metric_alarm" "runtime_failure_queue_depth" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "feed_watcher_errors" {
-  count = local.watcher_runtime_enabled ? 1 : 0
+  count = local.watcher_trigger_enabled ? 1 : 0
 
   alarm_name          = "apcf-${local.deployment_id}-feed-watcher-errors"
   comparison_operator = "GreaterThanThreshold"
@@ -120,7 +120,7 @@ resource "aws_cloudwatch_metric_alarm" "feed_watcher_errors" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "watcher_incomplete_runs" {
-  count = local.watcher_runtime_enabled ? 1 : 0
+  count = local.watcher_trigger_enabled ? 1 : 0
 
   alarm_name          = "apcf-${local.deployment_id}-watcher-incomplete-runs"
   comparison_operator = "GreaterThanThreshold"
@@ -145,7 +145,7 @@ resource "aws_cloudwatch_metric_alarm" "watcher_incomplete_runs" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "watcher_fault" {
-  count = local.watcher_runtime_enabled ? 1 : 0
+  count = local.watcher_trigger_enabled ? 1 : 0
 
   alarm_name          = "apcf-${local.deployment_id}-watcher-fault"
   comparison_operator = "GreaterThanThreshold"
@@ -170,7 +170,7 @@ resource "aws_cloudwatch_metric_alarm" "watcher_fault" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "dispatcher_errors" {
-  count = local.dispatcher_runtime_enabled ? 1 : 0
+  count = local.dispatcher_trigger_enabled ? 1 : 0
 
   alarm_name          = "apcf-${local.deployment_id}-outbox-dispatcher-errors"
   comparison_operator = "GreaterThanThreshold"
@@ -194,7 +194,7 @@ resource "aws_cloudwatch_metric_alarm" "dispatcher_errors" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "dispatcher_heartbeat" {
-  count = local.dispatcher_runtime_enabled ? 1 : 0
+  count = local.dispatcher_trigger_enabled ? 1 : 0
 
   alarm_name          = "apcf-${local.deployment_id}-outbox-dispatcher-heartbeat"
   comparison_operator = "LessThanThreshold"
@@ -306,7 +306,7 @@ resource "aws_cloudwatch_metric_alarm" "delivery_write_throttles" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "feed_watcher_heartbeat" {
-  count = local.watcher_runtime_enabled ? 1 : 0
+  count = local.watcher_trigger_enabled ? 1 : 0
 
   alarm_name          = "apcf-${local.deployment_id}-feed-watcher-heartbeat"
   comparison_operator = "LessThanThreshold"
@@ -330,7 +330,7 @@ resource "aws_cloudwatch_metric_alarm" "feed_watcher_heartbeat" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "reconciler_heartbeat" {
-  count = local.reconciler_runtime_enabled ? 1 : 0
+  count = local.reconciler_trigger_enabled ? 1 : 0
 
   alarm_name          = "apcf-${local.deployment_id}-recovery-reconciler-heartbeat"
   comparison_operator = "LessThanThreshold"
