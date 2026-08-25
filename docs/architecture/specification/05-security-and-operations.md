@@ -311,8 +311,26 @@ single cohort. `reconciler_trigger_enabled` provides the same default-off
 boundary for the separately deployed recovery runtime. In this chapter,
 "runtime enabled" means its effective trigger state is true. An alarm expressly
 limited to an enabled runtime is absent during deployed-disabled staging.
-The repository does not yet supply executable feed, dispatch, or destination
-preflight commands. They remain a required rollout input assigned to L34-P2.
+`scripts/preflight_delivery.py preview` binds the reviewed dev deployment,
+configuration, applied Terraform outputs, expected AWS account, exact package
+digest, active release, disabled rules and queue mapping, Lambda identities and
+settings, Slack credential metadata, durable delivery state, and the queue's
+reported depth into a canonical plan. Preview never reads the credential value
+and never invokes a runtime. `apply` accepts that plan only with its exact
+SHA-256 and repeats the preview before making any runtime invocation.
+
+The apply path invokes one watcher pass while the schedules and mapping remain
+disabled. Zero matches records `no_positive_match` and ends the attempt without
+extending the feed sample. More matches than the reviewed cap records
+`candidate_cap_exceeded` and stops before dispatch. A bounded nonzero cohort is
+dispatched once; the command receives one real FIFO request from that cohort,
+validates it against the active release, directly invokes the deployed worker,
+and deletes only that exact receipt after a strongly consistent delivery read
+reports `posted`. The remaining real cohort stays queued behind the disabled
+mapping. Unknown invocation or deletion outcomes remain non-successful and are
+not retried automatically. A `posted` result still requires the operator to
+confirm the named Slack destination before the later trigger-enablement plan is
+eligible for review.
 
 The package builder uses a complete exact dependency lock and deterministic ZIP
 metadata. Publication conditionally creates

@@ -486,6 +486,36 @@
       "notes": "'Lambdas' must not satisfy the 'AWS Lambda' or 'Lambda function' aliases through a substring."
     },
     {
+      "id": "aws-aurora-postgresql-minor-cve-fixes",
+      "provenance": "historical",
+      "category": "security-guidance",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/08/amazon-aurora-postgresql-18-4-17-10-16-14-15-18-14-23/",
+      "title": "Amazon Aurora now supports PostgreSQL 18.4, 17.10, 16.14, 15.18, and 14.23",
+      "summary": "Amazon Aurora PostgreSQL-Compatible Edition now supports PostgreSQL versions 18.4, 17.10, 16.14, 15.18, and 14.23 which include bug fixes from the PostgreSQL community and Aurora-specific enhancements. We recommend upgrading to the latest minor versions to address known Common Vulnerabilities and Exposures (CVEs) and benefit from these improvements, as detailed in the release notes . You can upgrade your databases during scheduled maintenance windows using automatic minor version upgrades. To simplify operations at scale, enable automatic minor version upgrades and use the AWS Organizations Upgrade Rollout Policy to orchestrate multiple upgrades in phases, validating on lower-priority environments before upgrading your most critical ones. For more information, see Upgrading Amazon Aurora PostgreSQL DB clusters . Amazon Aurora is designed for high performance and availability at global scale with full PostgreSQL compatibility. It provides scale-to-zero serverless compute, Aurora Global Database for multi-Region resilience, Aurora I/O-Optimized for improved price performance on I/O-intensive workloads, and built-in security and continuous backups. To get started, take a look at our getting started page .",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "security"
+        }
+      ],
+      "notes": "Runtime-normalized live-feed item whose upgrade guidance explicitly addresses known CVEs."
+    },
+    {
+      "id": "aws-rds-mysql-8411-cve-fixes",
+      "provenance": "historical",
+      "category": "security-guidance",
+      "canonical_url": "https://aws.amazon.com/about-aws/whats-new/2026/08/amazon-rds-mysql-8411-available/",
+      "title": "Amazon RDS for MySQL now supports new minor version 8.4.11",
+      "summary": "Starting today, Amazon Relational Database Service (Amazon RDS) for MySQL supports MySQL minor version 8.4.11, the latest minor released by community MySQL. In addition to operational improvements, MySQL 8.4.11 introduces support for post-quantum TLS (PQ-TLS) key exchange, providing you with post-quantum cryptography options for encrypting your data in-transit. We recommend upgrading to the newer minor versions to accept fixes for CVEs in prior versions of MySQL and to benefit from bug fixes, performance improvements, and new functionality added by the MySQL community. Learn more about the enhancements in RDS for MySQL 8.4.11 in the Amazon RDS user guide and MySQL 8.4.11 release notes. You can leverage automatic minor version upgrades to automatically upgrade your databases to more recent minor versions during scheduled maintenance windows. You can also use Amazon RDS Managed Blue/Green deployments for safer and simpler updates to your MySQL instances. Learn more about upgrading your database instances, including automatic minor version upgrades and Blue/Green Deployments, in the Amazon RDS User Guide. Amazon RDS for MySQL makes it simple to set up, operate, and scale MySQL deployments in the cloud. Learn more about pricing details and regional availability at Amazon RDS for MySQL . Create or update a fully managed Amazon RDS for MySQL database in the Amazon RDS Management Console .",
+      "expected_matches": [
+        {
+          "service_id": "rds",
+          "risk_type": "security"
+        }
+      ],
+      "notes": "Runtime-normalized live-feed item whose upgrade guidance explicitly accepts fixes for prior CVEs."
+    },
+    {
       "id": "syn-overlapping-services",
       "provenance": "synthetic",
       "category": "overlapping-services",
