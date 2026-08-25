@@ -175,3 +175,33 @@ variable "reconciler_artifact_version_id" {
     error_message = "reconciler_artifact_version_id must be null or a nonempty S3 version ID."
   }
 }
+
+variable "delivery_triggers_enabled" {
+  description = "Whether the watcher and dispatcher schedules and Slack worker event-source mapping are enabled after deployment and preflight."
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition = !var.delivery_triggers_enabled || (
+      var.worker_artifact_sha256 != null && var.worker_artifact_version_id != null &&
+      var.watcher_artifact_sha256 != null && var.watcher_artifact_version_id != null &&
+      var.dispatcher_artifact_sha256 != null && var.dispatcher_artifact_version_id != null
+    )
+    error_message = "delivery_triggers_enabled requires complete worker, watcher, and dispatcher artifact pairs."
+  }
+}
+
+variable "reconciler_trigger_enabled" {
+  description = "Whether the recovery reconciler schedule is enabled after its separate deployment and preflight."
+  type        = bool
+  default     = false
+  nullable    = false
+
+  validation {
+    condition = !var.reconciler_trigger_enabled || (
+      var.reconciler_artifact_sha256 != null && var.reconciler_artifact_version_id != null
+    )
+    error_message = "reconciler_trigger_enabled requires a complete reconciler artifact pair."
+  }
+}

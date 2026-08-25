@@ -105,6 +105,16 @@ output "function_names" {
   value       = local.function_names
 }
 
+output "runtime_trigger_states" {
+  description = "Effective trigger state for each conditional runtime."
+  value = {
+    watcher    = local.watcher_trigger_enabled
+    dispatcher = local.dispatcher_trigger_enabled
+    worker     = local.worker_trigger_enabled
+    reconciler = local.reconciler_trigger_enabled
+  }
+}
+
 output "dashboard_name" {
   description = "CloudWatch operations dashboard name."
   value       = aws_cloudwatch_dashboard.operations.dashboard_name

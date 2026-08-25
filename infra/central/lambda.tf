@@ -52,7 +52,7 @@ resource "aws_cloudwatch_event_rule" "watcher" {
   name                = local.function_names.watcher
   description         = "Run the durable public-feed watcher every 15 minutes."
   schedule_expression = local.watcher_schedule_expression
-  state               = "ENABLED"
+  state               = local.watcher_trigger_enabled ? "ENABLED" : "DISABLED"
 
   tags = local.tags
 }
@@ -127,7 +127,7 @@ resource "aws_cloudwatch_event_rule" "dispatcher" {
   name                = local.function_names.dispatcher
   description         = "Run the durable outbox dispatcher every minute."
   schedule_expression = local.dispatcher_schedule_expression
-  state               = "ENABLED"
+  state               = local.dispatcher_trigger_enabled ? "ENABLED" : "DISABLED"
 
   tags = local.tags
 }
@@ -209,7 +209,7 @@ resource "aws_lambda_event_source_mapping" "slack_worker" {
   function_name                      = aws_lambda_function.slack_worker[0].arn
   batch_size                         = local.worker_batch_size
   maximum_batching_window_in_seconds = local.worker_batch_window_seconds
-  enabled                            = true
+  enabled                            = local.worker_trigger_enabled
 
   function_response_types = ["ReportBatchItemFailures"]
 
@@ -261,7 +261,7 @@ resource "aws_cloudwatch_event_rule" "reconciler" {
   name                = local.function_names.reconciler
   description         = "Run bounded delivery recovery every five minutes."
   schedule_expression = local.reconciler_schedule_expression
-  state               = local.reconciler_runtime_enabled ? "ENABLED" : "DISABLED"
+  state               = local.reconciler_trigger_enabled ? "ENABLED" : "DISABLED"
 
   tags = local.tags
 }

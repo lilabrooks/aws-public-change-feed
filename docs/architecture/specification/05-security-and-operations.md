@@ -247,9 +247,10 @@ Production alarms include:
 
 - Feed last success beyond its schedule-based threshold.
 - No watcher heartbeat.
-- One unexpected watcher fault, through function-scoped `WatcherFaults`.
+- One unexpected watcher fault, through function-scoped `WatcherFaults`, only
+  when the watcher runtime is enabled.
 - Watcher incompletion in two consecutive 15-minute CloudWatch periods, through
-  function-scoped `IncompleteRuns`.
+  function-scoped `IncompleteRuns`, only when the watcher runtime is enabled.
 - AWS/Lambda watcher errors in two consecutive 15-minute CloudWatch periods as
   a backstop, only while the watcher runtime is enabled. A period can include
   EventBridge retries and does not prove that a distinct scheduled event failed.
@@ -300,6 +301,18 @@ actionable work from the current package, record any remaining package versions,
 deploy the watcher, regular dispatcher, and worker roots with one identical
 digest and exact S3 object version, and then resume. The reconciler consumes the
 same package bytes through an independent artifact input pair.
+
+Terraform separates deployment from event-source activation. Artifact pairs
+create the Lambda functions and their trigger resources. The Boolean
+`delivery_triggers_enabled` stays `false` through configuration inspection and
+the feed, dispatch, and destination preflights; one later reviewed apply sets it
+to `true` for the watcher rule, dispatcher rule, and worker queue mapping as a
+single cohort. `reconciler_trigger_enabled` provides the same default-off
+boundary for the separately deployed recovery runtime. In this chapter,
+"runtime enabled" means its effective trigger state is true. An alarm expressly
+limited to an enabled runtime is absent during deployed-disabled staging.
+The repository does not yet supply executable feed, dispatch, or destination
+preflight commands. They remain a required rollout input assigned to L34-P2.
 
 The package builder uses a complete exact dependency lock and deterministic ZIP
 metadata. Publication conditionally creates
