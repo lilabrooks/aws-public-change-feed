@@ -1,0 +1,62 @@
+name: Repository security
+
+"on":
+  push:
+    branches:
+      - main
+  pull_request:
+  schedule:
+    - cron: "17 8 * * 1"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dependency-and-secret-scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Scan pinned Python manifests and tracked plaintext
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          trivy-config: trivy.yaml
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          version: v0.74.0
+          cache-dir: ${{ runner.temp }}/trivy-cache
+
+  terraform-report:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Source scanning is report-only because the classified baseline mixes
+      # accepted managed-encryption choices, deferred decisions, and hardening
+      # gaps. Scanner execution errors still fail this job.
+      - name: Report Terraform misconfiguration evidence
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: infra
+          trivy-config: trivy.yaml
+          scanners: misconfig
+          severity: LOW,MEDIUM,HIGH,CRITICAL
+          exit-code: "0"
+          version: v0.74.0
+          cache-dir: ${{ runner.temp }}/trivy-cache

@@ -1,0 +1,5 @@
+scan:
+  # Trivy recognizes requirements.txt by default. This reviewed pattern adds
+  # the other two pinned manifests without broadening arbitrary text into pip.
+  file-patterns:
+    - "pip:requirements-.*\\.txt"
