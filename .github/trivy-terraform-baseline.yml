@@ -1,0 +1,103 @@
+scanner:
+  version: "0.74.0"
+  observed_at: "2026-08-26"
+  observed_commit: 26ad4ae518311c80b5d540d71fb064bda5ed1ac5
+  check_bundle_digest: sha256:1583562f8b90ed2a071b99f0e5ffff6b57e4ceb6ca3e4796577b4e6a339eb74c
+
+totals:
+  findings: 19
+  severity:
+    HIGH: 6
+    MEDIUM: 2
+    LOW: 11
+
+# This inventory classifies the report-only source findings. It is not an
+# ignore list: all findings remain visible in every scheduled, main, and pull
+# request run.
+classifications:
+  - class: accepted_managed_encryption
+    status: accepted_by_architecture
+    finding_count: 12
+    rationale: >-
+      Chapter 05 permits or requires the managed encryption represented by
+      these resources: S3 AES256, DynamoDB AWS-owned encryption, the account
+      CloudWatch Logs baseline, the secret-store default, and SQS-managed
+      encryption. A customer-managed key is an explicit deployment-policy
+      choice, not the repository baseline.
+    findings:
+      - id: AWS-0132
+        count: 3
+        paths:
+          - infra/bootstrap/concurrency.tf
+          - infra/bootstrap/main.tf
+          - infra/central/s3.tf
+      - id: AWS-0025
+        count: 2
+        paths:
+          - infra/central/dynamodb.tf
+      - id: AWS-0017
+        count: 4
+        paths:
+          - infra/central/log_groups.tf
+      - id: AWS-0098
+        count: 1
+        paths:
+          - infra/central/secrets.tf
+      - id: AWS-0096
+        count: 2
+        paths:
+          - infra/central/sqs.tf
+
+  - class: preproduction_backup_decision
+    status: deferred_by_architecture
+    finding_count: 2
+    rationale: >-
+      Chapter 05 defers the DynamoDB point-in-time recovery decision until the
+      production candidate-history recovery objective is set. The deployment
+      input keeps the setting explicit and testable.
+    findings:
+      - id: AWS-0024
+        count: 2
+        paths:
+          - infra/central/dynamodb.tf
+
+  - class: scoped_test_identity
+    status: accepted_test_boundary
+    finding_count: 1
+    rationale: >-
+      ADR-019 owns this dedicated concurrency-test IAM user. Its inline policy
+      is limited to the test bucket, and access keys are created only for an
+      operator-run suite and deleted afterward.
+    findings:
+      - id: AWS-0143
+        count: 1
+        paths:
+          - infra/bootstrap/concurrency.tf
+
+  - class: unresolved_hardening
+    status: open
+    finding_count: 4
+    rationale: >-
+      S3 access logging and SNS topic encryption are not established by the
+      current architecture. This CI reports them without silently accepting,
+      suppressing, or expanding issue 129 into an infrastructure decision.
+    findings:
+      - id: AWS-0089
+        count: 3
+        paths:
+          - infra/bootstrap/concurrency.tf
+          - infra/bootstrap/main.tf
+          - infra/central/s3.tf
+      - id: AWS-0095
+        count: 1
+        paths:
+          - infra/central/sns.tf
+
+limitations:
+  - >-
+    Trivy evaluates Terraform source. It does not replace the runbook's
+    aws iam simulate-principal-policy check against every applied runtime role
+    and resource, including DynamoDB indexes.
+  - >-
+    Trivy does not inspect applied S3 lifecycle state. Runtime cutover still
+    requires aws s3api get-bucket-lifecycle-configuration.
