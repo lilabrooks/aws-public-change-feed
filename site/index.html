@@ -231,7 +231,7 @@
         </div>
 
         <aside class="site-note" aria-label="Contract evidence boundary">
-          <p><strong>Validated contracts are not production evidence.</strong> These checks prove the repository agrees with itself. Production claims still require implemented runtime code, deployment tests, measured feed quality, and live delivery evidence.</p>
+          <p><strong>Validated contracts are not production evidence.</strong> These checks prove the repository agrees with itself. The controlled D0 delivery below is separate live evidence; persistent operation still requires measured feed quality and operational tests.</p>
         </aside>
       </div>
     </section>
@@ -274,7 +274,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
         <!-- GENERATED_SLACK_SAMPLE_END -->
 
         <aside class="site-note" aria-label="Slack sample evidence boundary">
-          <p><strong>This is static contract evidence.</strong> It proves the canonical candidate fits the renderer and documents its message shape. Live Slack posting remains part of production preflight.</p>
+          <p><strong>This is static contract evidence.</strong> It proves the canonical candidate fits the renderer and documents its message shape. A separate controlled D0 run has now proved one matching real post through Slack and durable delivery state.</p>
         </aside>
       </div>
     </section>
@@ -403,8 +403,8 @@ Recommended review action: Review supported Kubernetes versions and plan require
         <div class="compact-section-head">
           <p class="compact-eyebrow">Evidence and status</p>
           <div>
-            <h2 class="compact-section-title">Repository contracts and dev central infrastructure are validated; runtime activation remains.</h2>
-            <p class="compact-section-copy">The current repository proves that its schemas, examples, semantic rules, deterministic identities, documentation, and applied dev central root agree with reviewed source. The exact Lambda package and first active dev configuration release are published and verified. Runtime activation, live runtime behavior, and Slack delivery remain unproved.</p>
+            <h2 class="compact-section-title">The first controlled real Slack delivery is proved; persistent operation remains.</h2>
+            <p class="compact-section-copy">The watcher, dispatcher, and worker are deployed with the exact Lambda package, and their automatic triggers remain disabled. One controlled real request reached Slack and durable <code>posted</code>; 11 exact requests remain queued for M1. The recovery reconciler remains undeployed. Persistent operation, recovery, load, and alarm proof remain open.</p>
           </div>
         </div>
 
@@ -444,8 +444,8 @@ Recommended review action: Review supported Kubernetes versions and plan require
               <li>Rollback that verifies a retained release before restoring it, with promotion times required to move forward so no later write can reproduce a retained version</li>
               <li>A recorded decision on where the release contract is measured, including the one property the mock contradicts and the suite that will cover it</li>
               <li>Terraform bootstrap and central roots reconciled in dev with native state locking, 1,800-second delivery visibility, the separate runtime-failure queue, one confirmed Terraform-owned operational subscription, the application-artifact retirement role, the current dashboard and alarms, and zero follow-up drift</li>
-              <li>Delivery triggers and their runtime-only alarms remain disabled during deployment and preflight, then activate as one watcher, dispatcher, and worker cohort.</li>
-              <li>A preview-first disabled-runtime command that binds the exact dev account, package, release, Lambda settings, route metadata, and candidate cap before one bounded public-feed delivery attempt.</li>
+              <li>The watcher, dispatcher, and worker deployed with one exact package while their schedules and FIFO event-source mapping remained disabled.</li>
+              <li>One bounded controller run dispatched 12 exact requests, posted one real public-feed candidate to Slack with durable <code>posted</code>, and left 11 durably <code>queued</code> for M1.</li>
               <li>Release-publisher write and exact-version read permissions checked against the deployed account, with object deletion still denied</li>
               <li>Semantic validation, deterministic identity vectors, and mutation tests</li>
               <li>Repository quality, page drift, link, Mermaid, and HTML checks</li>
@@ -457,8 +457,8 @@ Recommended review action: Review supported Kubernetes versions and plan require
               <li>Corpus coverage of end-of-support announcements from real feeds</li>
               <li>A controlled application-package retirement preview and, when naturally eligible packages exist, a separately authorized apply with retained-set verification</li>
               <li>Publisher-side retirement of superseded releases, which S3 lifecycle cannot express safely</li>
-              <li>Application-package publication and exact-version read-back, watcher, dispatcher, worker, and reconciler activation, plus controlled feed, dispatch, Slack, and recovery evidence</li>
-              <li>Feed, delivery, recovery, load, and security tests</li>
+              <li>Recovery-reconciler deployment and persistent watcher, dispatcher, worker, and reconciler operation</li>
+              <li>Delivery of the remaining queued cohort plus feed, recovery, load, alarm, and security evidence</li>
               <li>Production preflight and confirmed Slack destination checks</li>
             </ul>
           </article>
