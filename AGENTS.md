@@ -50,16 +50,10 @@ Use “potentially relevant” for environment matches. Public announcements do 
 
 ## Work selection
 
-- When the user asks you to choose or continue the next repository backlog
-  item without naming one, run `make next-work` first. It audits the active
-  GitHub backlog, loads `.github/work-sequence.yaml`, and checks that governed
-  milestone assignments match the versioned sequence.
-- A `ready` result names the only item the sequence currently permits. A
-  `blocked` result is a stop condition; report its owner, trigger, or dependency
-  reason without skipping into a later stage. An explicitly named user task
-  remains the controlling scope.
-- The selector is read-only. Implementation authority and every GitHub, AWS,
-  Slack, publication, or merge mutation remain separate.
+GitHub Issues and milestones are the repository backlog authority. When no
+issue is named, inspect the current milestone, open issues, stated
+dependencies, owner gates, and triggers. Recommend the next item and explain
+the choice. GitHub mutations require separate authority.
 
 ## Verification
 
@@ -88,16 +82,6 @@ Three differences between the hosts are deliberate:
 - `CLAUDE.md` also imports `docs/GOAL.md` and `docs/architecture/README.md` so Claude Code loads them automatically. Codex has no import mechanism, so it follows the read order above. Both hosts end up with the same material; only the loading differs.
 - The AWS MCP server is declared twice, in `.mcp.json` for Claude Code and `.codex/config.toml` for Codex, because the hosts read different files and share no format. A change to one needs the same change to the other. Codex loads project configuration for trusted projects only, so trust the project if the server does not appear.
 - `.claude/settings.json` denies reading `.env` files and denies the server's four account-capable tools. Codex has no equivalent project setting, so those controls protect Claude Code sessions only. On Codex the tools are merely unusable while nobody authenticates, which is a weaker guarantee. Treat both as a convenience rather than an enforced boundary on either host, keep secrets out of the repository regardless, and do not authenticate the server.
-
-## Automatic governing-skill audit
-
-Automatic governing-skill audit: enabled
-Repository ID: `aws-public-change-feed`
-
-This opt-in authorizes the installed ledger skill to launch at most one
-read-only audit subagent per execution epoch under its automatic-audit decision
-contract. It grants no provider dispatch, external disclosure, repository or
-backlog mutation, AWS, Slack, or GitHub action, publication, or merge authority.
 
 ## Repository layout
 
