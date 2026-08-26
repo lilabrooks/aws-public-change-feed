@@ -2,14 +2,14 @@ PYTHON ?= python3
 LYCHEE ?= lychee
 PYTHON_PATHS := scripts tests $(wildcard src)
 MYPY_PATHS := $(PYTHON_PATHS)
-YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml .github/work-sequence.yaml $(wildcard .github/workflows)
+YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml $(wildcard .github/workflows)
 TERRAFORM ?= terraform
 REQUIRE_TERRAFORM ?= 0
 TERRAFORM_ROOTS := infra/bootstrap infra/central
 
 .PHONY: help install format format-check lint lint-python lint-yaml typecheck validate validate-config \
 	validate-references validate-site generate-slack-sample evaluate-corpus references-online screen-feeds terraform-check \
-	next-work test whitespace check clean
+	test whitespace check clean
 
 help:
 	@echo "Available targets:"
@@ -23,7 +23,6 @@ help:
 	@echo "  evaluate-corpus    Score matching against the labeled corpus and approved thresholds"
 	@echo "  references-online  Check external links with Lychee (requires network)"
 	@echo "  screen-feeds       Screen live feeds against the rules (requires network)"
-	@echo "  next-work         Select the next governed GitHub backlog item without mutation"
 	@echo "  terraform-check    Format-check and validate Terraform roots (REQUIRE_TERRAFORM=1 fails if absent)"
 	@echo "  test          Run the unittest suite"
 	@echo "  whitespace    Check changed files for Git whitespace errors"
@@ -73,9 +72,6 @@ references-online: validate-references
 
 screen-feeds:
 	$(PYTHON) scripts/screen_feeds.py --config config/dev.yaml
-
-next-work:
-	$(PYTHON) scripts/select_next_work.py
 
 # One recipe line keeps the absent-binary guard and Terraform loop in one shell.
 # Split across two lines Make runs two shells, so the loop would still run after
