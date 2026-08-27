@@ -350,6 +350,11 @@ Recommended review action: Review supported Kubernetes versions and plan require
             <h3 class="compact-card-title">Order, pace, and recover Slack work</h3>
             <p>SQS FIFO groups work by destination. The worker records posted, retryable, terminal, or unknown outcomes. An operator can close a <code>delivery_unknown</code> record as posted after finding the Slack message, reserve one audited retry after finding no post, or reserve one exact-request replay after correcting an ADR-021 allowlisted terminal condition. Terminal replay preserves the historical attempt count and exact release, refuses expired or immutable failures, and uses the existing paced dispatch path. A separate five-minute reconciler repairs bounded safe work, converts exact expired leases to unknown, and reports stale queued records without guessing that SQS lost them.</p>
           </article>
+          <article class="compact-card">
+            <span class="compact-tag">05 · Exercise</span>
+            <h3 class="compact-card-title">Isolate live recovery and load proof</h3>
+            <p>ADR-024 adds a disposable preflight state, private Slack destination, fixed 50-message protocol, preview-bound evidence, and exact teardown guards without placing synthetic records in persistent dev.</p>
+          </article>
         </div>
       </div>
     </section>
