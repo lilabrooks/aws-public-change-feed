@@ -356,6 +356,107 @@ class FixedLoadProtocolTests(unittest.TestCase):
         self.assertEqual(result["classification"], "incomplete")
 
 
+class LogEvidenceTests(unittest.TestCase):
+    def test_event_search_does_not_depend_on_eventually_consistent_stream_timestamps(self):
+        start = AS_OF
+        end = AS_OF + timedelta(minutes=15)
+        start_ms = int(start.timestamp() * 1000)
+        dispatcher_timestamp = start_ms + 60_000
+        worker_timestamp = start_ms + 120_000
+        logs = Mock()
+        logs.filter_log_events.side_effect = [
+            {"events": [], "nextToken": "dispatcher-page-2"},
+            {
+                "events": [
+                    {
+                        "logStreamName": "dispatcher-stream",
+                        "timestamp": dispatcher_timestamp,
+                        "ingestionTime": dispatcher_timestamp + 100,
+                        "message": "discarded dispatcher body",
+                    }
+                ]
+            },
+            {
+                "events": [
+                    {
+                        "logStreamName": "worker-stream",
+                        "timestamp": worker_timestamp,
+                        "ingestionTime": worker_timestamp + 100,
+                        "message": "discarded worker body",
+                    }
+                ]
+            },
+        ]
+        clients = SimpleNamespace(logs=logs)
+        plan = {
+            "runtime": {
+                "functions": {
+                    "dispatcher": {"name": "apcf-preflight-outbox-dispatcher"},
+                    "worker": {"name": "apcf-preflight-slack-worker"},
+                }
+            }
+        }
+
+        evidence = exercise._log_evidence(clients, plan, start, end)
+
+        self.assertEqual(
+            evidence["dispatcher"]["active_streams"],
+            [
+                {
+                    "name": "dispatcher-stream",
+                    "event_timestamp": dispatcher_timestamp,
+                    "ingestion_timestamp": dispatcher_timestamp + 100,
+                }
+            ],
+        )
+        self.assertEqual(evidence["dispatcher"]["pages_examined"], 2)
+        self.assertEqual(evidence["worker"]["active_streams"][0]["name"], "worker-stream")
+        self.assertNotIn("message", evidence["worker"]["active_streams"][0])
+        logs.describe_log_streams.assert_not_called()
+        self.assertEqual(logs.filter_log_events.call_count, 3)
+        self.assertEqual(
+            logs.filter_log_events.call_args_list[0].kwargs,
+            {
+                "logGroupName": "/aws/lambda/apcf-preflight-outbox-dispatcher",
+                "startTime": start_ms,
+                "endTime": int(end.timestamp() * 1000),
+                "limit": 1,
+            },
+        )
+        self.assertEqual(
+            logs.filter_log_events.call_args_list[1].kwargs["nextToken"],
+            "dispatcher-page-2",
+        )
+
+    def test_event_search_stops_at_the_fixed_page_bound(self):
+        logs = Mock()
+        page = [0]
+
+        def empty_page(**kwargs):
+            del kwargs
+            page[0] += 1
+            return {"events": [], "nextToken": f"page-{page[0]}"}
+
+        logs.filter_log_events.side_effect = empty_page
+        clients = SimpleNamespace(logs=logs)
+        plan = {
+            "runtime": {
+                "functions": {
+                    "dispatcher": {"name": "apcf-preflight-outbox-dispatcher"},
+                    "worker": {"name": "apcf-preflight-slack-worker"},
+                }
+            }
+        }
+
+        evidence = exercise._log_evidence(clients, plan, AS_OF, AS_OF + timedelta(minutes=15))
+
+        self.assertEqual(logs.filter_log_events.call_count, 2 * exercise.LOG_EVIDENCE_MAX_PAGES)
+        for runtime in ("dispatcher", "worker"):
+            self.assertEqual(evidence[runtime]["active_streams"], [])
+            self.assertTrue(evidence[runtime]["inventory_truncated"])
+            self.assertEqual(evidence[runtime]["pages_examined"], exercise.LOG_EVIDENCE_MAX_PAGES)
+
+
 class TeardownGuardTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()

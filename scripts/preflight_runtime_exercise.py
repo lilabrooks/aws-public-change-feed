@@ -59,6 +59,8 @@ LOAD_MINUTES = 10
 LOAD_TOTAL = LOAD_PER_MINUTE * LOAD_MINUTES
 LOAD_DRAIN_SECONDS = 300
 RECOVERY_TOTAL = 2
+LOG_EVIDENCE_PAGE_LIMIT = 1
+LOG_EVIDENCE_MAX_PAGES = 10
 QUEUE_ATTRIBUTES = (
     "ApproximateNumberOfMessages",
     "ApproximateNumberOfMessagesNotVisible",
@@ -960,28 +962,65 @@ def _log_evidence(clients: AwsClients, plan: Mapping[str, Any], start: datetime,
     end_ms = int(end.timestamp() * 1000)
     for runtime in ("dispatcher", "worker"):
         function = plan["runtime"]["functions"][runtime]["name"]
-        response = clients.logs.describe_log_streams(
-            logGroupName=f"/aws/lambda/{function}",
-            orderBy="LastEventTime",
-            descending=True,
-            limit=50,
-        )
-        streams = response.get("logStreams")
-        if not isinstance(streams, list):
-            raise ExerciseError("evidence_incomplete", f"{runtime} log stream inventory is malformed")
-        active = [
-            {
-                "name": stream.get("logStreamName"),
-                "first_event_timestamp": stream.get("firstEventTimestamp"),
-                "last_event_timestamp": stream.get("lastEventTimestamp"),
+        log_group = f"/aws/lambda/{function}"
+        next_token = None
+        active = []
+        inventory_truncated = False
+        pages_examined = 0
+        for _ in range(LOG_EVIDENCE_MAX_PAGES):
+            arguments: dict[str, Any] = {
+                "logGroupName": log_group,
+                "startTime": start_ms,
+                "endTime": end_ms,
+                "limit": LOG_EVIDENCE_PAGE_LIMIT,
             }
-            for stream in streams
-            if isinstance(stream.get("lastEventTimestamp"), int) and start_ms <= stream["lastEventTimestamp"] <= end_ms
-        ]
+            if next_token is not None:
+                arguments["nextToken"] = next_token
+            response = clients.logs.filter_log_events(**arguments)
+            pages_examined += 1
+            events = response.get("events")
+            if not isinstance(events, list):
+                raise ExerciseError("evidence_incomplete", f"{runtime} log event search is malformed")
+            if events:
+                event = events[0]
+                if not isinstance(event, Mapping):
+                    raise ExerciseError("evidence_incomplete", f"{runtime} log event is malformed")
+                name = event.get("logStreamName")
+                timestamp = event.get("timestamp")
+                ingestion_time = event.get("ingestionTime")
+                if (
+                    not isinstance(name, str)
+                    or not name
+                    or "\n" in name
+                    or "\r" in name
+                    or not isinstance(timestamp, int)
+                    or not start_ms <= timestamp <= end_ms
+                    or not isinstance(ingestion_time, int)
+                ):
+                    raise ExerciseError("evidence_incomplete", f"{runtime} log event fields are malformed")
+                active.append(
+                    {
+                        "name": name,
+                        "event_timestamp": timestamp,
+                        "ingestion_timestamp": ingestion_time,
+                    }
+                )
+                inventory_truncated = isinstance(response.get("nextToken"), str)
+                break
+            returned_token = response.get("nextToken")
+            if returned_token is None:
+                break
+            if not isinstance(returned_token, str) or not returned_token or returned_token == next_token:
+                inventory_truncated = True
+                break
+            next_token = returned_token
+        else:
+            inventory_truncated = True
         evidence[runtime] = {
-            "log_group": f"/aws/lambda/{function}",
+            "log_group": log_group,
             "active_streams": active,
-            "inventory_truncated": bool(response.get("nextToken")),
+            "inventory_truncated": inventory_truncated,
+            "pages_examined": pages_examined,
         }
     return evidence
 
