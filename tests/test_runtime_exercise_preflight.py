@@ -440,6 +440,47 @@ class BucketRetirementTests(unittest.TestCase):
 
 
 class ArtifactAndIamBoundaryTests(unittest.TestCase):
+    def test_persistent_queue_baseline_requests_all_and_excludes_dynamic_attributes(self):
+        clients = Mock()
+        clients.s3.head_object.return_value = {
+            "VersionId": "state-version",
+            "ETag": '"state-etag"',
+            "ContentLength": 123,
+        }
+        clients.dynamodb.describe_table.return_value = {
+            "Table": {
+                "TableArn": "arn:table",
+                "TableId": "table-id",
+                "KeySchema": [],
+                "AttributeDefinitions": [],
+                "BillingModeSummary": {"BillingMode": "PAY_PER_REQUEST"},
+                "SSEDescription": {},
+                "GlobalSecondaryIndexes": [],
+            }
+        }
+        clients.sqs.get_queue_url.side_effect = lambda QueueName: {"QueueUrl": f"https://sqs.example/{QueueName}"}
+        stable = {name: f"value-{name}" for name in exercise.PERSISTENT_QUEUE_ATTRIBUTES}
+        clients.sqs.get_queue_attributes.return_value = {
+            "Attributes": {**stable, "ApproximateNumberOfMessages": "7", "LastModifiedTimestamp": "123"}
+        }
+        clients.cloudwatch.describe_alarms.return_value = {"MetricAlarms": []}
+
+        controls = exercise._persistent_controls(clients, "667653114001")
+
+        self.assertEqual(
+            clients.sqs.get_queue_attributes.call_args_list,
+            [
+                unittest.mock.call(QueueUrl=f"https://sqs.example/{name}", AttributeNames=["All"])
+                for name in (
+                    "apcf-delivery-dev.fifo",
+                    "apcf-delivery-dlq-dev.fifo",
+                    "apcf-runtime-failures-dev",
+                )
+            ],
+        )
+        expected = exercise.sha256_bytes(exercise.canonical_json(stable))
+        self.assertEqual(set(controls["queue_configuration_sha256"].values()), {expected})
+
     def test_artifact_requires_exact_bytes_in_both_buckets(self):
         body = b"exact immutable package"
         digest = exercise.sha256_bytes(body)

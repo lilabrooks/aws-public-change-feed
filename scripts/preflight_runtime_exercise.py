@@ -64,6 +64,17 @@ QUEUE_ATTRIBUTES = (
     "ApproximateNumberOfMessagesNotVisible",
     "ApproximateNumberOfMessagesDelayed",
 )
+PERSISTENT_QUEUE_ATTRIBUTES = (
+    "QueueArn",
+    "VisibilityTimeout",
+    "RedrivePolicy",
+    "RedriveAllowPolicy",
+    "KmsMasterKeyId",
+    "KmsDataKeyReusePeriodSeconds",
+    "FifoQueue",
+    "ContentBasedDeduplication",
+    "Policy",
+)
 
 
 class ExerciseError(RuntimeError):
@@ -205,22 +216,13 @@ def _persistent_controls(clients: AwsClients, account: str) -> dict[str, Any]:
         url = _safe_text(clients.sqs.get_queue_url(QueueName=queue_name).get("QueueUrl"), f"{queue_name} URL")
         response = clients.sqs.get_queue_attributes(
             QueueUrl=url,
-            AttributeNames=[
-                "QueueArn",
-                "VisibilityTimeout",
-                "RedrivePolicy",
-                "RedriveAllowPolicy",
-                "KmsMasterKeyId",
-                "KmsDataKeyReusePeriodSeconds",
-                "FifoQueue",
-                "ContentBasedDeduplication",
-                "Policy",
-            ],
+            AttributeNames=["All"],
         )
         attributes = response.get("Attributes")
         if not isinstance(attributes, Mapping):
             raise ExerciseError("evidence_incomplete", f"persistent queue configuration is missing for {queue_name}")
-        queues[queue_name] = sha256_bytes(canonical_json(dict(attributes)))
+        selected = {name: attributes.get(name) for name in PERSISTENT_QUEUE_ATTRIBUTES}
+        queues[queue_name] = sha256_bytes(canonical_json(selected))
     alarm_response = clients.cloudwatch.describe_alarms(AlarmNamePrefix="apcf-dev-")
     alarms = alarm_response.get("MetricAlarms")
     if not isinstance(alarms, list) or alarm_response.get("NextToken"):
