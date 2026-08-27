@@ -1,0 +1,75 @@
+schema_version: 3
+deployment_id: preflight
+deployment_region: us-east-1
+secret_store: secrets_manager
+deploy_operational_sns_topic: true
+operational_sns_topic_name: apcf-preflight-operations
+operational_sns_subscriptions:
+  - alias: exercise-email
+    protocol: email
+log_retention_days: 30
+config_bucket_name: apcf-config-preflight-667653114001
+release_prefix: apcf/releases
+config_filename: config.yaml
+inventory_filename: inventory.json
+active_versions_object_key: apcf/active-versions.json
+
+application_package_retirement:
+  retention_days: 400
+  minimum_retained_packages: 10
+
+slack:
+  delivery_mode: incoming_webhook
+  default_route_id: dev-alerts
+  approved_webhook_hosts:
+    - hooks.slack.com
+  rate_control:
+    per_destination_min_interval_seconds: 1
+    slack_request_timeout_seconds: 10
+    max_retry_after_seconds: 900
+    max_network_attempts: 5
+    queue_max_receive_count: 100
+    worker_reserved_concurrency: 2
+  routes:
+    dev-alerts:
+      channel_label: "#aws-change-alerts-preflight"
+      destination_key: preflight-private-alerts
+      credential_secret_id: preflight/slack/private-test-webhook
+
+environments:
+  - id: dev
+    customer: Preflight
+    account_id: "667653114001"
+    regions:
+      - us-east-1
+    route_id: dev-alerts
+
+s3_lifecycle:
+  manifest_noncurrent_version_expiration_days: 400
+  retired_release_retention_days: 400
+  minimum_retained_releases: 10
+  abort_incomplete_multipart_upload_days: 7
+  transition_current_versions: false
+  raw_feed_snapshots_expiration_days: 1
+
+feed_fetch_policy:
+  allowed_feed_hosts:
+    - aws.amazon.com
+  connect_timeout_seconds: 5
+  response_timeout_seconds: 15
+  max_redirects: 0
+  max_response_bytes: 5242880
+  max_items_per_feed: 200
+  max_item_characters: 50000
+  max_concurrent_fetches: 5
+
+scale_envelope:
+  max_accounts: 1
+  max_environments: 1
+  max_feeds: 4
+  max_slack_routes: 1
+  max_service_definitions: 3
+  max_service_profiles: 1
+  max_risk_rules: 4
+  max_delivery_requests_per_hour: 300
+  max_delivery_requests_per_destination_per_hour: 300

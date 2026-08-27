@@ -5,7 +5,7 @@ MYPY_PATHS := $(PYTHON_PATHS)
 YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml $(wildcard .github/workflows)
 TERRAFORM ?= terraform
 REQUIRE_TERRAFORM ?= 0
-TERRAFORM_ROOTS := infra/bootstrap infra/central
+TERRAFORM_ROOTS := infra/bootstrap infra/central infra/preflight
 
 .PHONY: help install format format-check lint lint-python lint-yaml typecheck validate validate-config \
 	validate-references validate-site generate-slack-sample evaluate-corpus references-online screen-feeds terraform-check \

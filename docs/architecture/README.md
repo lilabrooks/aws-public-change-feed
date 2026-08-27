@@ -36,6 +36,7 @@ The [goal](../GOAL.md) defines the outcome and milestones. The [operations runbo
 - [ADR-021: Audited replay of exact terminal delivery records](../adr/021-audited-terminal-record-replay.md)
 - [ADR-022: Preview-first application package retirement](../adr/022-preview-first-application-package-retirement.md)
 - [ADR-023: Scoped active-manifest absence detection](../adr/023-scoped-active-manifest-absence-detection.md)
+- [ADR-024: Isolated live runtime exercises](../adr/024-isolated-live-runtime-exercises.md)
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 
@@ -71,7 +72,7 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 │   │   └── specification/       Normative requirements, in order
 │   ├── adr/                     Decision records and superseded archive
 │   └── runbooks/                Operational procedures
-├── infra/                       Terraform roots (bootstrap and central built)
+├── infra/                       Terraform roots (bootstrap, central, and isolated preflight built)
 ├── schemas/                     JSON Schema contracts
 ├── config/                      Reviewed environment policy inputs
 ├── examples/                    Canonical executable contract fixtures
@@ -85,6 +86,12 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 ```
 
 `infra/bootstrap/` provisions the versioned remote-state bucket, and `infra/central/` decodes the deployment input and provisions the config bucket, source-state and delivery tables, FIFO queue and delivery DLQ, Slack credential containers, operational topic, runtime-failure queue, the chapter 05 IAM roles, and the log groups, dashboard, and alarms. It conditionally defines the watcher, regular dispatcher, Slack worker, and recovery reconciler Lambdas from exact package digests and S3 versions. The watcher runs every 15 minutes, persists exact raw snapshots and conditional DynamoDB source state, and holds feed validators until durable candidate evidence is read back. The dispatcher runs every minute and moves exact due requests through the FIFO queue; the worker consumes FIFO batches; the reconciler runs every five minutes with bounded observations and repairs. `src/` holds the four runtime composition roots, recovery and worker cores, watcher orchestration, and their AWS adapters. [ADR-020](../adr/020-exact-application-version-gate-for-delivery.md) is implemented by a deterministic package builder, an append-only digest-key publisher, exact S3 object-version inputs, and one shared `sha256:` application value for the watcher, dispatcher, and worker. [ADR-022](../adr/022-preview-first-application-package-retirement.md) adds a bounded preview/apply tool and a separate exact-prefix retirement role without widening publisher or runtime authority. [ADR-007](../adr/007-central-slack-delivery-queue-and-worker.md) owns FIFO ordering, the worker capacity boundary, and the recovery state matrix. Release publication has an S3 adapter already, because [ADR-019](../adr/019-s3-preconditions-for-release-publication-and-promotion.md) makes the store's error codes part of the contract rather than a deployment detail. Keep a concept in one owning document and link to it elsewhere. Do not copy full requirements between the goal, specification, ADRs, and runbook.
+
+`infra/preflight/` reuses the central resource module under the separate
+ADR-024 state key. It fixes mutable identities to the isolated exercise
+deployment, keeps the persistent application object read-only, and gives the
+recovery, fixed-load, and exact-teardown protocols their own preview-first
+runner.
 
 ## Public page maintenance
 

@@ -156,18 +156,22 @@ class TerraformContractTests(unittest.TestCase):
         )
         self.assertIn("keys must exactly match", subscription)
 
-    def test_backend_policy_covers_both_roots_and_native_lockfiles(self):
+    def test_backend_policy_covers_all_three_roots_and_native_lockfiles(self):
         bootstrap = (ROOT / "infra/bootstrap/main.tf").read_text(encoding="utf-8")
         central_backend = (ROOT / "infra/central/backend.tf").read_text(encoding="utf-8")
+        preflight_backend = (ROOT / "infra/preflight/backend.tf").read_text(encoding="utf-8")
 
         self.assertIn('bootstrap_state_key = "apcf/terraform.tfstate"', bootstrap)
         self.assertIn('central_state_key   = "apcf/central/terraform.tfstate"', bootstrap)
+        self.assertIn('preflight_state_key = "apcf/preflight/terraform.tfstate"', bootstrap)
         self.assertIn(
-            "backend_state_keys  = [local.bootstrap_state_key, local.central_state_key]",
+            "backend_state_keys  = [local.bootstrap_state_key, local.central_state_key, local.preflight_state_key]",
             bootstrap,
         )
         self.assertIn('key          = "apcf/central/terraform.tfstate"', central_backend)
+        self.assertIn('key          = "apcf/preflight/terraform.tfstate"', preflight_backend)
         self.assertIn("use_lockfile = true", central_backend)
+        self.assertIn("use_lockfile = true", preflight_backend)
         state_actions = self.policy_statement(bootstrap, "StateObjectActions")
         lockfile_actions = self.policy_statement(bootstrap, "LockfileObjectActions")
         self.assertIn('"s3:GetObject"', state_actions)
@@ -207,8 +211,35 @@ class TerraformContractTests(unittest.TestCase):
                 [
                     "-chdir=infra/bootstrap init -backend=false -input=false -lockfile=readonly",
                     "-chdir=infra/central init -backend=false -input=false -lockfile=readonly",
+                    "-chdir=infra/preflight init -backend=false -input=false -lockfile=readonly",
                 ],
             )
+
+    def test_preflight_root_has_exact_state_resource_and_trigger_boundaries(self):
+        main = (ROOT / "infra/preflight/main.tf").read_text(encoding="utf-8")
+        variables = (ROOT / "infra/preflight/variables.tf").read_text(encoding="utf-8")
+        deployment = (ROOT / "infra/preflight/deployment.yaml").read_text(encoding="utf-8")
+        central_lambda = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        central_s3 = (ROOT / "infra/central/s3.tf").read_text(encoding="utf-8")
+
+        self.assertIn('state_key       = "apcf/preflight/terraform.tfstate"', main)
+        self.assertIn('source = "../central"', main)
+        self.assertIn("preflight_mode               = true", main)
+        self.assertIn("runtime_artifact_bucket_name = var.runtime_artifact_bucket_name", main)
+        self.assertIn("watcher_trigger_enabled_override    = false", main)
+        self.assertIn("dispatcher_trigger_enabled_override = var.exercise_load_triggers_enabled", main)
+        self.assertIn("worker_trigger_enabled_override     = var.exercise_load_triggers_enabled", main)
+        self.assertIn("reconciler_trigger_enabled          = false", main)
+        self.assertIn('default     = "apcf-config-dev"', variables)
+        self.assertIn('condition     = var.runtime_artifact_bucket_name == "apcf-config-dev"', variables)
+        self.assertIn("deployment_id: preflight", deployment)
+        self.assertIn("config_bucket_name: apcf-config-preflight-667653114001", deployment)
+        self.assertIn('channel_label: "#aws-change-alerts-preflight"', deployment)
+        self.assertIn("credential_secret_id: preflight/slack/private-test-webhook", deployment)
+        self.assertEqual(central_lambda.count("s3_bucket         = local.runtime_artifact_bucket_name"), 4)
+        self.assertIn("CONFIG_BUCKET_NAME                 = aws_s3_bucket.config.id", central_lambda)
+        self.assertIn("external runtime artifacts and individual trigger overrides are restricted", central_s3)
+        self.assertIn('condition     = !var.preflight_mode || local.deployment_id == "preflight"', central_s3)
 
     def test_terraform_check_skips_an_absent_optional_binary(self):
         with tempfile.TemporaryDirectory() as temporary_directory:
@@ -769,7 +800,11 @@ class TerraformContractTests(unittest.TestCase):
                     locals_source,
                 )
                 self.assertIn(
-                    f"local.{runtime}_runtime_enabled && var.delivery_triggers_enabled",
+                    f"var.{runtime}_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.{runtime}_trigger_enabled_override",
+                    locals_source,
+                )
+                self.assertIn(
+                    f"local.{runtime}_runtime_enabled && local.{runtime}_trigger_requested",
                     locals_source,
                 )
         self.assertIn(

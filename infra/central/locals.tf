@@ -18,6 +18,9 @@ locals {
   # reconstructing the string.
   raw_snapshot_prefix         = "${local.top_prefix}/raw-snapshots/"
   application_artifact_prefix = "${local.top_prefix}/application-artifacts"
+  runtime_artifact_bucket_name = (
+    var.runtime_artifact_bucket_name == null ? aws_s3_bucket.config.id : var.runtime_artifact_bucket_name
+  )
 
   secret_store = local.deployment.secret_store
 
@@ -75,9 +78,12 @@ locals {
   max_delivery_request_bytes         = 245760
   worker_visibility_seconds          = 6 * local.worker_timeout_seconds + local.worker_batch_window_seconds
   worker_runtime_enabled             = var.worker_artifact_sha256 != null && var.worker_artifact_version_id != null
-  worker_trigger_enabled             = local.worker_runtime_enabled && var.delivery_triggers_enabled
-  worker_artifact_key                = var.worker_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.worker_artifact_sha256}.zip"
-  application_version                = var.worker_artifact_sha256 == null ? null : "sha256:${var.worker_artifact_sha256}"
+  worker_trigger_requested = (
+    var.worker_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.worker_trigger_enabled_override
+  )
+  worker_trigger_enabled = local.worker_runtime_enabled && local.worker_trigger_requested
+  worker_artifact_key    = var.worker_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.worker_artifact_sha256}.zip"
+  application_version    = var.worker_artifact_sha256 == null ? null : "sha256:${var.worker_artifact_sha256}"
 
   watcher_timeout_seconds        = 300
   watcher_reserved_concurrency   = 1
@@ -86,9 +92,12 @@ locals {
   watcher_maximum_retry_attempts = 2
   watcher_maximum_event_age      = 900
   watcher_runtime_enabled        = var.watcher_artifact_sha256 != null && var.watcher_artifact_version_id != null
-  watcher_trigger_enabled        = local.watcher_runtime_enabled && var.delivery_triggers_enabled
-  watcher_artifact_key           = var.watcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.watcher_artifact_sha256}.zip"
-  watcher_application_version    = var.watcher_artifact_sha256 == null ? null : "sha256:${var.watcher_artifact_sha256}"
+  watcher_trigger_requested = (
+    var.watcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.watcher_trigger_enabled_override
+  )
+  watcher_trigger_enabled     = local.watcher_runtime_enabled && local.watcher_trigger_requested
+  watcher_artifact_key        = var.watcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.watcher_artifact_sha256}.zip"
+  watcher_application_version = var.watcher_artifact_sha256 == null ? null : "sha256:${var.watcher_artifact_sha256}"
 
   dispatcher_timeout_seconds        = 60
   dispatcher_reserved_concurrency   = 1
@@ -96,9 +105,12 @@ locals {
   dispatcher_maximum_retry_attempts = 2
   dispatcher_maximum_event_age      = 300
   dispatcher_runtime_enabled        = var.dispatcher_artifact_sha256 != null && var.dispatcher_artifact_version_id != null
-  dispatcher_trigger_enabled        = local.dispatcher_runtime_enabled && var.delivery_triggers_enabled
-  dispatcher_artifact_key           = var.dispatcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.dispatcher_artifact_sha256}.zip"
-  dispatcher_application_version    = var.dispatcher_artifact_sha256 == null ? null : "sha256:${var.dispatcher_artifact_sha256}"
+  dispatcher_trigger_requested = (
+    var.dispatcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.dispatcher_trigger_enabled_override
+  )
+  dispatcher_trigger_enabled     = local.dispatcher_runtime_enabled && local.dispatcher_trigger_requested
+  dispatcher_artifact_key        = var.dispatcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.dispatcher_artifact_sha256}.zip"
+  dispatcher_application_version = var.dispatcher_artifact_sha256 == null ? null : "sha256:${var.dispatcher_artifact_sha256}"
 
   reconciler_timeout_seconds        = 60
   reconciler_reserved_concurrency   = 1
