@@ -706,9 +706,24 @@ def apply_plan(
         or advanced_count > completed_count
     ):
         raise PreflightError("watcher_refused", "watcher did not complete every planned feed")
-    candidate_count = watcher_result.get("candidates")
-    if isinstance(candidate_count, bool) or not isinstance(candidate_count, int) or candidate_count < 0:
-        raise PreflightError("watcher_refused", "watcher candidate count is malformed")
+    matched_candidate_count = watcher_result.get("candidates")
+    candidate_count = watcher_result.get("created_deliveries")
+    repaired_delivery_count = watcher_result.get("repaired_deliveries")
+    if (
+        isinstance(matched_candidate_count, bool)
+        or not isinstance(matched_candidate_count, int)
+        or matched_candidate_count < 0
+        or isinstance(candidate_count, bool)
+        or not isinstance(candidate_count, int)
+        or candidate_count < 0
+        or isinstance(repaired_delivery_count, bool)
+        or not isinstance(repaired_delivery_count, int)
+        or repaired_delivery_count < 0
+        or candidate_count + repaired_delivery_count > matched_candidate_count
+    ):
+        raise PreflightError("watcher_refused", "watcher delivery counts are malformed")
+    if repaired_delivery_count:
+        raise PreflightError("state_refused", "watcher repaired pre-existing delivery state")
     if candidate_count == 0:
         return {"status": "no_positive_match", "feeds": expected_feeds, "candidates": 0}
     if candidate_count > plan["bounds"]["candidate_cap"]:

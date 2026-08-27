@@ -168,6 +168,8 @@ class WatcherResult:
     outcomes: tuple[FeedRunOutcome, ...]
     candidate_ids: tuple[str, ...]
     advanced_feeds: tuple[str, ...]
+    created_delivery_ids: tuple[str, ...] = ()
+    repaired_delivery_ids: tuple[str, ...] = ()
     incomplete: bool = False
 
 
@@ -571,5 +573,7 @@ class WatcherOrchestrator:
             outcomes=ordered_outcomes,
             candidate_ids=tuple(sorted(set(emission.candidate_ids))),
             advanced_feeds=tuple(entry.feed.name for entry in successful),
+            created_delivery_ids=tuple(sorted(emission.created_deliveries)),
+            repaired_delivery_ids=tuple(sorted(emission.repaired_deliveries)),
             incomplete=incomplete,
         )
