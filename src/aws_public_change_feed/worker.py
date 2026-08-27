@@ -55,6 +55,7 @@ from __future__ import annotations
 
 import hashlib
 import re
+import time
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
@@ -80,7 +81,7 @@ from .loading import (
     ReleaseIntegrityError,
     load_release_reference,
 )
-from .outbox import ACKNOWLEDGED_STATES, DeliveryPace, OutboxStore
+from .outbox import ACKNOWLEDGED_STATES, DeliveryPace, DeliveryRecord, OutboxStore
 from .releases import ObjectStore
 from .semantics import CandidateSemanticsError, validate_candidate_against_release
 from .urls import FeedUrlRejected, ValidatedUrl, validate_feed_url
@@ -115,6 +116,9 @@ DELIVERY_UNKNOWN = "delivery_unknown"
 _QUEUED = "queued"
 _SENDING = "sending"
 _PENDING = "pending_queue"
+_DISPATCHABLE = frozenset({_PENDING, FAILED_RETRYABLE})
+_DISPATCH_HANDOFF_RECHECK_ATTEMPTS = 10
+_DISPATCH_HANDOFF_RECHECK_DELAY_SECONDS = 0.1
 
 # Slack webhook URLs take the path /services/<workspace>/<channel>/<secret>.
 _WEBHOOK_PATH_SEGMENTS = 4
@@ -364,6 +368,7 @@ class WorkerMetrics(Protocol):
     def unknown(self) -> None: ...
     def duplicate_posted(self) -> None: ...
     def unprocessed(self) -> None: ...
+    def unprocessed_reason(self, reason_code: str | None) -> None: ...
     def dropped_message(self) -> None: ...
     def application_version_mismatch(self) -> None: ...
     def artifact_unavailable(self) -> None: ...
@@ -390,6 +395,9 @@ class NullWorkerMetrics:
         pass
 
     def unprocessed(self) -> None:
+        pass
+
+    def unprocessed_reason(self, reason_code: str | None) -> None:
         pass
 
     def dropped_message(self) -> None:
@@ -431,6 +439,7 @@ class QueueDelivery:
     request: Mapping[str, Any]
     message_id: str
     message_group_id: str
+    message_deduplication_id: str
 
     def __post_init__(self) -> None:
         if not isinstance(self.request, Mapping):
@@ -439,6 +448,8 @@ class QueueDelivery:
             raise ValueError("queue delivery message_id must be nonempty")
         if not isinstance(self.message_group_id, str) or not self.message_group_id:
             raise ValueError("queue delivery message_group_id must be nonempty")
+        if not isinstance(self.message_deduplication_id, str) or not self.message_deduplication_id:
+            raise ValueError("queue delivery message_deduplication_id must be nonempty")
 
 
 def _slack_escape(text: str) -> str:
@@ -933,6 +944,7 @@ def _lost_outcome_write(
             state=None,
             performed_network_call=performed_network_call,
             reason="outcome write lost and the record has since disappeared",
+            reason_code="outcome_write_lost",
         )
     if current.status in ACKNOWLEDGED_STATES:
         return WorkerResult(
@@ -947,7 +959,47 @@ def _lost_outcome_write(
         state=current.status,
         performed_network_call=performed_network_call,
         reason=f"outcome write lost; the record is {current.status} and still outstanding",
+        reason_code="outcome_write_lost",
     )
+
+
+def _await_dispatch_handoff(
+    store: OutboxStore,
+    candidate: str,
+    record: DeliveryRecord,
+    queue_delivery: QueueDelivery | None,
+    *,
+    attempts: int,
+    delay_seconds: float,
+    pause: Callable[[float], None],
+) -> DeliveryRecord | None:
+    """Give the dispatcher a bounded chance to finish its post-SQS write.
+
+    SQS can expose an accepted FIFO message before the dispatcher records the
+    returned message ID and moves the durable record to ``queued``. The FIFO
+    event carries the dispatch ID as ``MessageDeduplicationId``. Only that
+    exact match permits a short reread loop; a stale or unrelated queue message
+    keeps the existing unprocessed refusal.
+    """
+
+    if (
+        queue_delivery is None
+        or record.status not in _DISPATCHABLE
+        or record.dispatch_id is None
+        or queue_delivery.message_deduplication_id != record.dispatch_id
+    ):
+        return record
+
+    current = record
+    for _ in range(attempts):
+        pause(delay_seconds)
+        refreshed = store.get_delivery(candidate)
+        if refreshed is None:
+            return None
+        current = refreshed
+        if current.status not in _DISPATCHABLE or current.dispatch_id != queue_delivery.message_deduplication_id:
+            break
+    return current
 
 
 def _approved_source_hosts(config: Mapping[str, Any]) -> tuple[str, ...]:
@@ -1036,6 +1088,9 @@ def process_delivery(
     delivery_state_ttl_days: int | None = None,
     queue_delivery: QueueDelivery | None = None,
     metrics: WorkerMetrics | None = None,
+    dispatch_handoff_recheck_attempts: int = _DISPATCH_HANDOFF_RECHECK_ATTEMPTS,
+    dispatch_handoff_recheck_delay_seconds: float = _DISPATCH_HANDOFF_RECHECK_DELAY_SECONDS,
+    pause: Callable[[float], None] = time.sleep,
 ) -> WorkerResult:
     """Process one delivery record to one outcome, with at most one Slack call.
 
@@ -1050,10 +1105,32 @@ def process_delivery(
     """
 
     application_version = application_artifact_id(application_version)
+    if (
+        isinstance(dispatch_handoff_recheck_attempts, bool)
+        or not isinstance(dispatch_handoff_recheck_attempts, int)
+        or not 1 <= dispatch_handoff_recheck_attempts <= 20
+    ):
+        raise ValueError("dispatch_handoff_recheck_attempts must be an integer from 1 through 20")
+    if (
+        isinstance(dispatch_handoff_recheck_delay_seconds, bool)
+        or not isinstance(dispatch_handoff_recheck_delay_seconds, (int, float))
+        or not 0 <= dispatch_handoff_recheck_delay_seconds <= 1
+    ):
+        raise ValueError("dispatch_handoff_recheck_delay_seconds must be from 0 through 1")
     metrics = metrics if metrics is not None else NullWorkerMetrics()
     observed_ts = int(clock().timestamp())
 
     record = store.get_delivery(candidate)
+    if record is not None:
+        record = _await_dispatch_handoff(
+            store,
+            candidate,
+            record,
+            queue_delivery,
+            attempts=dispatch_handoff_recheck_attempts,
+            delay_seconds=float(dispatch_handoff_recheck_delay_seconds),
+            pause=pause,
+        )
     if record is None:
         metrics.dropped_message()
         return WorkerResult(handled=True, state=None, reason="no delivery record")
@@ -1065,9 +1142,23 @@ def process_delivery(
     if record.status in (FAILED_TERMINAL, DELIVERY_UNKNOWN):
         return WorkerResult(handled=True, state=record.status, reason="message for terminal or unknown work")
 
-    if record.status == _PENDING:
+    if record.status in _DISPATCHABLE:
         metrics.unprocessed()
-        return WorkerResult(handled=False, state=_PENDING, reason="record still awaits queue dispatch")
+        matching_claim = (
+            queue_delivery is not None
+            and record.dispatch_id is not None
+            and queue_delivery.message_deduplication_id == record.dispatch_id
+        )
+        return WorkerResult(
+            handled=False,
+            state=record.status,
+            reason=(
+                "matching dispatch handoff did not reach queued state within the bounded reread"
+                if matching_claim
+                else "queue delivery does not match an active durable dispatch claim"
+            ),
+            reason_code="dispatch_handoff_timeout" if matching_claim else "queue_dispatch_claim_mismatch",
+        )
 
     if record.status == _SENDING:
         if record.lease_expires_at is not None and record.lease_expires_at <= observed_ts:
@@ -1095,7 +1186,12 @@ def process_delivery(
             metrics.unknown()
             return WorkerResult(handled=True, state=DELIVERY_UNKNOWN, reason="expired sending lease")
         metrics.unprocessed()
-        return WorkerResult(handled=False, state=_SENDING, reason="another worker holds the lease")
+        return WorkerResult(
+            handled=False,
+            state=_SENDING,
+            reason="another worker holds the lease",
+            reason_code="active_sending_lease",
+        )
 
     if record.status != _QUEUED:
         return WorkerResult(handled=True, state=record.status, reason=f"unexpected state {record.status}")
@@ -1108,17 +1204,45 @@ def process_delivery(
         # the serialization ADR-007 assigns to FIFO.
         if dict(queue_delivery.request) != dict(record.request):
             metrics.unprocessed()
-            return WorkerResult(handled=False, state=_QUEUED, reason="queue body disagrees with durable request")
+            return WorkerResult(
+                handled=False,
+                state=_QUEUED,
+                reason="queue body disagrees with durable request",
+                reason_code="queue_body_mismatch",
+            )
         if queue_delivery.message_group_id != record.destination_key:
             metrics.unprocessed()
-            return WorkerResult(handled=False, state=_QUEUED, reason="queue group disagrees with durable destination")
+            return WorkerResult(
+                handled=False,
+                state=_QUEUED,
+                reason="queue group disagrees with durable destination",
+                reason_code="queue_group_mismatch",
+            )
+        if queue_delivery.message_deduplication_id != record.dispatch_id:
+            metrics.unprocessed()
+            return WorkerResult(
+                handled=False,
+                state=_QUEUED,
+                reason="queue deduplication ID disagrees with durable dispatch claim",
+                reason_code="queue_dispatch_claim_mismatch",
+            )
         if queue_delivery.message_id != record.queue_message_id:
             metrics.unprocessed()
-            return WorkerResult(handled=False, state=_QUEUED, reason="queue message ID disagrees with dispatch record")
+            return WorkerResult(
+                handled=False,
+                state=_QUEUED,
+                reason="queue message ID disagrees with dispatch record",
+                reason_code="queue_message_mismatch",
+            )
 
     if record.next_action_at is not None and record.next_action_at > observed_ts:
         metrics.unprocessed()
-        return WorkerResult(handled=False, state=_QUEUED, reason="work not yet due")
+        return WorkerResult(
+            handled=False,
+            state=_QUEUED,
+            reason="work not yet due",
+            reason_code="work_not_due",
+        )
 
     request = record.request
     try:
@@ -1134,7 +1258,12 @@ def process_delivery(
         # place. Return the message unprocessed rather than make a Slack call;
         # persistent failures land in the FIFO DLQ for an operator.
         metrics.unprocessed()
-        return WorkerResult(handled=False, state=_QUEUED, reason=f"invalid delivery request: {error}")
+        return WorkerResult(
+            handled=False,
+            state=_QUEUED,
+            reason=f"invalid delivery request: {error}",
+            reason_code="invalid_delivery_request",
+        )
 
     embedded = request["candidate"]
     embedded_application_version = embedded["release"]["application_version"]
@@ -1162,17 +1291,30 @@ def process_delivery(
         # right now. Fail closed without a Slack call; the message retries into
         # the DLQ rather than rendering unverified display data.
         metrics.unprocessed()
-        return WorkerResult(handled=False, state=_QUEUED, reason=f"embedded release unusable: {error}")
+        return WorkerResult(
+            handled=False,
+            state=_QUEUED,
+            reason=f"embedded release unusable: {error}",
+            reason_code="release_unusable",
+        )
 
     inventory = loaded.inventory
     route = inventory["slack"]["routes"].get(embedded["route_id"])
     if route is None:
         metrics.unprocessed()
-        return WorkerResult(handled=False, state=_QUEUED, reason=f"route {embedded['route_id']} missing from inventory")
+        return WorkerResult(
+            handled=False,
+            state=_QUEUED,
+            reason=f"route {embedded['route_id']} missing from inventory",
+            reason_code="route_missing",
+        )
     if route["destination_key"] != record.destination_key:
         metrics.unprocessed()
         return WorkerResult(
-            handled=False, state=_QUEUED, reason="record destination disagrees with the inventory route"
+            handled=False,
+            state=_QUEUED,
+            reason="record destination disagrees with the inventory route",
+            reason_code="route_destination_mismatch",
         )
 
     rate_control = inventory["slack"]["rate_control"]
@@ -1198,7 +1340,13 @@ def process_delivery(
         ):
             metrics.retryable()
             return WorkerResult(handled=True, state=FAILED_RETRYABLE, reason="destination pacing")
-        return WorkerResult(handled=False, state=_QUEUED, reason="pacing claim lost")
+        metrics.unprocessed()
+        return WorkerResult(
+            handled=False,
+            state=_QUEUED,
+            reason="pacing claim lost",
+            reason_code="pacing_claim_lost",
+        )
 
     # A manual replay reserves its new attempt while the operator decision is
     # still the durable authority. Ordinary queue work keeps the existing
@@ -1214,7 +1362,12 @@ def process_delivery(
         expected_next_attempt_id=record.next_attempt_id,
     ):
         metrics.unprocessed()
-        return WorkerResult(handled=False, state=_QUEUED, reason="sending claim lost")
+        return WorkerResult(
+            handled=False,
+            state=_QUEUED,
+            reason="sending claim lost",
+            reason_code="sending_claim_lost",
+        )
 
     claimed_version = record.state_version + 1
 

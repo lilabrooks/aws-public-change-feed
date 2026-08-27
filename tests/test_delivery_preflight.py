@@ -538,11 +538,14 @@ class DeliveryPreflightInspectionTests(unittest.TestCase):
                 self.assertEqual(event["resources"], [saved_plan["runtime"]["schedules"][runtime]["arn"]])
 
         delivery_request = json.loads((ROOT / "examples/delivery-request.json").read_text(encoding="utf-8"))
-        message = {
+        message: dict[str, object] = {
             "MessageId": "message-1",
             "ReceiptHandle": "receipt-1",
             "Body": json.dumps(delivery_request),
-            "Attributes": {"MessageGroupId": "destination-1"},
+            "Attributes": {
+                "MessageGroupId": "destination-1",
+                "MessageDeduplicationId": "dispatch-1",
+            },
         }
         event = preflight._worker_event(message, "arn:queue", "us-east-1")
         candidate_id, delivery = slack_worker_runtime._delivery_from_record(
@@ -552,6 +555,19 @@ class DeliveryPreflightInspectionTests(unittest.TestCase):
         self.assertEqual(candidate_id, delivery_request["candidate"]["candidate_id"])
         self.assertEqual(delivery.message_id, "message-1")
         self.assertEqual(delivery.message_group_id, "destination-1")
+        self.assertEqual(delivery.message_deduplication_id, "dispatch-1")
+
+        for missing in ("MessageGroupId", "MessageDeduplicationId"):
+            with self.subTest(missing=missing):
+                malformed = dict(message)
+                attributes = {
+                    "MessageGroupId": "destination-1",
+                    "MessageDeduplicationId": "dispatch-1",
+                }
+                del attributes[missing]
+                malformed["Attributes"] = attributes
+                with self.assertRaisesRegex(preflight.PreflightError, "group or deduplication ID"):
+                    preflight._worker_event(malformed, "arn:queue", "us-east-1")
 
     def test_queued_message_validation_uses_the_real_contract_and_release(self):
         config, _ = preflight._read_mapping(ROOT / "examples/config.yaml", "configuration")

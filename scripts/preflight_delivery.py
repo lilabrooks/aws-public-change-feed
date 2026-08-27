@@ -588,7 +588,7 @@ def _receive_one(clients: AwsClients, queue_url: str) -> Mapping[str, Any]:
         MaxNumberOfMessages=1,
         WaitTimeSeconds=10,
         VisibilityTimeout=300,
-        MessageSystemAttributeNames=["MessageGroupId"],
+        MessageSystemAttributeNames=["MessageGroupId", "MessageDeduplicationId"],
         MessageAttributeNames=["All"],
     )
     messages = response.get("Messages", [])
@@ -634,15 +634,22 @@ def _validate_message(
 
 def _worker_event(message: Mapping[str, Any], queue_arn: str, region: str) -> dict[str, Any]:
     attributes = message.get("Attributes")
-    if not isinstance(attributes, Mapping) or not isinstance(attributes.get("MessageGroupId"), str):
-        raise PreflightError("message_refused", "FIFO message group is missing")
+    if (
+        not isinstance(attributes, Mapping)
+        or not isinstance(attributes.get("MessageGroupId"), str)
+        or not isinstance(attributes.get("MessageDeduplicationId"), str)
+    ):
+        raise PreflightError("message_refused", "FIFO message group or deduplication ID is missing")
     return {
         "Records": [
             {
                 "messageId": message["MessageId"],
                 "receiptHandle": message["ReceiptHandle"],
                 "body": message["Body"],
-                "attributes": {"MessageGroupId": attributes["MessageGroupId"]},
+                "attributes": {
+                    "MessageGroupId": attributes["MessageGroupId"],
+                    "MessageDeduplicationId": attributes["MessageDeduplicationId"],
+                },
                 "messageAttributes": {},
                 "eventSource": "aws:sqs",
                 "eventSourceARN": queue_arn,

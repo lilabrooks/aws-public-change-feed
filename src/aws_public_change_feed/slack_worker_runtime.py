@@ -50,6 +50,23 @@ _METRIC_NAMES = {
     "batch_stopped": "BatchStopped",
     "worker_fault": "WorkerFault",
 }
+_UNPROCESSED_REASON_METRICS = {
+    "active_sending_lease": "UnprocessedActiveSendingLease",
+    "application_version_mismatch": "UnprocessedApplicationVersionMismatch",
+    "dispatch_handoff_timeout": "UnprocessedDispatchHandoffTimeout",
+    "invalid_delivery_request": "UnprocessedInvalidDeliveryRequest",
+    "outcome_write_lost": "UnprocessedOutcomeWriteLost",
+    "pacing_claim_lost": "UnprocessedPacingClaimLost",
+    "queue_body_mismatch": "UnprocessedQueueBodyMismatch",
+    "queue_dispatch_claim_mismatch": "UnprocessedQueueDispatchClaimMismatch",
+    "queue_group_mismatch": "UnprocessedQueueGroupMismatch",
+    "queue_message_mismatch": "UnprocessedQueueMessageMismatch",
+    "release_unusable": "UnprocessedReleaseUnusable",
+    "route_destination_mismatch": "UnprocessedRouteDestinationMismatch",
+    "route_missing": "UnprocessedRouteMissing",
+    "sending_claim_lost": "UnprocessedSendingClaimLost",
+    "work_not_due": "UnprocessedWorkNotDue",
+}
 _METRIC_NAMESPACE_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./#:-")
 
 
@@ -137,6 +154,14 @@ class EmbeddedWorkerMetrics:
 
     def unprocessed(self) -> None:
         self._increment("unprocessed")
+
+    def unprocessed_reason(self, reason_code: str | None) -> None:
+        name = (
+            _UNPROCESSED_REASON_METRICS.get(reason_code, "UnprocessedOther")
+            if reason_code is not None
+            else "UnprocessedOther"
+        )
+        self._counts[name] = self._counts.get(name, 0) + 1
 
     def dropped_message(self) -> None:
         self._increment("dropped_message")
@@ -263,10 +288,14 @@ def _delivery_from_record(record: object, *, max_delivery_request_bytes: int) ->
     message_group_id = attributes.get("MessageGroupId")
     if not isinstance(message_group_id, str) or not message_group_id:
         raise ValueError("every FIFO SQS record must carry a nonempty MessageGroupId")
+    message_deduplication_id = attributes.get("MessageDeduplicationId")
+    if not isinstance(message_deduplication_id, str) or not message_deduplication_id:
+        raise ValueError("every FIFO SQS record must carry a nonempty MessageDeduplicationId")
     return cast(str, request["candidate"]["candidate_id"]), QueueDelivery(
         request=request,
         message_id=message_id,
         message_group_id=message_group_id,
+        message_deduplication_id=message_deduplication_id,
     )
 
 
@@ -312,6 +341,7 @@ def process_fifo_batch(
             metrics.batch_stopped()
             return {"batchItemFailures": _record_ids(records, index)}
         if not result.handled:
+            metrics.unprocessed_reason(result.reason_code)
             metrics.batch_stopped()
             return {"batchItemFailures": _record_ids(records, index)}
 
