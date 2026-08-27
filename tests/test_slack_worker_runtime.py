@@ -57,7 +57,10 @@ def record(message_id, document=None):
     return {
         "messageId": message_id,
         "body": serialize_request(delivery_request),
-        "attributes": {"MessageGroupId": delivery_request["destination_key"]},
+        "attributes": {
+            "MessageGroupId": delivery_request["destination_key"],
+            "MessageDeduplicationId": f"dispatch-{message_id}",
+        },
     }
 
 
@@ -84,9 +87,22 @@ class FifoBatchTests(unittest.TestCase):
 
     def test_first_unhandled_record_and_every_later_record_are_returned(self):
         processor = RecordingProcessor(
-            [WorkerResult(handled=True), WorkerResult(handled=False, reason="version mismatch")]
+            [
+                WorkerResult(handled=True),
+                WorkerResult(
+                    handled=False,
+                    reason="dispatch handoff timed out",
+                    reason_code="dispatch_handoff_timeout",
+                ),
+            ]
         )
         event = {"Records": [record("one"), record("two"), record("three")]}
+        output: list[str] = []
+        observed = EmbeddedWorkerMetrics(
+            "AWSPublicChangeFeed/test",
+            clock=lambda: NOW,
+            emit=output.append,
+        )
 
         response = process_fifo_batch(
             event,
@@ -94,14 +110,18 @@ class FifoBatchTests(unittest.TestCase):
             processor,
             max_delivery_request_bytes=MAX_REQUEST_BYTES,
             safety_reserve_milliseconds=30_000,
-            metrics=metrics(),
+            metrics=observed,
         )
+        observed.flush()
 
         self.assertEqual(
             response,
             {"batchItemFailures": [{"itemIdentifier": "two"}, {"itemIdentifier": "three"}]},
         )
         self.assertEqual(len(processor.candidates), 2)
+        document = json.loads(output[0])
+        self.assertEqual(document["UnprocessedDispatchHandoffTimeout"], 1)
+        self.assertEqual(document["BatchStopped"], 1)
 
     def test_time_reserve_stops_before_starting_the_current_record(self):
         processor = RecordingProcessor()
@@ -171,25 +191,27 @@ class FifoBatchTests(unittest.TestCase):
         )
         self.assertEqual(len(processor.candidates), 1)
 
-    def test_missing_fifo_group_stops_before_processing(self):
-        missing_group = record("one")
-        missing_group["attributes"] = {}
-        processor = RecordingProcessor()
+    def test_missing_fifo_dispatch_attributes_stop_before_processing(self):
+        for missing in ("MessageGroupId", "MessageDeduplicationId"):
+            with self.subTest(missing=missing):
+                malformed = record("one")
+                del malformed["attributes"][missing]
+                processor = RecordingProcessor()
 
-        response = process_fifo_batch(
-            {"Records": [missing_group, record("two")]},
-            FakeContext([100_000]),
-            processor,
-            max_delivery_request_bytes=MAX_REQUEST_BYTES,
-            safety_reserve_milliseconds=30_000,
-            metrics=metrics(),
-        )
+                response = process_fifo_batch(
+                    {"Records": [malformed, record("two")]},
+                    FakeContext([100_000]),
+                    processor,
+                    max_delivery_request_bytes=MAX_REQUEST_BYTES,
+                    safety_reserve_milliseconds=30_000,
+                    metrics=metrics(),
+                )
 
-        self.assertEqual(
-            response,
-            {"batchItemFailures": [{"itemIdentifier": "one"}, {"itemIdentifier": "two"}]},
-        )
-        self.assertEqual(processor.candidates, [])
+                self.assertEqual(
+                    response,
+                    {"batchItemFailures": [{"itemIdentifier": "one"}, {"itemIdentifier": "two"}]},
+                )
+                self.assertEqual(processor.candidates, [])
 
     def test_invalid_event_shape_raises_so_lambda_retries_the_batch(self):
         with self.assertRaisesRegex(ValueError, "Records array"):
@@ -214,6 +236,8 @@ class EmbeddedMetricTests(unittest.TestCase):
         observed.posted()
         observed.posted()
         observed.application_version_mismatch()
+        observed.unprocessed_reason("dispatch_handoff_timeout")
+        observed.unprocessed_reason("unrecognized_reason")
         observed.batch_stopped()
         observed.flush()
 
@@ -221,6 +245,8 @@ class EmbeddedMetricTests(unittest.TestCase):
         document = json.loads(output[0])
         self.assertEqual(document["Posted"], 2)
         self.assertEqual(document["ApplicationVersionMismatch"], 1)
+        self.assertEqual(document["UnprocessedDispatchHandoffTimeout"], 1)
+        self.assertEqual(document["UnprocessedOther"], 1)
         self.assertEqual(document["BatchStopped"], 1)
         definition = document["_aws"]["CloudWatchMetrics"][0]
         self.assertEqual(definition["Namespace"], "AWSPublicChangeFeed/dev")
@@ -285,7 +311,12 @@ class ArtifactAvailabilityTests(unittest.TestCase):
         )
         delivery_request = request()
         delivery_request["candidate"]["release"]["application_version"] = f"sha256:{'b' * 64}"
-        envelope = QueueDelivery(delivery_request, "message", delivery_request["destination_key"])
+        envelope = QueueDelivery(
+            delivery_request,
+            "message",
+            delivery_request["destination_key"],
+            "dispatch-message",
+        )
 
         with patch(
             "aws_public_change_feed.slack_worker_runtime.process_delivery",

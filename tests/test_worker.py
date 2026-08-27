@@ -415,6 +415,7 @@ class ManualReplayWorkerTests(WorkerFixture):
                 request=self.request,
                 message_id=queued.queue_message_id,
                 message_group_id=self.destination_key,
+                message_deduplication_id=queued.dispatch_id,
             )
         )
         assert result.state is not None
@@ -504,6 +505,7 @@ class ManualReplayWorkerTests(WorkerFixture):
                 request=self.request,
                 message_id="manual-replay-message",
                 message_group_id=self.destination_key,
+                message_deduplication_id=queued.dispatch_id,
             )
         )
 
@@ -565,6 +567,7 @@ class ManualReplayWorkerTests(WorkerFixture):
                 request=self.request,
                 message_id=queued.queue_message_id,
                 message_group_id=self.destination_key,
+                message_deduplication_id=queued.dispatch_id,
             )
         )
 
@@ -610,6 +613,7 @@ class ManualReplayWorkerTests(WorkerFixture):
                 request=self.request,
                 message_id=redispatched.queue_message_id,
                 message_group_id=self.destination_key,
+                message_deduplication_id=redispatched.dispatch_id,
             ),
         )
 
@@ -664,6 +668,7 @@ class ManualReplayWorkerTests(WorkerFixture):
                 request=self.request,
                 message_id=queued.queue_message_id,
                 message_group_id=self.destination_key,
+                message_deduplication_id=queued.dispatch_id,
             )
         )
 
@@ -707,16 +712,23 @@ class NonSlackPathsTests(WorkerFixture):
     def test_queue_body_group_and_message_id_must_match_the_durable_dispatch(self):
         altered_request = copy.deepcopy(self.request)
         altered_request["created_at"] = LATER.isoformat().replace("+00:00", "Z")
+        active_dispatch = queue_dispatch_id(self.request["request_id"], 1)
+        stale_dispatch = queue_dispatch_id(self.request["request_id"], 2)
         cases = {
-            "body": QueueDelivery(altered_request, "sqs-one", self.destination_key),
-            "group": QueueDelivery(self.request, "sqs-one", "another-destination"),
-            "message": QueueDelivery(self.request, "sqs-two", self.destination_key),
+            "body": QueueDelivery(altered_request, "sqs-one", self.destination_key, active_dispatch),
+            "group": QueueDelivery(self.request, "sqs-one", "another-destination", active_dispatch),
+            "dispatch": QueueDelivery(self.request, "sqs-one", self.destination_key, stale_dispatch),
+            "message": QueueDelivery(self.request, "sqs-two", self.destination_key, active_dispatch),
         }
 
         for label, envelope in cases.items():
             with self.subTest(label=label):
                 self.store = InMemoryOutboxStore()
-                original = self.queued_record(queue_message_id="sqs-one")
+                original = self.queued_record(
+                    queue_message_id="sqs-one",
+                    dispatch_generation=1,
+                    dispatch_id=active_dispatch,
+                )
                 self.sender = FakeSlackSender(self.posted_response())
 
                 result = self.process(queue_delivery=envelope)
@@ -808,6 +820,102 @@ class NonSlackPathsTests(WorkerFixture):
 
         self.assertFalse(result.handled)
         self.assertEqual(result.state, "pending_queue")
+        self.assertEqual(self.sender.calls, [])
+
+    def test_matching_dispatch_claim_waits_for_the_dispatcher_queued_write(self):
+        dispatch_id = queue_dispatch_id(self.request["request_id"], 1)
+        for status in ("pending_queue", FAILED_RETRYABLE):
+            with self.subTest(status=status):
+                self.store = InMemoryOutboxStore()
+                self.queued_record(
+                    status=status,
+                    dispatch_generation=1,
+                    dispatch_id=dispatch_id,
+                    queue_message_id=None,
+                )
+                self.sender = FakeSlackSender(self.posted_response())
+                pauses: list[float] = []
+
+                def finish_handoff(delay_seconds: float, pause_log: list[float] = pauses) -> None:
+                    pause_log.append(delay_seconds)
+                    current = self.record()
+                    self.store._deliveries[self.key] = replace(
+                        current,
+                        status="queued",
+                        queue_message_id="sqs-one",
+                        state_version=current.state_version + 1,
+                    )
+
+                result = self.process(
+                    queue_delivery=QueueDelivery(
+                        self.request,
+                        "sqs-one",
+                        self.destination_key,
+                        dispatch_id,
+                    ),
+                    dispatch_handoff_recheck_attempts=3,
+                    dispatch_handoff_recheck_delay_seconds=0,
+                    pause=finish_handoff,
+                )
+
+                self.assertEqual(result.state, POSTED)
+                self.assertEqual(pauses, [0.0])
+                self.assertEqual(len(self.sender.calls), 1)
+
+    def test_matching_dispatch_claim_times_out_after_the_exact_bound(self):
+        dispatch_id = queue_dispatch_id(self.request["request_id"], 1)
+        original = self.queued_record(
+            status="pending_queue",
+            dispatch_generation=1,
+            dispatch_id=dispatch_id,
+            queue_message_id=None,
+        )
+        pauses: list[float] = []
+
+        result = self.process(
+            queue_delivery=QueueDelivery(
+                self.request,
+                "sqs-one",
+                self.destination_key,
+                dispatch_id,
+            ),
+            dispatch_handoff_recheck_attempts=3,
+            dispatch_handoff_recheck_delay_seconds=0.25,
+            pause=pauses.append,
+        )
+
+        self.assertFalse(result.handled)
+        self.assertEqual(result.state, "pending_queue")
+        self.assertEqual(result.reason_code, "dispatch_handoff_timeout")
+        self.assertEqual(pauses, [0.25, 0.25, 0.25])
+        self.assertEqual(self.record(), original)
+        self.assertEqual(self.sender.calls, [])
+
+    def test_mismatched_dispatch_claim_is_refused_without_waiting(self):
+        active_dispatch = queue_dispatch_id(self.request["request_id"], 1)
+        original = self.queued_record(
+            status="pending_queue",
+            dispatch_generation=1,
+            dispatch_id=active_dispatch,
+            queue_message_id=None,
+        )
+
+        def unexpected_pause(delay_seconds: float) -> None:
+            raise AssertionError(f"stale dispatch must not wait: {delay_seconds}")
+
+        result = self.process(
+            queue_delivery=QueueDelivery(
+                self.request,
+                "sqs-one",
+                self.destination_key,
+                queue_dispatch_id(self.request["request_id"], 2),
+            ),
+            pause=unexpected_pause,
+        )
+
+        self.assertFalse(result.handled)
+        self.assertEqual(result.reason_code, "queue_dispatch_claim_mismatch")
+        self.assertEqual(self.record(), original)
         self.assertEqual(self.sender.calls, [])
 
     def test_a_sending_record_with_an_active_lease_is_returned_unprocessed(self):

@@ -290,6 +290,7 @@ class RetryOutcomeTests(WorkerAgainstDynamoDB):
                 request=self.request,
                 message_id=queued.queue_message_id,
                 message_group_id=self.destination_key,
+                message_deduplication_id=queued.dispatch_id,
             )
         )
 
@@ -378,6 +379,7 @@ class UnknownOutcomeTests(WorkerAgainstDynamoDB):
                 request=self.request,
                 message_id=queued.queue_message_id,
                 message_group_id=self.destination_key,
+                message_deduplication_id=queued.dispatch_id,
             )
         )
 
@@ -435,6 +437,7 @@ class UnknownOutcomeTests(WorkerAgainstDynamoDB):
                 request=self.request,
                 message_id=queued.queue_message_id,
                 message_group_id=self.destination_key,
+                message_deduplication_id=queued.dispatch_id,
             )
         )
 
@@ -504,6 +507,7 @@ class UnknownOutcomeTests(WorkerAgainstDynamoDB):
                 request=self.request,
                 message_id=redispatched.queue_message_id,
                 message_group_id=self.destination_key,
+                message_deduplication_id=redispatched.dispatch_id,
             ),
         )
 
