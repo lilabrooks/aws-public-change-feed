@@ -435,7 +435,12 @@ Git and shell history.
    the result `incomplete`; a quiet run is not extended. The final evidence
    also requires the persistent control baseline to remain exact and confirms
    that none of the 50 synthetic candidate IDs exists in the persistent dev
-   delivery store.
+   delivery store. Log presence comes from a bounded `FilterLogEvents` search
+   over the exact exercise window. The collector follows at most ten pages,
+   retains one stream name with event and ingestion timestamps per runtime,
+   and discards message bodies. Do not use `DescribeLogStreams.lastEventTimestamp`
+   for this check; AWS documents that field as eventually consistent and says
+   it can lag ingestion by an hour or longer.
 8. Apply an unchanged plan returning
    `exercise_load_triggers_enabled=false`. Read back all four disabled trigger
    states before cleanup.
@@ -520,10 +525,12 @@ Close an incident when the root cause and affected range are known, state is rec
 
 ## References
 
-References verified: 2026-08-07.
+References verified: 2026-08-27.
 
 - [AWS IAM policy simulator](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_testing-policies.html)
 - [CloudWatch alarm troubleshooting](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/troubleshooting-alarms.html)
+- [CloudWatch Logs `DescribeLogStreams`](https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_DescribeLogStreams.html)
+- [CloudWatch Logs `FilterLogEvents`](https://docs.aws.amazon.com/AmazonCloudWatchLogs/latest/APIReference/API_FilterLogEvents.html)
 - [SQS DLQ redrive](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-configure-dead-letter-queue-redrive.html)
 - [Slack incoming webhooks](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)
 - [DynamoDB condition expressions](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html)
