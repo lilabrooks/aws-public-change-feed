@@ -364,6 +364,114 @@ separate preflight, review and apply a plan that changes only
 `reconciler_trigger_enabled` to `true`, then read the rule and heartbeat alarm
 back before recording the recovery runtime as enabled.
 
+## Isolated recovery and load exercise
+
+This procedure implements ADR-024. Every AWS command in it needs separate
+owner authorization for its exact create, exercise, trigger, or teardown
+mutation. Keep the private Slack webhook and operational email endpoint out of
+Git and shell history.
+
+1. Initialize `infra/preflight` with the reviewed backend principal. Confirm
+   account `667653114001`, region `us-east-1`, state key
+   `apcf/preflight/terraform.tfstate`, deployment ID `preflight`, and config
+   bucket `apcf-config-preflight-667653114001` before planning.
+2. Apply an unchanged saved plan with all artifact inputs null and every
+   trigger disabled. Capture `terraform output -json` after apply. This creates
+   only isolated mutable resources and the private credential container.
+3. Publish the exact dev package bytes to the preflight config bucket at
+   `apcf/application-artifacts/<digest>.zip`. Verify its digest metadata and
+   content length and bytes against the persistent object. This copy is the
+   worker's isolated availability catalog. Record, but do not use, its new
+   VersionId as the Lambda code source.
+4. Publish and promote a release into the preflight config bucket using
+   `infra/preflight/deployment.yaml`, `config/dev.yaml`, and freshly captured
+   preflight outputs. Supply the private Slack webhook only to the
+   `preflight/slack/private-test-webhook` secret.
+5. Create and review a saved Terraform plan that supplies the persistent dev
+   package digest and its exact persistent VersionId while
+   `exercise_load_triggers_enabled=false`. Apply those unchanged bytes and
+   capture fresh outputs.
+6. Preview the recovery protocol without invoking a runtime:
+
+   ```bash
+   python3 scripts/preflight_runtime_exercise.py preview \
+     --protocol recovery \
+     --terraform-output build/preflight-recovery-outputs.json \
+     --terraform-plan build/preflight-recovery.tfplan \
+     --expected-account 667653114001 \
+     --application-digest <64-lowercase-hex> \
+     --application-version-id <persistent-dev-version-id> \
+     --plan build/preflight-recovery-plan.json
+   ```
+
+   Review the account, state key, artifact source and mirror, active release,
+   private destination, function identities, empty queues, disabled triggers,
+   two-record bound, persistent Terraform/table/queue/alarm configuration
+   baseline, IAM denials, and both plan hashes. Then apply only that canonical
+   plan:
+
+   ```bash
+   python3 scripts/preflight_runtime_exercise.py apply \
+     --plan build/preflight-recovery-plan.json \
+     --expected-plan-sha256 <printed-plan-sha256> \
+     --evidence build/preflight-recovery-evidence.json
+   ```
+
+   `passed` requires the due pending record to reach `posted` with one network
+   attempt and the expired sending record to reach `delivery_unknown` with zero
+   attempts. Preserve any other result without rerunning the old plan.
+7. Create and review a Terraform plan that changes only
+   `exercise_load_triggers_enabled=true`. Apply those exact bytes, verify the
+   watcher and reconciler remain disabled while dispatcher and worker report
+   enabled, and capture fresh outputs. Run `preview --protocol load` with that
+   output and saved enablement plan, then run `apply` with the printed digest.
+   The runner creates 5 records per minute for exactly 10 minutes, stops at 50,
+   observes a bounded five-minute drain, and records durable states, Slack
+   response classes and latency, end-to-end duration, network-attempt counts,
+   destination pacing, outbox age, both DLQs, delivery-unknown counts, Lambda
+   invocation, duration, concurrency, error and throttle metrics, DynamoDB
+   throttles, SQS age, active dispatcher and worker log streams, alarm
+   transitions, and the exact candidate IDs. Missing primary evidence makes
+   the result `incomplete`; a quiet run is not extended. The final evidence
+   also requires the persistent control baseline to remain exact and confirms
+   that none of the 50 synthetic candidate IDs exists in the persistent dev
+   delivery store.
+8. Apply an unchanged plan returning
+   `exercise_load_triggers_enabled=false`. Read back all four disabled trigger
+   states before cleanup.
+9. Create a saved Terraform destroy plan and its JSON form:
+
+   ```bash
+   terraform -chdir=infra/preflight plan -destroy -out=../../build/preflight-destroy.tfplan
+   terraform -chdir=infra/preflight show -json ../../build/preflight-destroy.tfplan > build/preflight-destroy.json
+   ```
+
+   Preview the exact cleanup inventory:
+
+   ```bash
+   python3 scripts/preflight_runtime_exercise.py teardown-preview \
+     --terraform-plan build/preflight-destroy.tfplan \
+     --terraform-plan-json build/preflight-destroy.json \
+     --expected-account 667653114001 \
+     --config-bucket apcf-config-preflight-667653114001 \
+     --plan build/preflight-teardown-plan.json
+   ```
+
+   Apply only after reviewing every address and the plan digest:
+
+   ```bash
+   python3 scripts/preflight_runtime_exercise.py teardown-apply \
+     --plan build/preflight-teardown-plan.json \
+     --expected-plan-sha256 <printed-plan-sha256> \
+     --evidence build/preflight-teardown-evidence.json
+   ```
+
+   The command deletes only exact versions and delete markers in the named
+   preflight bucket, applies the unchanged destroy plan, and requires an empty
+   preflight Terraform state. If cleanup fails, leave every trigger disabled
+   and preserve the exact remaining inventory. Never widen deletion to the
+   state bucket or persistent artifact object.
+
 ## Manual source replay
 
 1. Name the retained raw snapshot or bounded time range, target release, purpose, operator, and expected route scope.

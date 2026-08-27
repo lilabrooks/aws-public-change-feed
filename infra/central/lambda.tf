@@ -7,7 +7,7 @@ resource "aws_lambda_function" "watcher" {
   architectures = ["x86_64"]
   handler       = "aws_public_change_feed.watcher_runtime.lambda_handler"
 
-  s3_bucket         = aws_s3_bucket.config.id
+  s3_bucket         = local.runtime_artifact_bucket_name
   s3_key            = local.watcher_artifact_key
   s3_object_version = var.watcher_artifact_version_id
 
@@ -94,7 +94,7 @@ resource "aws_lambda_function" "dispatcher" {
   architectures = ["x86_64"]
   handler       = "aws_public_change_feed.dispatcher_runtime.lambda_handler"
 
-  s3_bucket         = aws_s3_bucket.config.id
+  s3_bucket         = local.runtime_artifact_bucket_name
   s3_key            = local.dispatcher_artifact_key
   s3_object_version = var.dispatcher_artifact_version_id
 
@@ -169,7 +169,7 @@ resource "aws_lambda_function" "slack_worker" {
   architectures = ["x86_64"]
   handler       = "aws_public_change_feed.slack_worker_runtime.lambda_handler"
 
-  s3_bucket         = aws_s3_bucket.config.id
+  s3_bucket         = local.runtime_artifact_bucket_name
   s3_key            = local.worker_artifact_key
   s3_object_version = var.worker_artifact_version_id
 
@@ -227,7 +227,7 @@ resource "aws_lambda_function" "reconciler" {
   architectures = ["x86_64"]
   handler       = "aws_public_change_feed.recovery_runtime.lambda_handler"
 
-  s3_bucket         = aws_s3_bucket.config.id
+  s3_bucket         = local.runtime_artifact_bucket_name
   s3_key            = local.reconciler_artifact_key
   s3_object_version = var.reconciler_artifact_version_id
 

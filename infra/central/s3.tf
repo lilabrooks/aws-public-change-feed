@@ -2,6 +2,23 @@ resource "aws_s3_bucket" "config" {
   bucket        = local.config_bucket_name
   force_destroy = false
   tags          = local.tags
+
+  lifecycle {
+    precondition {
+      condition = var.preflight_mode || (
+        var.runtime_artifact_bucket_name == null &&
+        var.watcher_trigger_enabled_override == null &&
+        var.dispatcher_trigger_enabled_override == null &&
+        var.worker_trigger_enabled_override == null
+      )
+      error_message = "external runtime artifacts and individual trigger overrides are restricted to preflight_mode."
+    }
+
+    precondition {
+      condition     = !var.preflight_mode || local.deployment_id == "preflight"
+      error_message = "preflight_mode requires deployment_id preflight."
+    }
+  }
 }
 
 resource "aws_s3_bucket_versioning" "config" {

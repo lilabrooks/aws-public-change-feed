@@ -32,6 +32,49 @@ variable "tags" {
   }
 }
 
+variable "preflight_mode" {
+  description = "Whether this module instance is the isolated ADR-024 exercise deployment. False preserves the persistent central-root contract."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
+variable "runtime_artifact_bucket_name" {
+  description = "Optional external bucket holding the exact immutable Lambda package object. Accepted only for the isolated preflight deployment."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = var.runtime_artifact_bucket_name == null || (
+      length(var.runtime_artifact_bucket_name) >= 3 && length(var.runtime_artifact_bucket_name) <= 63 &&
+      can(regex("^[a-z0-9][a-z0-9.-]*[a-z0-9]$", var.runtime_artifact_bucket_name))
+    )
+    error_message = "runtime_artifact_bucket_name must be null or a syntactically valid S3 bucket name."
+  }
+}
+
+variable "watcher_trigger_enabled_override" {
+  description = "Preflight-only watcher trigger override. Null follows delivery_triggers_enabled."
+  type        = bool
+  default     = null
+  nullable    = true
+}
+
+variable "dispatcher_trigger_enabled_override" {
+  description = "Preflight-only dispatcher trigger override. Null follows delivery_triggers_enabled."
+  type        = bool
+  default     = null
+  nullable    = true
+}
+
+variable "worker_trigger_enabled_override" {
+  description = "Preflight-only worker event-source override. Null follows delivery_triggers_enabled."
+  type        = bool
+  default     = null
+  nullable    = true
+}
+
 variable "worker_artifact_sha256" {
   description = "Lowercase SHA-256 digest of the exact published Slack worker package bytes. Null leaves Slice 2 undeployed."
   type        = string

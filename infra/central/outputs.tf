@@ -18,6 +18,11 @@ output "application_artifact_prefix" {
   value       = local.application_artifact_prefix
 }
 
+output "runtime_artifact_bucket_name" {
+  description = "Bucket holding the exact immutable package version selected for Lambda code."
+  value       = local.runtime_artifact_bucket_name
+}
+
 output "worker_application_version" {
   description = "Exact sha256 application version injected into the deployed worker, or null when undeployed."
   value       = local.application_version

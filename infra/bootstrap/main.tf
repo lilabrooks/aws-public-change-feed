@@ -2,7 +2,8 @@ locals {
   bucket_name         = "apcf-state-${var.deployment_id}"
   bootstrap_state_key = "apcf/terraform.tfstate"
   central_state_key   = "apcf/central/terraform.tfstate"
-  backend_state_keys  = [local.bootstrap_state_key, local.central_state_key]
+  preflight_state_key = "apcf/preflight/terraform.tfstate"
+  backend_state_keys  = [local.bootstrap_state_key, local.central_state_key, local.preflight_state_key]
 }
 
 resource "aws_s3_bucket" "state" {

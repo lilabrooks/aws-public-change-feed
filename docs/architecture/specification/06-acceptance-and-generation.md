@@ -198,6 +198,31 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
   and a private sensitive endpoint map with exactly matching keys. Receipt of a
   test notification is confirmed by an operator.
 - A load test at the declared envelope records throughput, duration, concurrency, DynamoDB throttling, queue age, destination pacing, and Slack response classes.
+- Given ADR-024 recovery preview, every trigger is disabled, the artifact and
+  release identities are exact, all isolated queues are empty, and no
+  actionable isolated record exists before the runner creates its two-case
+  cohort.
+- Given the recovery apply, one source-built `pending_queue` record reaches
+  `posted` with one Slack network attempt and one source-built expired
+  `sending` record reaches `delivery_unknown` with zero Slack attempts.
+- Given the fixed load apply, exactly 5 source-built records are created per
+  minute for 10 minutes. Generation stops at 50 records even when metrics or
+  terminal states are missing, and a partial result is `incomplete` or
+  `failed`, never extended to obtain a pass.
+- Given an exercise preview, the expected account, region, deployment ID,
+  backend key, configuration bucket, private destination, active release,
+  exact persistent artifact VersionId, isolated catalog mirror, function
+  identities, trigger states, and saved Terraform plan hash all bind one
+  canonical plan.
+- Given teardown preview, every planned resource action is `delete` or `no-op`
+  under the preflight module or its identity guard. Apply retires only exact
+  versions from the exact preflight configuration bucket, applies unchanged
+  plan bytes, and reports success only when the preflight Terraform state is
+  empty.
+- Given any exercise apply, the persistent central Terraform state VersionId,
+  table configuration, queue configuration, and alarm configuration still
+  match preview, and none of the exact synthetic candidate IDs exists in the
+  persistent delivery store. Any mismatch makes the run `failed`.
 - Queue visibility, receive threshold, retry delay, network attempts, and reserved concurrency satisfy the tested timing model.
 - Shadow mode evaluates live snapshots without candidate or delivery writes.
 - Release rollback and application rollback exercises preserve historical replay.

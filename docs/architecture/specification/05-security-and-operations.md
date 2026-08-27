@@ -332,6 +332,33 @@ not retried automatically. A `posted` result still requires the operator to
 confirm the named Slack destination before the later trigger-enablement plan is
 eligible for review.
 
+ADR-024 adds an isolated `infra/preflight` root for the recovery and declared-
+envelope exercises. Its state key is `apcf/preflight/terraform.tfstate`; the
+bootstrap principal names that exact state object and lockfile alongside the
+bootstrap and central keys. The root fixes deployment identity to `preflight`
+in the authorized account and region. Its configuration bucket, tables,
+queues, functions, logs, alarms, operational topic, secret container, and
+private Slack destination are distinct from the persistent dev resources.
+
+The preflight functions load code from the persistent deployment's exact
+immutable bucket, digest key, and VersionId. No preflight role may alter or
+retire that object. The isolated configuration bucket carries an exact-byte
+catalog mirror because the unchanged worker checks artifact availability in
+the same bucket as its active release. Preview hashes both exact object
+versions and verifies their identities, byte digests, metadata, and lengths
+before exercise-state creation.
+
+Individual trigger overrides exist only in `preflight_mode`. Recovery requires
+all four triggers disabled and directly invokes the reconciler and worker for
+one due `pending_queue` record and one expired `sending` record. Load keeps the
+watcher and reconciler disabled, enables only the one-minute dispatcher and
+FIFO worker mapping through a reviewed Terraform plan, and creates 5 synthetic
+deliveries per minute for exactly 10 minutes. The generator does not extend the
+window after a quiet or failed result. Cleanup first binds an exact destroy
+inventory and plan digest, removes only exact versions and delete markers from
+the preflight configuration bucket, applies the unchanged destroy plan, and
+requires an empty preflight state afterward.
+
 The package builder uses a complete exact dependency lock and deterministic ZIP
 metadata. Publication conditionally creates
 `<top-prefix>/application-artifacts/<sha256>.zip` in the versioned deployment
