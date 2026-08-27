@@ -7,6 +7,10 @@ output "config_bucket_name" {
   value = module.runtime.config_bucket_name
 }
 
+output "release_prefix" {
+  value = module.runtime.release_prefix
+}
+
 output "runtime_artifact_bucket_name" {
   value = module.runtime.runtime_artifact_bucket_name
 }
