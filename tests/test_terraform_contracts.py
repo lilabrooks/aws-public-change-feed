@@ -219,6 +219,7 @@ class TerraformContractTests(unittest.TestCase):
         main = (ROOT / "infra/preflight/main.tf").read_text(encoding="utf-8")
         variables = (ROOT / "infra/preflight/variables.tf").read_text(encoding="utf-8")
         deployment = (ROOT / "infra/preflight/deployment.yaml").read_text(encoding="utf-8")
+        outputs = (ROOT / "infra/preflight/outputs.tf").read_text(encoding="utf-8")
         central_lambda = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
         central_s3 = (ROOT / "infra/central/s3.tf").read_text(encoding="utf-8")
 
@@ -236,6 +237,8 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn("config_bucket_name: apcf-config-preflight-667653114001", deployment)
         self.assertIn('channel_label: "#aws-change-alerts-preflight"', deployment)
         self.assertIn("credential_secret_id: preflight/slack/private-test-webhook", deployment)
+        self.assertIn('output "release_prefix"', outputs)
+        self.assertIn("value = module.runtime.release_prefix", outputs)
         self.assertEqual(central_lambda.count("s3_bucket         = local.runtime_artifact_bucket_name"), 4)
         self.assertIn("CONFIG_BUCKET_NAME                 = aws_s3_bucket.config.id", central_lambda)
         self.assertIn("external runtime artifacts and individual trigger overrides are restricted", central_s3)
