@@ -523,6 +523,8 @@ def lambda_handler(event: Mapping[str, Any], context: object) -> dict[str, objec
             "completed": sum(outcome.status in ("fetched", "not_modified") for outcome in result.outcomes),
             "advanced": len(result.advanced_feeds),
             "candidates": len(result.candidate_ids),
+            "created_deliveries": len(result.created_delivery_ids),
+            "repaired_deliveries": len(result.repaired_delivery_ids),
         }
     except _WatcherIncomplete:
         raise RuntimeError("watcher invocation failed") from None

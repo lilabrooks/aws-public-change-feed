@@ -385,8 +385,10 @@ class HandlerTests(unittest.TestCase):
                     FeedRunOutcome(feed_name="unchanged", status="not_modified"),
                     FeedRunOutcome(feed_name="contended", status="contended"),
                 ),
-                candidate_ids=(),
+                candidate_ids=("created", "repaired", "reused"),
                 advanced_feeds=("fetched",),
+                created_delivery_ids=("created",),
+                repaired_delivery_ids=("repaired",),
             )
 
     class FailingRunner:
@@ -448,7 +450,17 @@ class HandlerTests(unittest.TestCase):
         output = io.StringIO()
         with patch.dict(os.environ, self.environment(), clear=True), contextlib.redirect_stdout(output):
             result = lambda_handler(self.event(), self.Context())
-        self.assertEqual(result, {"feeds": 0, "completed": 0, "advanced": 0, "candidates": 0})
+        self.assertEqual(
+            result,
+            {
+                "feeds": 0,
+                "completed": 0,
+                "advanced": 0,
+                "candidates": 0,
+                "created_deliveries": 0,
+                "repaired_deliveries": 0,
+            },
+        )
         self.assertEqual(runner.invocation_id, "request-1")
         rendered = output.getvalue()
         self.assertIn("Heartbeat", rendered)
@@ -459,7 +471,17 @@ class HandlerTests(unittest.TestCase):
         runtime_module._runtime = self.MixedCompletionRunner()
         with patch.dict(os.environ, self.environment(), clear=True):
             result = lambda_handler(self.event(), self.Context())
-        self.assertEqual(result, {"feeds": 3, "completed": 2, "advanced": 1, "candidates": 0})
+        self.assertEqual(
+            result,
+            {
+                "feeds": 3,
+                "completed": 2,
+                "advanced": 1,
+                "candidates": 3,
+                "created_deliveries": 1,
+                "repaired_deliveries": 1,
+            },
+        )
 
     def test_malformed_event_and_missing_environment_emit_no_heartbeat(self):
         for event, environment in (({}, self.environment()), (self.event(), {})):

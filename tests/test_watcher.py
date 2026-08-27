@@ -209,6 +209,8 @@ class WatcherOrchestratorTests(unittest.TestCase):
         candidate_id = self.expected["candidate_id"]
         self.assertEqual(self.outbox.get_candidate(candidate_id), self.expected)
         self.assertEqual(result.candidate_ids, (candidate_id,))
+        self.assertEqual(result.created_delivery_ids, (candidate_id,))
+        self.assertEqual(result.repaired_delivery_ids, ())
         checkpoint = self.feed_state.load("aws-whats-new")
         assert checkpoint is not None
         self.assertEqual(checkpoint.etag, '"eks-134"')
@@ -217,6 +219,24 @@ class WatcherOrchestratorTests(unittest.TestCase):
         assert announcement is not None
         self.assertEqual(announcement.emitted_candidate_ids, (candidate_id,))
         self.assertEqual(announcement.release_ids, (self.release.release_id,))
+
+    def test_reused_candidate_does_not_report_a_new_delivery(self):
+        first = self.orchestrator().run(
+            self.release,
+            invocation_id="request-1",
+            remaining_time_ms=lambda: 300_000,
+        )
+        replayed_at = CREATED + timedelta(minutes=10)
+        second = self.orchestrator(
+            clock=SequenceClock(replayed_at, replayed_at, replayed_at),
+        ).run(
+            self.release,
+            invocation_id="request-2",
+            remaining_time_ms=lambda: 300_000,
+        )
+        self.assertEqual(second.candidate_ids, first.candidate_ids)
+        self.assertEqual(second.created_delivery_ids, ())
+        self.assertEqual(second.repaired_delivery_ids, ())
 
     def test_response_page_set_identity_normalizes_candidate_order(self):
         run_id = "a" * 64
