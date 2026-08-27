@@ -693,7 +693,18 @@ def apply_plan(
     if watcher_ambiguous or watcher_result is None:
         raise PreflightError("watcher_unknown", "watcher invocation did not return a proved bounded result")
     expected_feeds = plan["release"]["feed_count"]
-    if watcher_result.get("feeds") != expected_feeds or watcher_result.get("advanced") != expected_feeds:
+    completed_count = watcher_result.get("completed")
+    advanced_count = watcher_result.get("advanced")
+    if (
+        watcher_result.get("feeds") != expected_feeds
+        or isinstance(completed_count, bool)
+        or not isinstance(completed_count, int)
+        or completed_count != expected_feeds
+        or isinstance(advanced_count, bool)
+        or not isinstance(advanced_count, int)
+        or advanced_count < 0
+        or advanced_count > completed_count
+    ):
         raise PreflightError("watcher_refused", "watcher did not complete every planned feed")
     candidate_count = watcher_result.get("candidates")
     if isinstance(candidate_count, bool) or not isinstance(candidate_count, int) or candidate_count < 0:

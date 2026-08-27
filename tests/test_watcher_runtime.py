@@ -31,6 +31,7 @@ from aws_public_change_feed.source_store import (  # noqa: E402
 )
 from aws_public_change_feed.state import ConditionalStateConflict  # noqa: E402
 from aws_public_change_feed.watcher import (  # noqa: E402
+    FeedRunOutcome,
     NullWatcherMetrics,
     WatcherOrchestrator,
     WatcherReleaseMismatch,
@@ -375,6 +376,19 @@ class HandlerTests(unittest.TestCase):
             self.remaining = remaining_time_ms()
             return WatcherResult(outcomes=(), candidate_ids=(), advanced_feeds=())
 
+    class MixedCompletionRunner:
+        def run(self, *, invocation_id, remaining_time_ms, metrics):
+            del invocation_id, remaining_time_ms, metrics
+            return WatcherResult(
+                outcomes=(
+                    FeedRunOutcome(feed_name="fetched", status="fetched"),
+                    FeedRunOutcome(feed_name="unchanged", status="not_modified"),
+                    FeedRunOutcome(feed_name="contended", status="contended"),
+                ),
+                candidate_ids=(),
+                advanced_feeds=("fetched",),
+            )
+
     class FailingRunner:
         def run(self, *, invocation_id, remaining_time_ms, metrics):
             del invocation_id, remaining_time_ms, metrics
@@ -434,12 +448,18 @@ class HandlerTests(unittest.TestCase):
         output = io.StringIO()
         with patch.dict(os.environ, self.environment(), clear=True), contextlib.redirect_stdout(output):
             result = lambda_handler(self.event(), self.Context())
-        self.assertEqual(result, {"feeds": 0, "advanced": 0, "candidates": 0})
+        self.assertEqual(result, {"feeds": 0, "completed": 0, "advanced": 0, "candidates": 0})
         self.assertEqual(runner.invocation_id, "request-1")
         rendered = output.getvalue()
         self.assertIn("Heartbeat", rendered)
         self.assertNotIn("IncompleteRuns", rendered)
         self.assertNotIn("WatcherFaults", rendered)
+
+    def test_bounded_counts_distinguish_304_completion_from_contention(self):
+        runtime_module._runtime = self.MixedCompletionRunner()
+        with patch.dict(os.environ, self.environment(), clear=True):
+            result = lambda_handler(self.event(), self.Context())
+        self.assertEqual(result, {"feeds": 3, "completed": 2, "advanced": 1, "candidates": 0})
 
     def test_malformed_event_and_missing_environment_emit_no_heartbeat(self):
         for event, environment in (({}, self.environment()), (self.event(), {})):

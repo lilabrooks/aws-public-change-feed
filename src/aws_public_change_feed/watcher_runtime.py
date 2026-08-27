@@ -520,6 +520,7 @@ def lambda_handler(event: Mapping[str, Any], context: object) -> dict[str, objec
             raise _WatcherIncomplete
         return {
             "feeds": len(result.outcomes),
+            "completed": sum(outcome.status in ("fetched", "not_modified") for outcome in result.outcomes),
             "advanced": len(result.advanced_feeds),
             "candidates": len(result.candidate_ids),
         }

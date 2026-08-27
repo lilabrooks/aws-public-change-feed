@@ -349,14 +349,17 @@ class DeliveryPreflightApplyTests(unittest.TestCase):
         return result, invoke, sqs
 
     def test_zero_match_stops_after_one_watcher_invocation(self):
-        result, invoke, sqs = self.run_apply([({"feeds": 4, "advanced": 4, "candidates": 0}, False)], states=[])
+        result, invoke, sqs = self.run_apply(
+            [({"feeds": 4, "completed": 4, "advanced": 0, "candidates": 0}, False)],
+            states=[],
+        )
         self.assertEqual(result, {"status": "no_positive_match", "feeds": 4, "candidates": 0})
         self.assertEqual(invoke.call_count, 1)
         self.assertEqual(sqs.deleted, [])
 
     def test_candidate_count_over_d0_cap_stops_before_dispatch(self):
         result, invoke, sqs = self.run_apply(
-            [({"feeds": 4, "advanced": 4, "candidates": 11}, False)],
+            [({"feeds": 4, "completed": 4, "advanced": 4, "candidates": 11}, False)],
             states=[],
         )
         self.assertEqual(result["status"], "candidate_cap_exceeded")
@@ -366,7 +369,7 @@ class DeliveryPreflightApplyTests(unittest.TestCase):
     def test_posted_deletes_only_the_received_receipt(self):
         result, invoke, sqs = self.run_apply(
             [
-                ({"feeds": 4, "advanced": 4, "candidates": 1}, False),
+                ({"feeds": 4, "completed": 4, "advanced": 4, "candidates": 1}, False),
                 ({"considered": 1, "accepted": 1, "unknown": 0, "failed_transitions": 0}, False),
                 ({"batchItemFailures": []}, False),
             ]
@@ -382,7 +385,7 @@ class DeliveryPreflightApplyTests(unittest.TestCase):
     def test_unknown_worker_result_preserves_the_receipt(self):
         result, _, sqs = self.run_apply(
             [
-                ({"feeds": 4, "advanced": 4, "candidates": 1}, False),
+                ({"feeds": 4, "completed": 4, "advanced": 4, "candidates": 1}, False),
                 ({"considered": 1, "accepted": 1, "unknown": 0, "failed_transitions": 0}, False),
                 (None, True),
             ],
@@ -395,7 +398,7 @@ class DeliveryPreflightApplyTests(unittest.TestCase):
     def test_delete_error_reports_unknown_after_durable_post(self):
         result, _, sqs = self.run_apply(
             [
-                ({"feeds": 4, "advanced": 4, "candidates": 1}, False),
+                ({"feeds": 4, "completed": 4, "advanced": 4, "candidates": 1}, False),
                 ({"considered": 1, "accepted": 1, "unknown": 0, "failed_transitions": 0}, False),
                 ({"batchItemFailures": []}, False),
             ],
@@ -409,7 +412,7 @@ class DeliveryPreflightApplyTests(unittest.TestCase):
         with self.assertRaisesRegex(preflight.PreflightError, "dispatcher result") as raised:
             self.run_apply(
                 [
-                    ({"feeds": 4, "advanced": 4, "candidates": 1}, False),
+                    ({"feeds": 4, "completed": 4, "advanced": 4, "candidates": 1}, False),
                     ({"considered": 1, "accepted": 0, "unknown": 1, "failed_transitions": 0}, False),
                 ],
                 states=(),
@@ -418,14 +421,17 @@ class DeliveryPreflightApplyTests(unittest.TestCase):
 
     def test_watcher_incompletion_is_refused(self):
         with self.assertRaisesRegex(preflight.PreflightError, "every planned feed") as raised:
-            self.run_apply([({"feeds": 4, "advanced": 3, "candidates": 0}, False)], states=())
+            self.run_apply(
+                [({"feeds": 4, "completed": 3, "advanced": 3, "candidates": 0}, False)],
+                states=(),
+            )
         self.assertEqual(raised.exception.status, "watcher_refused")
 
     def test_unknown_dispatcher_result_stops_before_queue_receive(self):
         with self.assertRaisesRegex(preflight.PreflightError, "dispatcher invocation") as raised:
             self.run_apply(
                 [
-                    ({"feeds": 4, "advanced": 4, "candidates": 1}, False),
+                    ({"feeds": 4, "completed": 4, "advanced": 4, "candidates": 1}, False),
                     (None, True),
                 ],
                 states=(),
@@ -435,7 +441,7 @@ class DeliveryPreflightApplyTests(unittest.TestCase):
     def test_worker_refusal_preserves_the_receipt(self):
         result, _, sqs = self.run_apply(
             [
-                ({"feeds": 4, "advanced": 4, "candidates": 1}, False),
+                ({"feeds": 4, "completed": 4, "advanced": 4, "candidates": 1}, False),
                 ({"considered": 1, "accepted": 1, "unknown": 0, "failed_transitions": 0}, False),
                 ({"batchItemFailures": [{"itemIdentifier": "message-1"}]}, False),
             ],
