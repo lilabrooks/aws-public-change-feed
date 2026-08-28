@@ -1,65 +1,57 @@
 # AWS Public Change Alerting
 
-[![Status](https://img.shields.io/badge/status-contracts%20%2B%20feed%20pipeline%20validated-00AA77)](#validation-status)
 [![Repository quality](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml)
-[![Reference links](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/reference-links.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/reference-links.yml)
-[![Architecture page](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/pages.yml/badge.svg?branch=main)](https://lilabrooks.github.io/aws-public-change-feed/)
+[![Repository security](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/security.yml)
+[![Public site](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/pages.yml/badge.svg?branch=main)](https://lilabrooks.github.io/aws-public-change-feed/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[![JSON Schema](https://img.shields.io/badge/contracts-JSON%20Schema-4B32C3?logo=json&logoColor=white)](schemas/)
-[![Specs + ADRs](https://img.shields.io/badge/specs%20%2B%20ADRs-included-00AA77)](docs/architecture/README.md)
+AWS Public Change Alerting reads approved AWS RSS and Atom feeds. It matches announcement titles and summaries against configured service aliases and risk phrases, maps each match to static environment profiles, and sends a route-specific review candidate to Slack.
 
-AWS Public Change Alerting turns approved public AWS announcements into explainable, route-scoped Slack review candidates. It maps deterministic service and risk matches to potentially relevant environments without requiring customer-account access.
+Each candidate includes the matched text, service, risk type, mapped environments, Slack destination, announcement revision, and configuration release. Public feed matches are **potentially relevant**. Operators confirm account or resource impact with their existing AWS tools.
 
-**[Read the public architecture page](https://lilabrooks.github.io/aws-public-change-feed/)** for the value proposition, design rationale, processing flow, system boundaries, and current evidence.
+[![Processing overview: approved AWS feeds pass through the watcher, matching and routing, DynamoDB, SQS FIFO, and Slack delivery; recovery writes back to DynamoDB.](docs/assets/readme-overview.svg)](https://lilabrooks.github.io/aws-public-change-feed/)
 
-## Repository purpose
+[Open the full system diagram and generated Slack message.](https://lilabrooks.github.io/aws-public-change-feed/)
 
-The repository holds the service and its authoritative architecture package. The contracts are settled and validated; the runtime and infrastructure are the current build. It contains:
+## Project status
 
-- The product [goal and implementation milestones](docs/GOAL.md).
-- A numbered [architecture specification](docs/architecture/README.md).
-- Accepted [architecture decisions](docs/architecture/README.md#architecture-decision-records).
-- Strict machine-readable [schemas](schemas/) and one canonical [example bundle](examples/).
-- The [feed pipeline runtime](src/aws_public_change_feed/) and the [labeled corpus](corpus/) its matching quality is measured against.
-- Semantic validators and regression tests for cross-document rules and deterministic identities.
+GitHub Issues and milestones hold the current backlog state.
 
-Public announcements provide review evidence. They do not prove that an AWS account, environment, or resource is affected. Operators confirm applicability with their existing account-specific tools.
+| Milestone | State | Result or remaining work |
+| --- | --- | --- |
+| [D0: first live Slack delivery](https://github.com/lilabrooks/aws-public-change-feed/milestone/1) | Closed | One controlled public-feed candidate reached Slack and DynamoDB recorded `posted`. |
+| [M1: dev MVP](https://github.com/lilabrooks/aws-public-change-feed/milestone/2) | Closed | Persistent dev operation, recovery, the declared load case, and alarm receipt were exercised. |
+| [M2: lifecycle and replay](https://github.com/lilabrooks/aws-public-change-feed/milestone/3) | Open | Source-state retirement, release retirement, retained-source replay, and watcher and dispatcher correctness fixes. |
+| [M3: production-readiness proof](https://github.com/lilabrooks/aws-public-change-feed/milestone/4) | Open | Production policy, recovery objectives, rollback proof, the production gate, and final status reconciliation. |
 
-## Validation status
+M1 closed after the 4 runtime triggers were enabled in dev, a 12-message public-feed cohort reached Slack, 2 isolated recovery cases passed, a fixed 50-message run completed at 5 messages per minute, and the owner confirmed receipt of the alarm email. Production readiness remains open under M2 and M3.
 
-The `contracts + feed pipeline validated` badge means the committed artifacts and the implemented runtime pass the repository's automated checks:
+See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issues) for the current work queue. The [goal](docs/GOAL.md) defines product scope and completion criteria; its long-form status will be reconciled after the production gate.
 
-- Each canonical example passes its paired JSON Schema.
-- The complete example bundle passes projections, references, route, release-hash, identity, retention, and size checks.
-- Regression tests confirm that rejected configuration and event-contract mutations fail validation.
-- Python quality, YAML, local links, reference dates, the public page, and Git whitespace pass the same gate.
-- Deterministic matching scores at or above the approved thresholds against the labeled corpus.
-- Feed acquisition refuses unapproved hosts, non-public resolved addresses, redirects, unsupported content types, oversized responses, and any XML carrying a DOCTYPE.
-- Route-scoped candidates rebuild the committed example bundle field for field, binding the runtime to the contract rather than to its own output.
-- The durable outbox keeps a stored candidate immutable under a newer release, repairs a missing delivery record from the stored candidate, and reports a stored item whose identity disagrees with its key as a correctness failure.
-- One test drives the whole chain, from a raw feed response through matching and candidate construction to a feed checkpoint that advances only once the outbox records exist.
+## Processing path
 
-The implemented runtime now covers scheduled feed acquisition, exact raw snapshots, conditional DynamoDB source state, normalization, announcement identity, deterministic matching, profile and route mapping, candidate construction, the durable outbox creation boundary, the DynamoDB delivery store, due-work dispatch, the SQS FIFO sender, the Slack worker, and bounded delivery recovery. A service-mock composition test follows one exact S3 release pointer and raw RSS response through the watcher into S3 snapshot evidence and both DynamoDB tables. Its corpus mixes real announcements taken from the four configured feeds with authored items covering shapes the recent feed window did not contain. No end-of-support announcement appeared in that window, so recall for that risk type rests on authored items alone.
+1. The watcher fetches configured public hosts with TLS, DNS and IP checks, redirect refusal, byte limits, and parser limits.
+2. Feed items are normalized and duplicate URLs are merged across sources.
+3. Service aliases and risk phrases are matched against each title and summary.
+4. Static profiles map matches to environments and Slack routes.
+5. DynamoDB stores the candidate and delivery request before the feed checkpoint advances.
+6. The dispatcher sends due work through SQS FIFO. The worker posts to Slack and writes the observed outcome back to DynamoDB.
+7. The reconciler retries eligible work and converts expired sending leases to `delivery_unknown`.
 
-The applied Terraform foundation includes the config bucket, DynamoDB tables, FIFO queue, DLQ, IAM roles, log groups, alarms, and dashboard. Source now defines four conditional Lambda composition roots. The watcher loads an exact immutable release, enforces the deployment feed policy before claims, uses expiring conditional leases, snapshots exact responses before parsing, merges announcement revisions with compare-and-swap, and advances fetched validators only after paged durable evidence is read back and one batch transaction succeeds. The regular dispatcher runs every minute, composes the existing DynamoDB and FIFO adapters, and preserves exact requests and durable dispatch claims. The Slack worker binds FIFO messages to durable delivery state and stops before its invocation reserve. The scheduled reconciler performs bounded indexed observation and exact recovery transitions. One preview-first operator command conditionally records a found Slack post, reserves an audited `delivery_unknown` retry, or reserves one exact-request-compatible replay of a live terminal record. Terminal replay follows [ADR-021](docs/adr/021-audited-terminal-record-replay.md)'s exact allowlist, preserves the historical attempt count and immutable request/release/application identity, and refuses expired, changed, malformed, unknown, and immutable failures. Another command validates the exact FIFO source/DLQ pair and controls native SQS redrive through explicit start, status, and cancellation actions. `scripts/publish_release.py` generates the deployed inventory from reviewed deployment input, checks the captured bucket and release-prefix outputs, validates the exact policy bundle, previews one content-bound plan, conditionally publishes and promotes it, and requires the runtime compatibility probe before completion. Terraform gives each schedule bounded retries and source-scoped failure-queue access, and requires the watcher, dispatcher, and worker to share one exact package digest and S3 version. It also owns the imported operational SNS subscription by joining reviewed aliases and protocols to private sensitive endpoints, and scopes watcher AWS/Lambda error paging to enabled runtime while keeping release-verification alarms diagnostic. The watcher, dispatcher, and worker are deployed with application version `sha256:1a3db4a6dba414c11cee875986704f0783c517eb07d49d2ce605eadd6839c1e1`; their automatic triggers remain disabled. One controlled real request crossed the dispatcher and FIFO queue, reached Slack, and reached durable `posted`, while the other 11 exact requests remain `queued` for M1. The recovery reconciler remains undeployed. The deterministic Linux package is published at an exact digest and S3 version, and the first active dev configuration release passed exact-version read-back and the runtime compatibility probe. ADR-022 adds preview-bound exact-version retirement with separate IAM authority, complete bounded inventory, protected references, and explicit partial or ambiguous outcomes. The public page carries the canonical candidate through the delivery renderer, with a generated-region check that catches fixture, renderer, or page drift. Persistent operation, recovery exercises, load testing, alarm proof, and production preflight remain open.
+## Required runtime rules
 
-## Start here
+| Rule | Effect |
+| --- | --- |
+| Public inputs only | The runtime has no customer-account credentials, resource discovery, telemetry, or remediation access. |
+| Stable IDs | The same announcement revision, service, risk, route, audience, and release produce the same candidate ID. |
+| Immutable releases | Every candidate points to exact configuration, inventory, and application versions. |
+| DynamoDB owns delivery state | SQS FIFO carries ready work; it does not replace the durable outbox or outcome history. |
+| Slack uncertainty stays visible | A timeout becomes `delivery_unknown`. An operator checks Slack before closure or one audited retry. |
+| Credentials stay with the worker | Feed content, configuration, candidates, fixtures, and logs contain no Slack secret values. |
 
-1. Read the [public architecture page](https://lilabrooks.github.io/aws-public-change-feed/).
-2. Read the [goal](docs/GOAL.md) for scope, milestones, and completion criteria.
-3. Follow the [numbered specification](docs/architecture/README.md) in order.
-4. Inspect the executable contracts in [`schemas/`](schemas/) and [`examples/`](examples/).
-5. Run `make evaluate-corpus` to score matching against [`corpus/`](corpus/).
+The [numbered specification and 19 accepted ADRs](docs/architecture/README.md) define these rules in full.
 
-The evaluator and live-feed screener both select the reviewed
-[`config/dev.yaml`](config/dev.yaml) policy. Their Make recipes pass that path
-explicitly; direct script calls use it by default and accept another reviewed
-path with `--config`. Relative paths resolve from `--root`, and absolute paths
-are accepted. The files under [`examples/`](examples/) remain the independent
-executable contract bundle.
-
-## Local validation
+## Run locally
 
 Python 3.12 or newer is required.
 
@@ -70,24 +62,48 @@ make install
 make check
 ```
 
-Run the network-backed checks separately:
+`make check` runs formatting, Python and YAML lint, type checks, schema and cross-file validation, corpus scoring, the full unit-test suite, and whitespace checks. It also validates the Terraform roots when Terraform is installed. CI tests Terraform 1.15.8 and the minimum supported 1.10.0 release.
 
-```bash
-make references-online
-```
+Useful focused commands:
 
-```bash
-make screen-feeds
-```
+| Command | Result |
+| --- | --- |
+| `make validate` | Validates contracts, local references, the public page, and corpus thresholds. |
+| `make evaluate-corpus` | Scores matching with the reviewed [`config/dev.yaml`](config/dev.yaml) policy. |
+| `make screen-feeds` | Fetches the configured public feeds through the runtime acquisition path and reports current matches. |
+| `make references-online` | Checks external links with Lychee. |
 
-`screen-feeds` loads feeds, services, and risk rules from `config/dev.yaml`,
-then fetches the live feeds through the runtime acquisition path and reports
-every match, flagging any the corpus does not represent.
+The corpus evaluator and feed screener accept `--root` and `--config`. Relative paths resolve from `--root`; absolute paths are accepted. The Make targets select [`config/dev.yaml`](config/dev.yaml) explicitly.
 
-References verified: 2026-07-13.
+`make screen-feeds` and `make references-online` use the network. Feed screening reads public sources and does not require AWS credentials. Online reference checks require the `lychee` executable.
+
+## Repository map
+
+| Path | Contents |
+| --- | --- |
+| [`src/aws_public_change_feed/`](src/aws_public_change_feed/) | Feed acquisition, matching, candidates, releases, delivery, and recovery. |
+| [`infra/`](infra/) | Terraform roots for bootstrap, persistent service resources, and isolated live exercises. |
+| [`schemas/`](schemas/) and [`examples/`](examples/) | 8 strict JSON Schemas and one cross-file contract bundle. |
+| [`config/`](config/) | Reviewed environment and matching policy. |
+| [`corpus/`](corpus/) | Labeled announcements and accepted precision and recall thresholds. |
+| [`site/`](site/) | GitHub Pages source, editable draw.io diagram, SVG export, and generated Slack example. |
+| [`scripts/`](scripts/) and [`tests/`](tests/) | Validators, operator commands, regression tests, and service-mock tests. |
+| [`docs/`](docs/) | Product goal, specification, ADRs, runbooks, agent-tooling notes, and supporting assets. |
+
+## Documentation
+
+- [Public system page](https://lilabrooks.github.io/aws-public-change-feed/): system diagram, processing summary, contract checks, and generated Slack output.
+- [Product goal](docs/GOAL.md): scope, exclusions, quality bar, and completion criteria.
+- [Architecture index](docs/architecture/README.md): 6 specification chapters, 19 accepted ADRs, and the schema-to-example map.
+- [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
+- [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
+
+Changes to product scope, trust boundaries, identity, state ownership, delivery guarantees, or version policy require an ADR. Run `make check` before opening a pull request.
 
 ## License
 
 Copyright 2026 Lila Brooks.
 
-Licensed under the [Apache License 2.0](LICENSE). Redistributed copies and derivative works must preserve the attribution required by the license, including [NOTICE](NOTICE).
+Licensed under the [Apache License 2.0](LICENSE). Redistributed copies and derivative works must preserve the attribution in [NOTICE](NOTICE).
+
+References verified: 2026-08-27.
