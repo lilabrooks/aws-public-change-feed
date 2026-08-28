@@ -78,7 +78,7 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 ├── examples/                    Canonical executable contract fixtures
 ├── corpus/                      Labeled announcements and approved thresholds
 ├── src/                         Python runtime packages
-├── site/                        GitHub Pages source and Mermaid processing flow
+├── site/                        GitHub Pages source, draw.io diagram, and SVG export
 ├── scripts/                     Repository validators
 ├── tests/                       Regression tests
 ├── Makefile                     Local quality entry points
@@ -95,9 +95,18 @@ runner.
 
 ## Public page maintenance
 
-[`site/index.html`](../../site/index.html) is the concise public explanation of this architecture. Its Mermaid source is committed separately in [`site/architecture.mmd`](../../site/architecture.mmd) and must match the copy embedded in the page.
+[`site/index.html`](../../site/index.html) is the concise public explanation of this architecture. The editable diagram lives in [`site/architecture.drawio`](../../site/architecture.drawio), and the page renders its committed [`site/architecture.svg`](../../site/architecture.svg) export without a client-side diagram runtime.
 
-[`validate_site.py`](../../scripts/validate_site.py) checks page structure, local assets, the pinned Mermaid runtime, diagram parity, and the README link. During pull requests, the repository quality workflow also requires `site/index.html` to change whenever the goal, architecture, ADRs, schemas, examples, Mermaid source, or supporting site assets change. This makes public-page review part of every change that can alter its claims.
+The draw.io source uses AWS4 resource-icon cells for AWS services. The committed SVG embeds the matching service artwork from AWS's 2026-07-31 Architecture Icons package. Use the [official AWS architecture icons page](https://aws.amazon.com/architecture/icons/) when that artwork needs to be refreshed.
+
+To revise the diagram:
+
+1. Open `site/architecture.drawio` in draw.io and edit the existing page. Keep the stable cell IDs on the required processing nodes and edges.
+2. Export that page as SVG to `site/architecture.svg`. Keep the full diagram bounds and avoid external image references.
+3. Run `python scripts/stamp_drawio_export.py`. This records the exact `.drawio` SHA-256 on the SVG and restores the accessible SVG metadata when the exporter omits it.
+4. Run `python scripts/validate_site.py`, then inspect the page at desktop and narrow widths.
+
+[`validate_site.py`](../../scripts/validate_site.py) checks page structure, local assets, required draw.io nodes and edges, the SVG source hash and accessibility metadata, and the README link. During pull requests, the repository quality workflow also requires `site/index.html` to change whenever the goal, architecture, ADRs, schemas, examples, draw.io source, SVG export, or supporting site assets change. This makes public-page review part of every change that can alter its claims.
 
 References verified: 2026-07-13.
 

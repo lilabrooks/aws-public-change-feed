@@ -1,0 +1,226 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-08-27T23:45:00.000Z" agent="Codex" version="26.0.9" type="device">
+  <diagram id="aws-public-change-flow" name="Architecture">
+    <mxGraphModel dx="1800" dy="780" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1800" pageHeight="780" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="canvas" value="" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#0B1220;strokeColor=#24354D;strokeWidth=1;arcSize=2;" vertex="1" parent="1">
+          <mxGeometry x="10" y="10" width="1780" height="755" as="geometry" />
+        </mxCell>
+
+        <mxCell id="inputs_panel" value="" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#0E1B2C;strokeColor=#274968;strokeWidth=2;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="35" y="70" width="270" height="660" as="geometry" />
+        </mxCell>
+        <mxCell id="decision_panel" value="" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#17152B;strokeColor=#514B7A;strokeWidth=2;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="330" y="70" width="670" height="660" as="geometry" />
+        </mxCell>
+        <mxCell id="delivery_panel" value="" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#10221D;strokeColor=#35634F;strokeWidth=2;arcSize=5;" vertex="1" parent="1">
+          <mxGeometry x="1025" y="70" width="740" height="660" as="geometry" />
+        </mxCell>
+
+        <mxCell id="inputs_heading" value="APPROVED INPUTS" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#65B7FF;fontSize=18;fontStyle=1;spacingLeft=4;" vertex="1" parent="1">
+          <mxGeometry x="55" y="88" width="230" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="decision_heading" value="DETERMINISTIC CANDIDATE GENERATION" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#B69DF8;fontSize=18;fontStyle=1;spacingLeft=4;" vertex="1" parent="1">
+          <mxGeometry x="350" y="88" width="500" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="delivery_heading" value="DURABLE SLACK DELIVERY" style="text;html=0;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#56D6A3;fontSize=18;fontStyle=1;spacingLeft=4;" vertex="1" parent="1">
+          <mxGeometry x="1045" y="88" width="420" height="34" as="geometry" />
+        </mxCell>
+
+        <mxCell id="feeds" value="AWS RSS and Atom feeds&#xa;Approved public sources" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#173653;strokeColor=#65B7FF;strokeWidth=2;fontColor=#F5FAFF;fontSize=15;fontStyle=1;spacing=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="175" width="200" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="release" value="Immutable release in S3&#xa;Config + inventory + exact versions" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#173653;strokeColor=#65B7FF;strokeWidth=2;fontColor=#F5FAFF;fontSize=15;fontStyle=1;spacing=8;verticalAlign=bottom;spacingBottom=5;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="305" width="200" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="package" value="Application package in S3&#xa;Exact digest + object version" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#173653;strokeColor=#65B7FF;strokeWidth=2;fontColor=#F5FAFF;fontSize=15;fontStyle=1;spacing=8;verticalAlign=bottom;spacingBottom=7;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="70" y="455" width="200" height="95" as="geometry" />
+        </mxCell>
+
+        <mxCell id="watcher" value="Feed watcher" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#312A55;strokeColor=#B69DF8;strokeWidth=2;fontColor=#FCFAFF;fontSize=15;fontStyle=1;verticalAlign=bottom;spacingBottom=8;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="365" y="205" width="135" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="normalizer" value="Normalize, coalesce,&#xa;track revisions" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#312A55;strokeColor=#B69DF8;strokeWidth=2;fontColor=#FCFAFF;fontSize=15;fontStyle=1;spacing=6;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="525" y="205" width="145" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="matcher" value="Service + risk&#xa;matcher" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#312A55;strokeColor=#B69DF8;strokeWidth=2;fontColor=#FCFAFF;fontSize=15;fontStyle=1;spacing=6;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="695" y="205" width="135" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="routes" value="Profile + route&#xa;mapping" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#312A55;strokeColor=#B69DF8;strokeWidth=2;fontColor=#FCFAFF;fontSize=15;fontStyle=1;spacing=6;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="855" y="205" width="115" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="source_state" value="DynamoDB source state&#xa;Checkpoints + announcement history" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#232C43;strokeColor=#8EA0B8;strokeWidth=2;fontColor=#F4F7FB;fontSize=14;fontStyle=1;spacing=7;verticalAlign=bottom;spacingBottom=5;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="365" y="405" width="185" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="raw_snapshots" value="S3 raw snapshots&#xa;Bounded replay evidence" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#232C43;strokeColor=#8EA0B8;strokeWidth=2;fontColor=#F4F7FB;fontSize=14;fontStyle=1;spacing=7;verticalAlign=bottom;spacingBottom=4;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="580" y="530" width="180" height="85" as="geometry" />
+        </mxCell>
+        <mxCell id="outbox" value="DynamoDB candidates + durable outbox&#xa;Delivery system of record" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#21483B;strokeColor=#56D6A3;strokeWidth=3;fontColor=#F4FFFA;fontSize=15;fontStyle=1;spacing=8;verticalAlign=bottom;spacingBottom=5;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="750" y="405" width="220" height="100" as="geometry" />
+        </mxCell>
+
+        <mxCell id="dispatcher" value="Outbox&#xa;dispatcher" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#21483B;strokeColor=#56D6A3;strokeWidth=2;fontColor=#F4FFFA;fontSize=15;fontStyle=1;verticalAlign=bottom;spacingBottom=5;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1055" y="205" width="140" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="queue" value="SQS FIFO&#xa;Grouped by destination" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#21483B;strokeColor=#56D6A3;strokeWidth=2;fontColor=#F4FFFA;fontSize=15;fontStyle=1;spacing=6;verticalAlign=bottom;spacingBottom=4;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="205" width="170" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="worker" value="Slack delivery&#xa;worker" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#21483B;strokeColor=#56D6A3;strokeWidth=2;fontColor=#F4FFFA;fontSize=15;fontStyle=1;spacing=6;verticalAlign=bottom;spacingBottom=4;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1415" y="205" width="160" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="slack" value="Slack channel&#xa;External side effect" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#62491B;strokeColor=#FFCB6B;strokeWidth=2;fontColor=#FFF9E8;fontSize=15;fontStyle=1;spacing=6;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1600" y="205" width="130" height="90" as="geometry" />
+        </mxCell>
+        <mxCell id="dlq" value="FIFO DLQ&#xa;Preview-first operator redrive" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#3A3030;strokeColor=#D9A36D;strokeWidth=2;fontColor=#FFF8F0;fontSize=14;fontStyle=1;spacing=7;verticalAlign=bottom;spacingBottom=5;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1215" y="405" width="180" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="credentials" value="Secrets Manager or SSM&#xa;Exact credential identifier" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#3A3030;strokeColor=#D9A36D;strokeWidth=2;fontColor=#FFF8F0;fontSize=14;fontStyle=1;spacing=7;verticalAlign=bottom;spacingBottom=4;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1420" y="405" width="180" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="reconciler" value="Recovery reconciler&#xa;Safe repairs + stale-lease resolution" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#4A2331;strokeColor=#FF7B92;strokeWidth=2;fontColor=#FFF5F7;fontSize=14;fontStyle=1;spacing=7;verticalAlign=bottom;spacingBottom=5;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="1055" y="535" width="200" height="95" as="geometry" />
+        </mxCell>
+        <mxCell id="operations" value="OBSERVABILITY: CloudWatch metrics + alarms  ·  SNS operational notifications" style="rounded=1;whiteSpace=wrap;html=0;fillColor=#233044;strokeColor=#8EA0B8;strokeWidth=2;fontColor=#F4F7FB;fontSize=14;fontStyle=1;spacing=7;arcSize=12;" vertex="1" parent="1">
+          <mxGeometry x="365" y="650" width="1335" height="52" as="geometry" />
+        </mxCell>
+        <mxCell id="scope_note" value="Logical architecture. Deployment status and evidence are maintained on the page below." style="text;html=0;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontColor=#9EABC0;fontSize=13;fontStyle=2;" vertex="1" parent="1">
+          <mxGeometry x="480" y="712" width="850" height="28" as="geometry" />
+        </mxCell>
+
+        <mxCell id="e_feeds_watcher" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#65B7FF;strokeWidth=2;endArrow=block;endFill=1;" edge="1" parent="1" source="feeds" target="watcher">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_release_watcher" value="exact release" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#65B7FF;strokeWidth=2;endArrow=block;endFill=1;fontColor=#C8E6FF;fontSize=12;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="release" target="watcher">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_release_matcher" value="policy" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#65B7FF;strokeWidth=2;endArrow=block;endFill=1;fontColor=#C8E6FF;fontSize=12;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="release" target="matcher">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_release_worker" value="route + display data" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#65B7FF;strokeWidth=2;dashed=1;dashPattern=6 6;endArrow=block;endFill=1;fontColor=#C8E6FF;fontSize=12;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="release" target="worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_package_watcher" value="exact application" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#65B7FF;strokeWidth=2;dashed=1;dashPattern=6 6;endArrow=block;endFill=1;fontColor=#C8E6FF;fontSize=12;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="package" target="watcher">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_package_dispatcher" value="same package" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#65B7FF;strokeWidth=2;dashed=1;dashPattern=6 6;endArrow=block;endFill=1;fontColor=#C8E6FF;fontSize=12;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="package" target="dispatcher">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_package_worker" value="digest gate" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#65B7FF;strokeWidth=2;dashed=1;dashPattern=6 6;endArrow=block;endFill=1;fontColor=#C8E6FF;fontSize=12;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="package" target="worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_watcher_normalizer" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#B69DF8;strokeWidth=3;endArrow=block;endFill=1;" edge="1" parent="1" source="watcher" target="normalizer">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_normalizer_matcher" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#B69DF8;strokeWidth=3;endArrow=block;endFill=1;" edge="1" parent="1" source="normalizer" target="matcher">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_matcher_routes" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#B69DF8;strokeWidth=3;endArrow=block;endFill=1;" edge="1" parent="1" source="matcher" target="routes">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_routes_outbox" value="route-scoped candidates" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#56D6A3;strokeWidth=3;endArrow=block;endFill=1;fontColor=#BDF5DD;fontSize=12;labelBackgroundColor=#17152B;" edge="1" parent="1" source="routes" target="outbox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_watcher_source_state" value="checkpoint" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#8EA0B8;strokeWidth=2;endArrow=block;endFill=1;fontColor=#C8D2E1;fontSize=12;labelBackgroundColor=#17152B;" edge="1" parent="1" source="watcher" target="source_state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_normalizer_source_state" value="revision history" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#8EA0B8;strokeWidth=2;endArrow=block;endFill=1;fontColor=#C8D2E1;fontSize=12;labelBackgroundColor=#17152B;" edge="1" parent="1" source="normalizer" target="source_state">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_watcher_snapshots" value="exact response bytes" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#8EA0B8;strokeWidth=2;endArrow=block;endFill=1;fontColor=#C8D2E1;fontSize=12;labelBackgroundColor=#17152B;" edge="1" parent="1" source="watcher" target="raw_snapshots">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_outbox_dispatcher" value="due exact request" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#56D6A3;strokeWidth=3;endArrow=block;endFill=1;fontColor=#BDF5DD;fontSize=12;labelBackgroundColor=#10221D;" edge="1" parent="1" source="outbox" target="dispatcher">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dispatcher_queue" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#56D6A3;strokeWidth=3;endArrow=block;endFill=1;" edge="1" parent="1" source="dispatcher" target="queue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_queue_worker" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#56D6A3;strokeWidth=3;endArrow=block;endFill=1;" edge="1" parent="1" source="queue" target="worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_slack" value="one network call" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#FFCB6B;strokeWidth=3;endArrow=block;endFill=1;fontColor=#FFE6A8;fontSize=12;labelBackgroundColor=#10221D;" edge="1" parent="1" source="worker" target="slack">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_outbox" value="posted / retryable / terminal / unknown" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#FF7B92;strokeWidth=2;endArrow=block;endFill=1;fontColor=#FFC1CD;fontSize=12;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="worker" target="outbox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_credentials_worker" value="credential" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#D9A36D;strokeWidth=2;endArrow=block;endFill=1;fontColor=#F3D1AE;fontSize=12;labelBackgroundColor=#10221D;" edge="1" parent="1" source="credentials" target="worker">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_queue_dlq" value="redrive threshold" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#D9A36D;strokeWidth=2;endArrow=block;endFill=1;fontColor=#F3D1AE;fontSize=12;labelBackgroundColor=#10221D;" edge="1" parent="1" source="queue" target="dlq">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dlq_queue" value="operator-approved redrive" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#D9A36D;strokeWidth=2;dashed=1;dashPattern=6 6;endArrow=block;endFill=1;fontColor=#F3D1AE;fontSize=12;labelBackgroundColor=#10221D;" edge="1" parent="1" source="dlq" target="queue">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_reconciler_outbox" value="safe repair / expired lease → unknown" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#FF7B92;strokeWidth=2;endArrow=block;endFill=1;fontColor=#FFC1CD;fontSize=12;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="reconciler" target="outbox">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_outbox_reconciler" value="bounded due-state observations" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#FF7B92;strokeWidth=2;dashed=1;dashPattern=6 6;endArrow=block;endFill=1;fontColor=#FFC1CD;fontSize=12;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="outbox" target="reconciler">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_watcher_operations" value="metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#8EA0B8;strokeWidth=1;dashed=1;dashPattern=4 4;endArrow=open;endFill=0;fontColor=#C8D2E1;fontSize=11;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="watcher" target="operations">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_dispatcher_operations" value="metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#8EA0B8;strokeWidth=1;dashed=1;dashPattern=4 4;endArrow=open;endFill=0;fontColor=#C8D2E1;fontSize=11;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="dispatcher" target="operations">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_worker_operations" value="metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#8EA0B8;strokeWidth=1;dashed=1;dashPattern=4 4;endArrow=open;endFill=0;fontColor=#C8D2E1;fontSize=11;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="worker" target="operations">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_reconciler_operations" value="metrics" style="edgeStyle=orthogonalEdgeStyle;rounded=0;orthogonalLoop=1;jettySize=auto;html=0;strokeColor=#8EA0B8;strokeWidth=1;dashed=1;dashPattern=4 4;endArrow=open;endFill=0;fontColor=#C8D2E1;fontSize=11;labelBackgroundColor=#0B1220;" edge="1" parent="1" source="reconciler" target="operations">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <mxCell id="icon_release_s3" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#7AA116;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="154" y="312" width="32" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_package_s3" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#7AA116;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="153" y="463" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_watcher_lambda" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="415.5" y="213" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_source_state_dynamodb" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.dynamodb;fillColor=#C925D1;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="440.5" y="412" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_raw_snapshots_s3" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.s3;fillColor=#7AA116;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="654" y="536" width="32" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_outbox_dynamodb" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.dynamodb;fillColor=#C925D1;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="843" y="412" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_dispatcher_lambda" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="1108" y="213" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_queue_sqs" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sqs;fillColor=#E7157B;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="1288" y="212" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_worker_lambda" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="1478" y="212" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_dlq_sqs" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sqs;fillColor=#E7157B;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="1288" y="412" width="34" height="34" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_credentials_secrets_manager" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.secrets_manager;fillColor=#DD344C;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="1475" y="412" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_credentials_systems_manager" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.systems_manager;fillColor=#E7157B;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="1517" y="412" width="28" height="28" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_reconciler_lambda" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.lambda;fillColor=#ED7100;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="1139" y="542" width="32" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_operations_cloudwatch" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.cloudwatch;fillColor=#E7157B;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="380" y="660" width="32" height="32" as="geometry" />
+        </mxCell>
+        <mxCell id="icon_operations_sns" value="" style="shape=mxgraph.aws4.resourceIcon;resIcon=mxgraph.aws4.sns;fillColor=#E7157B;strokeColor=#FFFFFF;aspect=fixed;html=0;" vertex="1" parent="1">
+          <mxGeometry x="420" y="660" width="32" height="32" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

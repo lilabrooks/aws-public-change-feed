@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 
 import argparse
+import hashlib
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 from collections.abc import Iterable
 from html.parser import HTMLParser
 from pathlib import Path
@@ -12,17 +14,81 @@ import generate_slack_sample
 
 ROOT = Path(__file__).resolve().parents[1]
 PAGE_PATH = Path("site/index.html")
-MERMAID_PATH = Path("site/architecture.mmd")
-MERMAID_RUNTIME = "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.esm.min.mjs"
+DRAWIO_PATH = Path("site/architecture.drawio")
+DRAWIO_EXPORT_PATH = Path("site/architecture.svg")
+DRAWIO_HASH_ATTRIBUTE = "data-drawio-source-sha256"
+EXPECTED_DIAGRAM_NODES = {
+    "feeds",
+    "release",
+    "package",
+    "watcher",
+    "normalizer",
+    "matcher",
+    "routes",
+    "source_state",
+    "raw_snapshots",
+    "outbox",
+    "dispatcher",
+    "queue",
+    "worker",
+    "slack",
+    "dlq",
+    "credentials",
+    "reconciler",
+    "operations",
+}
+EXPECTED_DIAGRAM_EDGES = {
+    "e_feeds_watcher": ("feeds", "watcher"),
+    "e_release_watcher": ("release", "watcher"),
+    "e_release_matcher": ("release", "matcher"),
+    "e_release_worker": ("release", "worker"),
+    "e_package_watcher": ("package", "watcher"),
+    "e_package_dispatcher": ("package", "dispatcher"),
+    "e_package_worker": ("package", "worker"),
+    "e_watcher_normalizer": ("watcher", "normalizer"),
+    "e_normalizer_matcher": ("normalizer", "matcher"),
+    "e_matcher_routes": ("matcher", "routes"),
+    "e_routes_outbox": ("routes", "outbox"),
+    "e_watcher_source_state": ("watcher", "source_state"),
+    "e_normalizer_source_state": ("normalizer", "source_state"),
+    "e_watcher_snapshots": ("watcher", "raw_snapshots"),
+    "e_outbox_dispatcher": ("outbox", "dispatcher"),
+    "e_dispatcher_queue": ("dispatcher", "queue"),
+    "e_queue_worker": ("queue", "worker"),
+    "e_worker_slack": ("worker", "slack"),
+    "e_worker_outbox": ("worker", "outbox"),
+    "e_credentials_worker": ("credentials", "worker"),
+    "e_queue_dlq": ("queue", "dlq"),
+    "e_dlq_queue": ("dlq", "queue"),
+    "e_reconciler_outbox": ("reconciler", "outbox"),
+    "e_outbox_reconciler": ("outbox", "reconciler"),
+}
+EXPECTED_DIAGRAM_ICONS = {
+    "icon_release_s3": "mxgraph.aws4.s3",
+    "icon_package_s3": "mxgraph.aws4.s3",
+    "icon_watcher_lambda": "mxgraph.aws4.lambda",
+    "icon_source_state_dynamodb": "mxgraph.aws4.dynamodb",
+    "icon_raw_snapshots_s3": "mxgraph.aws4.s3",
+    "icon_outbox_dynamodb": "mxgraph.aws4.dynamodb",
+    "icon_dispatcher_lambda": "mxgraph.aws4.lambda",
+    "icon_queue_sqs": "mxgraph.aws4.sqs",
+    "icon_worker_lambda": "mxgraph.aws4.lambda",
+    "icon_dlq_sqs": "mxgraph.aws4.sqs",
+    "icon_credentials_secrets_manager": "mxgraph.aws4.secrets_manager",
+    "icon_credentials_systems_manager": "mxgraph.aws4.systems_manager",
+    "icon_reconciler_lambda": "mxgraph.aws4.lambda",
+    "icon_operations_cloudwatch": "mxgraph.aws4.cloudwatch",
+    "icon_operations_sns": "mxgraph.aws4.sns",
+}
 REQUIRED_SITE_FILES = {
     PAGE_PATH,
-    MERMAID_PATH,
+    DRAWIO_PATH,
+    DRAWIO_EXPORT_PATH,
     Path("site/.nojekyll"),
     Path("site/compact-theme.css"),
     Path("site/compact-theme.js"),
     Path("site/compact-theme-LICENSE.txt"),
     Path("site/compact-theme-COPYRIGHT.txt"),
-    Path("site/site.js"),
     Path("site/fonts/IBMPlexMono-Regular.woff2"),
     Path("site/fonts/IBMPlexMono-SemiBold.woff2"),
     Path("site/fonts/IBMPlexSans-Regular.woff2"),
@@ -47,11 +113,10 @@ class PublicPageParser(HTMLParser):
         self.references: list[tuple[str, str, str]] = []
         self.title_parts: list[str] = []
         self.h1_parts: list[str] = []
-        self.diagram_parts: list[str] = []
+        self.diagram_images: list[dict[str, str | None]] = []
         self.html_language: str | None = None
         self._in_title = False
         self._in_h1 = False
-        self._in_diagram = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = dict(attrs)
@@ -69,24 +134,20 @@ class PublicPageParser(HTMLParser):
             self._in_title = True
         if tag == "h1":
             self._in_h1 = True
-        if tag == "pre" and "data-architecture-diagram" in attributes:
-            self._in_diagram = True
+        if tag == "img" and "data-architecture-diagram" in attributes:
+            self.diagram_images.append(attributes)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
             self._in_title = False
         if tag == "h1":
             self._in_h1 = False
-        if tag == "pre" and self._in_diagram:
-            self._in_diagram = False
 
     def handle_data(self, data: str) -> None:
         if self._in_title:
             self.title_parts.append(data)
         if self._in_h1:
             self.h1_parts.append(data)
-        if self._in_diagram:
-            self.diagram_parts.append(data)
 
 
 def normalized_text(parts: Iterable[str]) -> str:
@@ -106,6 +167,79 @@ def resolve_local_reference(page: Path, raw_reference: str) -> Path | None:
     return target
 
 
+def _local_name(tag: str) -> str:
+    return tag.rsplit("}", 1)[-1]
+
+
+def validate_drawio_artifacts(root: Path) -> list[str]:
+    errors: list[str] = []
+    source_path = root / DRAWIO_PATH
+    export_path = root / DRAWIO_EXPORT_PATH
+    if not source_path.is_file() or not export_path.is_file():
+        return errors
+
+    try:
+        drawio_root = ET.parse(source_path).getroot()
+    except (ET.ParseError, OSError) as error:
+        return [f"cannot parse {DRAWIO_PATH}: {error}"]
+    if _local_name(drawio_root.tag) != "mxfile":
+        errors.append(f"{DRAWIO_PATH}: root element must be mxfile")
+        return errors
+
+    diagrams = [child for child in drawio_root if _local_name(child.tag) == "diagram"]
+    if len(diagrams) != 1:
+        errors.append(f"{DRAWIO_PATH}: expected exactly one diagram")
+        return errors
+    graph_models = [child for child in diagrams[0] if _local_name(child.tag) == "mxGraphModel"]
+    if len(graph_models) != 1:
+        errors.append(f"{DRAWIO_PATH}: expected one uncompressed mxGraphModel")
+        return errors
+
+    cells = {
+        cell.get("id"): cell for cell in graph_models[0].iter() if _local_name(cell.tag) == "mxCell" and cell.get("id")
+    }
+    for node_id in sorted(EXPECTED_DIAGRAM_NODES):
+        cell = cells.get(node_id)
+        if cell is None or cell.get("vertex") != "1" or not (cell.get("value") or "").strip():
+            errors.append(f"{DRAWIO_PATH}: missing required labeled node {node_id}")
+    for edge_id, (source, target) in sorted(EXPECTED_DIAGRAM_EDGES.items()):
+        cell = cells.get(edge_id)
+        if cell is None or cell.get("edge") != "1" or cell.get("source") != source or cell.get("target") != target:
+            errors.append(f"{DRAWIO_PATH}: edge {edge_id} must connect {source} to {target}")
+    for icon_id, resource_icon in sorted(EXPECTED_DIAGRAM_ICONS.items()):
+        cell = cells.get(icon_id)
+        style = cell.get("style", "") if cell is not None else ""
+        if (
+            cell is None
+            or cell.get("vertex") != "1"
+            or "shape=mxgraph.aws4.resourceIcon" not in style
+            or f"resIcon={resource_icon}" not in style
+        ):
+            errors.append(f"{DRAWIO_PATH}: icon {icon_id} must use {resource_icon}")
+
+    try:
+        svg_root = ET.parse(export_path).getroot()
+    except (ET.ParseError, OSError) as error:
+        errors.append(f"cannot parse {DRAWIO_EXPORT_PATH}: {error}")
+        return errors
+    if _local_name(svg_root.tag) != "svg":
+        errors.append(f"{DRAWIO_EXPORT_PATH}: root element must be svg")
+        return errors
+
+    source_sha256 = hashlib.sha256(source_path.read_bytes()).hexdigest()
+    if svg_root.get(DRAWIO_HASH_ATTRIBUTE) != source_sha256:
+        errors.append(
+            f"{DRAWIO_EXPORT_PATH}: export is stale for {DRAWIO_PATH}; "
+            "regenerate the SVG and stamp its exact source hash"
+        )
+    child_names = {_local_name(child.tag) for child in svg_root}
+    if not {"title", "desc"}.issubset(child_names):
+        errors.append(f"{DRAWIO_EXPORT_PATH}: accessible title and description are required")
+    if svg_root.get("role") != "img" or not svg_root.get("aria-labelledby"):
+        errors.append(f"{DRAWIO_EXPORT_PATH}: role=img and aria-labelledby are required")
+    return errors
+
+
 def validate_repository(root: Path) -> list[str]:
     errors: list[str] = []
     for relative_path in sorted(REQUIRED_SITE_FILES):
@@ -116,10 +250,15 @@ def validate_repository(root: Path) -> list[str]:
             errors.append(f"public-site file is empty: {relative_path}")
 
     page = root / PAGE_PATH
-    mermaid_source_path = root / MERMAID_PATH
+    drawio_source_path = root / DRAWIO_PATH
+    drawio_export_path = root / DRAWIO_EXPORT_PATH
     readme = root / "README.md"
-    site_script = root / "site/site.js"
-    if not page.is_file() or not mermaid_source_path.is_file() or not readme.is_file() or not site_script.is_file():
+    if (
+        not page.is_file()
+        or not drawio_source_path.is_file()
+        or not drawio_export_path.is_file()
+        or not readme.is_file()
+    ):
         return errors
 
     parser = PublicPageParser()
@@ -168,18 +307,25 @@ def validate_repository(root: Path) -> list[str]:
         if not target.exists():
             errors.append(f"{PAGE_PATH}: {tag} {attribute} target does not exist: {reference}")
 
-    source = mermaid_source_path.read_text(encoding="utf-8").strip()
-    embedded_source = "".join(parser.diagram_parts).strip()
-    if not embedded_source:
-        errors.append(f"{PAGE_PATH}: missing embedded Mermaid architecture source")
-    elif embedded_source != source:
-        errors.append(f"{PAGE_PATH}: embedded Mermaid source differs from {MERMAID_PATH}")
+    if len(parser.diagram_images) != 1:
+        errors.append(f"{PAGE_PATH}: expected exactly one draw.io architecture image")
+    else:
+        image = parser.diagram_images[0]
+        if image.get("src") != "./architecture.svg":
+            errors.append(f"{PAGE_PATH}: draw.io architecture image must load ./architecture.svg")
+        if not (image.get("alt") or "").strip():
+            errors.append(f"{PAGE_PATH}: draw.io architecture image requires alt text")
+        if image.get("width") != "1800" or image.get("height") != "780":
+            errors.append(f"{PAGE_PATH}: architecture image dimensions must match the SVG viewBox")
 
-    script_text = site_script.read_text(encoding="utf-8")
-    if MERMAID_RUNTIME not in script_text:
-        errors.append(f"site/site.js: Mermaid runtime must be pinned to {MERMAID_RUNTIME}")
-    if "@latest" in script_text:
-        errors.append("site/site.js: unpinned @latest dependency is not allowed")
+    page_references = {reference for _, _, reference in parser.references}
+    for expected_reference in ("./architecture.drawio", "./architecture.svg"):
+        if expected_reference not in page_references:
+            errors.append(f"{PAGE_PATH}: missing architecture artifact link: {expected_reference}")
+    if "mermaid" in page.read_text(encoding="utf-8").casefold():
+        errors.append(f"{PAGE_PATH}: Mermaid source or runtime references are no longer allowed")
+
+    errors.extend(validate_drawio_artifacts(root))
 
     theme_css = (root / "site/compact-theme.css").read_text(encoding="utf-8")
     theme_js = (root / "site/compact-theme.js").read_text(encoding="utf-8")
@@ -192,7 +338,7 @@ def validate_repository(root: Path) -> list[str]:
     if page_url not in readme_text:
         errors.append(f"README.md: public architecture page link is missing: {page_url}")
     if "```mermaid" in readme_text:
-        errors.append("README.md: Mermaid architecture belongs on the public page")
+        errors.append("README.md: architecture diagrams use the committed draw.io source on the public page")
 
     errors.extend(generate_slack_sample.validation_errors(root))
 
@@ -255,7 +401,7 @@ def main() -> int:
             print(issue, file=sys.stderr)
         return 1
 
-    print("public architecture page passed structure, assets, Mermaid, Slack sample, and content-sync validation")
+    print("public architecture page passed structure, assets, draw.io/SVG, Slack sample, and content-sync validation")
     return 0
 
 

@@ -3,54 +3,74 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A service architecture for turning public AWS announcements into explainable, route-scoped Slack review candidates.">
+  <meta name="description" content="Matches public AWS feed items to configured services and risk phrases, then queues route-scoped Slack review candidates.">
   <meta name="author" content="Lila Brooks">
   <meta name="theme-color" content="#111827">
   <meta property="og:type" content="website">
   <meta property="og:title" content="AWS Public Change Alerting">
-  <meta property="og:description" content="A deterministic AWS architecture for public-change intelligence, explainable review candidates, and durable Slack delivery.">
+  <meta property="og:description" content="Matches public AWS feed items to configured services and risk phrases, then queues route-scoped Slack review candidates.">
   <meta property="og:url" content="https://lilabrooks.github.io/aws-public-change-feed/">
   <link rel="canonical" href="https://lilabrooks.github.io/aws-public-change-feed/">
   <link rel="license" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/LICENSE">
   <link rel="stylesheet" href="./compact-theme.css">
   <script src="./compact-theme.js" defer></script>
-  <script type="module" src="./site.js"></script>
   <title>AWS Public Change Alerting</title>
   <style>
-    .site-status {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin: 24px 0 0;
+    .compact-hero {
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.7fr);
+    }
+
+    .compact-title {
+      max-width: 760px;
+      font-size: clamp(2.5rem, 5vw, 4rem);
+    }
+
+    .site-spec {
+      margin: 0;
+      border-top: 1px solid var(--compact-rule);
+    }
+
+    .site-spec-row {
+      display: grid;
+      grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+      gap: clamp(20px, 4vw, 48px);
+      padding-block: 18px;
+      border-bottom: 1px solid var(--compact-rule);
+    }
+
+    .site-spec dt,
+    .site-step-label,
+    .site-status-table th {
+      color: var(--compact-accent);
+      font-family: var(--compact-mono);
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .site-spec dd {
+      max-width: 52rem;
+      margin: 0;
+      color: var(--compact-muted);
     }
 
     .site-note {
-      margin-top: 24px;
-      padding: 18px 20px;
-      border-left: 3px solid var(--compact-accent);
-      background: var(--compact-accent-soft);
+      max-width: 52rem;
+      margin: 24px 0 0;
+      padding-top: 18px;
+      border-top: 1px solid var(--compact-accent);
+      color: var(--compact-muted);
+      font-size: 0.95rem;
     }
 
     .site-note p {
       margin: 0;
     }
 
-    .site-note p + p {
-      margin-top: 10px;
-    }
-
-    .site-list {
-      margin: 18px 0 0;
-      padding-left: 1.2rem;
-    }
-
-    .site-list li + li {
-      margin-top: 8px;
-    }
-
     .architecture-figure {
-      width: min(1600px, calc(100vw - 32px));
-      margin: 28px 0 0 50%;
+      width: min(1480px, calc(100vw - 32px));
+      margin: 32px 0 0 50%;
       transform: translateX(-50%);
     }
 
@@ -60,74 +80,143 @@
       font-size: 0.9rem;
     }
 
-    .mermaid {
-      min-height: 440px;
+    .architecture-frame {
       margin: 0;
-      padding: clamp(12px, 1.5vw, 22px);
       overflow: auto;
       border: 1px solid var(--compact-rule);
       border-radius: 4px;
-      background: var(--compact-panel);
-      color: var(--compact-text);
-      font-family: var(--compact-mono);
-      font-size: 0.82rem;
-      line-height: 1.55;
-      white-space: pre;
+      background: #0b1220;
     }
 
-    .mermaid[data-processed="true"] {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      white-space: normal;
-    }
-
-    .mermaid svg {
+    .architecture-diagram {
+      display: block;
       width: 100%;
-      min-width: 1040px;
+      min-width: 1180px;
       height: auto;
     }
 
-    .mermaid.diagram-error {
-      border-color: #c2413b;
-      white-space: pre-wrap;
+    .architecture-source-links {
+      white-space: nowrap;
     }
 
-    .decision-reference {
-      display: block;
-      margin-top: 18px;
-      color: var(--compact-muted);
-      font-family: var(--compact-mono);
-      font-size: 0.76rem;
+    .site-steps {
+      margin: 32px 0 0;
+      padding: 0;
+      border-top: 1px solid var(--compact-rule);
+      list-style: none;
+      counter-reset: runtime-step;
     }
 
-    .evidence-grid {
+    .site-steps li {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1px;
+      grid-template-columns: minmax(120px, 180px) minmax(0, 1fr);
+      gap: clamp(20px, 4vw, 48px);
+      padding-block: 18px;
+      border-bottom: 1px solid var(--compact-rule);
+      counter-increment: runtime-step;
+    }
+
+    .site-step-label::before {
+      content: "0" counter(runtime-step) " / ";
+      color: var(--compact-muted);
+    }
+
+    .site-steps p {
+      max-width: 52rem;
+      margin: 0;
+      color: var(--compact-muted);
+    }
+
+    .site-status-table {
+      width: 100%;
       margin-top: 28px;
-      padding: 1px;
-      background: var(--compact-rule);
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .site-status-table th,
+    .site-status-table td {
+      padding: 18px 0;
+      border-top: 1px solid var(--compact-rule);
+      text-align: left;
+      vertical-align: top;
+    }
+
+    .site-status-table th {
+      width: 180px;
+      padding-right: 32px;
+    }
+
+    .site-status-table td {
+      color: var(--compact-muted);
+    }
+
+    .site-disclosure {
+      margin-top: 28px;
+      border-top: 1px solid var(--compact-rule);
+      border-bottom: 1px solid var(--compact-rule);
+    }
+
+    .site-disclosure > summary {
+      padding-block: 16px;
+      color: var(--compact-accent);
+      cursor: pointer;
+      font-family: var(--compact-mono);
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
     }
 
     .evidence-panel {
-      padding: 28px;
-      background: var(--compact-panel);
+      padding: 8px 0 24px;
     }
 
     .evidence-panel h3 {
-      margin: 0;
+      margin: 0 0 18px;
       font-family: var(--compact-mono);
       font-size: 1rem;
     }
 
+    .evidence-panel > p {
+      max-width: 64rem;
+      margin: 0;
+      padding: 10px 0;
+      border-top: 1px solid var(--compact-rule);
+      color: var(--compact-muted);
+    }
+
+    .evidence-panel details {
+      margin-top: 12px;
+    }
+
     @media (max-width: 760px) {
-      .evidence-grid {
+      .site-spec-row,
+      .site-steps li {
         grid-template-columns: 1fr;
+        gap: 8px;
       }
 
-      .mermaid {
-        min-height: 360px;
+      .site-status-table,
+      .site-status-table tbody,
+      .site-status-table tr,
+      .site-status-table th,
+      .site-status-table td {
+        display: block;
+        width: 100%;
+      }
+
+      .site-status-table th {
+        padding-bottom: 6px;
+      }
+
+      .site-status-table td {
+        padding-top: 0;
+        border-top: 0;
+      }
+
+      .architecture-diagram {
+        min-width: 1040px;
       }
     }
   </style>
@@ -142,11 +231,10 @@
     </a>
     <div class="compact-header-actions">
       <nav class="compact-nav" aria-label="Primary navigation">
-        <a href="#contracts">Contracts</a>
-        <a href="#slack-sample">Slack sample</a>
-        <a href="#flow">AWS architecture</a>
-        <a href="#decisions">Reasons</a>
-        <a href="#evidence">Evidence</a>
+        <a href="#value">Purpose</a>
+        <a href="#flow">System</a>
+        <a href="#evidence">Status</a>
+        <a href="#source">Source</a>
       </nav>
       <button class="compact-theme-toggle" type="button" data-theme-toggle hidden>Theme</button>
     </div>
@@ -155,83 +243,74 @@
   <main id="content">
     <div class="compact-hero compact-shell" id="overview">
       <div>
-        <p class="compact-eyebrow">Public AWS change intelligence</p>
-        <h1 class="compact-title">Explainable AWS public-change alerting, <em>designed through explicit decisions.</em></h1>
+        <p class="compact-eyebrow">AWS RSS and Atom feeds to Slack</p>
+        <h1 class="compact-title">AWS announcements matched to <em>configured services and risk phrases.</em></h1>
         <div class="compact-actions">
-          <a class="compact-button compact-button-primary" href="#contracts">See the contracts</a>
-          <a class="compact-button" href="#flow">See the AWS flow</a>
+          <a class="compact-button compact-button-primary" href="#flow">See the request path</a>
+          <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed">Open GitHub</a>
         </div>
       </div>
       <div>
-        <p class="compact-lede">AWS Public Change Alerting turns approved public announcements into route-scoped Slack candidates for teams operating repeated AWS stacks. Each candidate records the source revision, matching evidence, potentially relevant environments, and exact policy release.</p>
-        <div class="site-status" role="group" aria-label="Project status">
-          <span class="compact-tag">Architecture defined</span>
-          <span class="compact-tag">Contracts validated</span>
-          <span class="compact-tag">Infrastructure provisioned</span>
-          <span class="compact-tag">Runtime planned</span>
-        </div>
+        <p class="compact-lede">Each candidate names the source text that matched, the configured environments mapped to it, the Slack route, and the configuration release used to produce it.</p>
       </div>
     </div>
 
     <section class="compact-section" id="value">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Value</p>
+          <p class="compact-eyebrow">Use</p>
           <div>
-            <h2 class="compact-section-title">A focused review queue from a broad AWS announcement stream.</h2>
-            <p class="compact-section-copy">General feed readers collect AWS news. This design adds declared service profiles, risk rules, environment mapping, and team routes. Platform teams receive explainable review candidates without granting the service access to customer AWS accounts.</p>
+            <h2 class="compact-section-title">Send each team the AWS changes that match its configured stack.</h2>
+            <p class="compact-section-copy">A candidate names the announcement, matched service alias, risk phrase, configured environments, and Slack route. Operators verify applicability with their account tooling.</p>
           </div>
         </div>
-
-        <div class="compact-grid">
-          <article class="compact-card">
-            <span class="compact-tag">Useful output</span>
-            <h3 class="compact-card-title">Evidence attached to every candidate</h3>
-            <p>The result names the public source, service, risk evidence, announcement revision, route, audience, application version, and immutable configuration release.</p>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Honest boundary</span>
-            <h3 class="compact-card-title">Potential relevance requires human review</h3>
-            <p>Public announcements cannot prove account or resource impact. Operators use the candidate as a review prompt and confirm applicability with their existing AWS tooling.</p>
-          </article>
-        </div>
+        <dl class="site-spec">
+          <div class="site-spec-row">
+            <dt>Input</dt>
+            <dd>Approved public AWS RSS and Atom feeds plus an immutable configuration and inventory release.</dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Output</dt>
+            <dd>A Slack review candidate with the source revision, matched text, service, risk type, Slack destination, mapped environments, and configuration release.</dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Boundary</dt>
+            <dd>Matches are potentially relevant. The service has no customer-account access and does not claim resource impact.</dd>
+          </div>
+        </dl>
       </div>
     </section>
 
     <section class="compact-section" id="contracts">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Contracts</p>
+          <p class="compact-eyebrow">Contracts and tests</p>
           <div>
-            <h2 class="compact-section-title">The contracts are executable, and the checks run against them.</h2>
-            <p class="compact-section-copy">Six strict JSON Schemas define the configuration, inventory, release, candidate, and delivery-request shapes. One canonical example bundle satisfies all of them at once, so the files prove both their individual shape and the behavior they share.</p>
+            <h2 class="compact-section-title">Schemas fix the file shapes. Tests recompute the IDs.</h2>
+            <p class="compact-section-copy">A contract change updates schemas, examples, semantic validation, and regression tests in the same change.</p>
           </div>
         </div>
-
-        <div class="evidence-grid">
-          <article class="evidence-panel">
-            <h3>What the bundle proves</h3>
-            <ul class="site-list">
-              <li>Each example passes the schema that owns it, and unknown fields are rejected.</li>
-              <li>Cross-file projections, references, and route scoping resolve across the whole bundle.</li>
-              <li>Release, candidate, and request hashes recompute to the committed values.</li>
-              <li>Deterministic identities reproduce across replays from fixed test vectors.</li>
-            </ul>
-          </article>
-          <article class="evidence-panel">
-            <h3>How a contract change is held</h3>
-            <p>The bundle is the starting point for the negative tests: every mutation derived from it must fail validation.</p>
-            <ul class="site-list">
-              <li>Every rejected configuration or contract mutation carries a regression test.</li>
-              <li>A contract edit updates the schema, example, semantic validator, and tests together.</li>
-              <li>Edits touching identity recalculate every dependent hash in the same change.</li>
-              <li>Specification, ADRs, and this page move with the contracts or the build fails.</li>
-            </ul>
-          </article>
-        </div>
+        <dl class="site-spec">
+          <div class="site-spec-row">
+            <dt>Required behavior</dt>
+            <dd>Six specification chapters and 20 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Contracts</dt>
+            <dd>Eight strict JSON Schemas reject unknown fields. Cross-file checks confirm that referenced profiles, environments, and Slack routes exist and use compatible versions.</dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>ID checks</dt>
+            <dd>Tests recompute release, candidate, and request hashes from committed fixture bytes. Reprocessing the same inputs must reproduce the same IDs.</dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Checks</dt>
+            <dd><code>make check</code> runs format, lint, type, schema, reference, corpus, unit, integration, Terraform, and page-drift checks.</dd>
+          </div>
+        </dl>
 
         <aside class="site-note" aria-label="Contract evidence boundary">
-          <p><strong>Validated contracts are not production evidence.</strong> These checks prove the repository agrees with itself. The controlled D0 delivery below is separate live evidence; persistent operation still requires measured feed quality and operational tests.</p>
+          <p>These checks show that code and committed contracts agree. Controlled AWS runs test deployed paths separately.</p>
         </aside>
       </div>
     </section>
@@ -239,13 +318,14 @@
     <section class="compact-section" id="slack-sample">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Slack sample</p>
+          <p class="compact-eyebrow">Slack message</p>
           <div>
-            <h2 class="compact-section-title">The documented message comes from the delivery renderer.</h2>
-            <p class="compact-section-copy">This sample uses the canonical candidate, inventory, deployment policy, and message limits. The site check regenerates it through the same <code>render_message</code> function the worker uses and fails when the committed output drifts.</p>
+            <h2 class="compact-section-title">The page&rsquo;s example is generated by the worker code.</h2>
+            <p class="compact-section-copy">The site passes the canonical candidate through <code>render_message</code>. Validation fails when the fixture, renderer output, or committed page differs.</p>
           </div>
         </div>
-
+        <details class="site-disclosure">
+          <summary>View canonical message</summary>
         <!-- GENERATED_SLACK_SAMPLE_START -->
         <article class="evidence-panel" data-rendered-slack-sample>
           <h3>Canonical renderer output</h3>
@@ -272,129 +352,92 @@ Recommended review action: Review supported Kubernetes versions and plan require
           </details>
         </article>
         <!-- GENERATED_SLACK_SAMPLE_END -->
-
-        <aside class="site-note" aria-label="Slack sample evidence boundary">
-          <p><strong>This is static contract evidence.</strong> It proves the canonical candidate fits the renderer and documents its message shape. A separate controlled D0 run has now proved one matching real post through Slack and durable delivery state.</p>
-        </aside>
+        </details>
+        <p class="site-note">In a controlled dev run, the dispatcher queued one public-feed candidate, the worker posted it to Slack, and DynamoDB recorded <code>posted</code>.</p>
       </div>
     </section>
 
     <section class="compact-section" id="flow">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">AWS architecture</p>
+          <p class="compact-eyebrow">System</p>
           <div>
-            <h2 class="compact-section-title">Deterministic matching before a durable Slack delivery boundary.</h2>
-            <p class="compact-section-copy">The design uses Lambda for scheduled and event-driven work, S3 for immutable releases and feed snapshots, DynamoDB for source and delivery state, SQS FIFO for destination-ordered transport, and CloudWatch plus SNS for operations.</p>
+            <h2 class="compact-section-title">Fetch, match, write to DynamoDB, then queue for Slack.</h2>
+            <p class="compact-section-copy">Lambda runs the work. S3 stores immutable releases and feed snapshots. DynamoDB owns source and delivery state. SQS FIFO carries destination-ordered work to Slack.</p>
           </div>
         </div>
 
         <figure class="architecture-figure">
-          <pre class="mermaid" data-architecture-diagram>flowchart TB
-    accTitle: AWS Public Change Alerting processing flow
-    accDescr: Approved public AWS feeds and an immutable configuration release from S3 enter deterministic processing. Route-scoped candidates are stored in DynamoDB, dispatched through SQS FIFO, and delivered to Slack. The worker reads Slack credentials from Secrets Manager. Recovery state returns to DynamoDB.
-
-    subgraph Inputs["Approved inputs"]
-        direction LR
-        Feeds["AWS RSS and Atom feeds"]
-        S3["S3 config bucket"] --> Release["Immutable configuration and inventory release"]
-    end
-
-    subgraph Decisioning["Deterministic candidate generation"]
-        direction LR
-        Watcher["Feed watcher"] --> Normalize["Normalize, coalesce, and track revisions"]
-        Normalize --> Matcher["Service and risk matcher"]
-        Matcher --> Routes["Profile and route mapping"]
-        Routes --> Outbox["DynamoDB candidates and durable outbox"]
-    end
-
-    subgraph Delivery["Durable Slack delivery"]
-        direction LR
-        Dispatcher["Outbox dispatcher"] --> Queue["SQS FIFO by Slack destination"]
-        Queue --> Worker["Slack delivery worker"]
-        Worker --> Slack["Slack channel"]
-        Reconciler["Recovery reconciler"]
-        Secrets["Secrets Manager"] --> Worker
-    end
-
-    Feeds --> Watcher
-    Release --> Watcher
-    Release --> Matcher
-    Outbox --> Dispatcher
-    Worker -->|"Known or unknown outcome"| Outbox
-    Reconciler --> Outbox</pre>
+          <div class="architecture-frame">
+            <img
+              class="architecture-diagram"
+              data-architecture-diagram
+              src="./architecture.svg"
+              width="1800"
+              height="780"
+              loading="lazy"
+              decoding="async"
+              alt="AWS Public Change Alerting processing flow. Approved public feeds, immutable releases, and an exact application package produce route-scoped candidates that move through a durable DynamoDB outbox, destination-grouped SQS FIFO delivery, Slack, and bounded recovery."
+            >
+          </div>
           <figcaption>
-            <span data-diagram-status aria-live="polite">Loading the architecture diagram.</span>
-            The <a href="./architecture.mmd">Mermaid source</a> is committed beside this page and checked for content drift.
+            The editable draw.io source and SVG export share an SHA-256 value. Validation fails when they differ.
+            <span class="architecture-source-links"><a href="./architecture.drawio">Edit the draw.io source</a> · <a href="./architecture.svg">Open the SVG export</a></span>
           </figcaption>
         </figure>
 
-        <div class="compact-grid">
-          <article class="compact-card">
-            <span class="compact-tag">01 · Acquire</span>
-            <h3 class="compact-card-title">Fetch approved public sources</h3>
-            <p>The watcher applies HTTPS allowlists, DNS and IP checks, TLS verification, redirect rejection, response limits, parser limits, and per-feed checkpoints.</p>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">02 · Match</span>
-            <h3 class="compact-card-title">Create route-scoped evidence</h3>
-            <p>Normalized announcements are matched against service aliases and distinct risk evidence, then mapped through static profiles to sorted route audiences. Terms are exact configured phrases, never stemmed, so a reviewer sees the literal wording that fired.</p>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">03 · Persist</span>
-            <h3 class="compact-card-title">Cross the durable outbox boundary</h3>
-            <p>DynamoDB stores each candidate and delivery request before the watcher advances its feed checkpoint. Replays reconstruct the same logical identity.</p>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">04 · Deliver</span>
-            <h3 class="compact-card-title">Order, pace, and recover Slack work</h3>
-            <p>SQS FIFO groups work by destination. The worker records posted, retryable, terminal, or unknown outcomes. An operator can close a <code>delivery_unknown</code> record as posted after finding the Slack message, reserve one audited retry after finding no post, or reserve one exact-request replay after correcting an ADR-021 allowlisted terminal condition. Terminal replay preserves the historical attempt count and exact release, refuses expired or immutable failures, and uses the existing paced dispatch path. A separate five-minute reconciler repairs bounded safe work, converts exact expired leases to unknown, and reports stale queued records without guessing that SQS lost them.</p>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">05 · Exercise</span>
-            <h3 class="compact-card-title">Isolate live recovery and load proof</h3>
-            <p>ADR-024 adds a disposable preflight state, private Slack destination, fixed 50-message protocol, preview-bound evidence, and exact teardown guards without placing synthetic records in persistent dev.</p>
-          </article>
-        </div>
+        <ol class="site-steps">
+          <li>
+            <span class="site-step-label">Acquire</span>
+            <p>Fetch approved hosts with TLS, DNS and IP checks, redirect rejection, byte limits, parser limits, and per-feed checkpoints.</p>
+          </li>
+          <li>
+            <span class="site-step-label">Match</span>
+            <p>Normalize title and summary text, merge duplicate URLs across feeds, then apply configured service aliases, risk phrases, profiles, and routes.</p>
+          </li>
+          <li>
+            <span class="site-step-label">Persist</span>
+            <p>Write route-scoped candidates and delivery requests before advancing the feed checkpoint.</p>
+          </li>
+          <li>
+            <span class="site-step-label">Deliver</span>
+            <p>Dispatch due work through SQS FIFO. The worker applies destination pacing and records the observed Slack outcome.</p>
+          </li>
+          <li>
+            <span class="site-step-label">Recover</span>
+            <p>The reconciler retries due work and turns expired sending leases into <code>delivery_unknown</code>. Operator commands require the current state version before closure or replay.</p>
+          </li>
+        </ol>
       </div>
     </section>
 
     <section class="compact-section" id="decisions">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Why this architecture</p>
+          <p class="compact-eyebrow">Required rules</p>
           <div>
-            <h2 class="compact-section-title">The design follows the evidence and failure model.</h2>
-            <p class="compact-section-copy">Nineteen accepted ADRs govern the current architecture. ADR-017 narrowed an earlier design to public-feed intelligence and Slack delivery, removing account-scoped health, cost, and external-adapter paths from the product.</p>
+            <h2 class="compact-section-title">Public feeds only. DynamoDB owns delivery history.</h2>
+            <p class="compact-section-copy">Nineteen accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
           </div>
         </div>
-
-        <div class="compact-grid">
-          <article class="compact-card">
-            <span class="compact-tag">Scope and trust</span>
-            <h3 class="compact-card-title">Public feeds and static profiles</h3>
-            <p>One public evidence class keeps the product narrow. Static mappings provide environment context without cross-account roles, resource discovery, or customer telemetry.</p>
-            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/017-public-feed-only-product-scope.md">ADR-017 · Product scope</a>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Evidence and identity</span>
-            <h3 class="compact-card-title">Deterministic rules and null-framed hashes</h3>
-            <p>Reviewers can trace why a service and risk matched. Stable identity domains keep replay, edits, route isolation, and dedupe behavior testable.</p>
-            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/002-route-scoped-slack-delivery-and-dedupe.md">ADR-002 · Route-scoped identity</a>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">State and transport</span>
-            <h3 class="compact-card-title">DynamoDB outbox with SQS FIFO</h3>
-            <p>DynamoDB owns durable intent and outcomes. SQS handles ready-work transport and destination ordering; its time-limited dedupe cannot replace lasting state.</p>
-            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/007-central-slack-delivery-queue-and-worker.md">ADR-007 · Durable delivery</a>
-          </article>
-          <article class="compact-card">
-            <span class="compact-tag">Replay and uncertainty</span>
-            <h3 class="compact-card-title">Immutable releases and explicit unknown outcomes</h3>
-            <p>Exact S3 object versions reproduce the policy behind a candidate, and promotion of the active release is guarded by an S3 ETag precondition. Slack timeouts become <code>delivery_unknown</code> because an HTTP call cannot commit atomically with DynamoDB.</p>
-            <a class="decision-reference" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004 · Slack guarantees</a>
-          </article>
-        </div>
+        <dl class="site-spec">
+          <div class="site-spec-row">
+            <dt>Inputs</dt>
+            <dd>The runtime reads public feeds and static profiles. It has no customer-account credentials, resource discovery, telemetry, or remediation access. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/017-public-feed-only-product-scope.md">ADR-017</a></dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Candidate IDs</dt>
+            <dd>Candidate IDs include the announcement revision, service, risk, route, audience, and release. Reprocessing the same inputs produces the same ID. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/002-route-scoped-slack-delivery-and-dedupe.md">ADR-002</a></dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Delivery state</dt>
+            <dd>DynamoDB stores each request and outcome. SQS FIFO carries ready work in order for each Slack destination. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/007-central-slack-delivery-queue-and-worker.md">ADR-007</a></dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Slack timeout</dt>
+            <dd>A timeout becomes <code>delivery_unknown</code>. An operator checks Slack before choosing closure or one audited retry. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004</a></dd>
+          </div>
+        </dl>
 
         <div class="compact-actions">
           <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/architecture/README.md#architecture-decision-records">Read the ADR index</a>
@@ -406,78 +449,42 @@ Recommended review action: Review supported Kubernetes versions and plan require
     <section class="compact-section" id="evidence">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Evidence and status</p>
+          <p class="compact-eyebrow">Status</p>
           <div>
-            <h2 class="compact-section-title">The first controlled real Slack delivery is proved; persistent operation remains.</h2>
-            <p class="compact-section-copy">The watcher, dispatcher, and worker are deployed with the exact Lambda package, and their automatic triggers remain disabled. One controlled real request reached Slack and durable <code>posted</code>; 11 exact requests remain queued for M1. The recovery reconciler remains undeployed. Persistent operation, recovery, load, and alarm proof remain open.</p>
+            <h2 class="compact-section-title">The dev system has posted one real candidate. Production preflight remains.</h2>
+            <p class="compact-section-copy">Tests cover code and contracts. Controlled dev runs cover selected AWS paths. Scheduled operation has not been proven.</p>
           </div>
         </div>
-
-        <div class="evidence-grid">
-          <article class="evidence-panel">
-            <h3>Available evidence</h3>
-            <ul class="site-list">
-              <li>6 numbered specifications and 19 accepted ADRs</li>
-              <li>6 strict schemas with one valid cross-file example bundle</li>
-              <li>Deterministic matching scored against a labeled corpus of real and authored announcements</li>
-              <li>Feed acquisition with host allowlisting, address validation, and DOCTYPE-refusing parsing</li>
-              <li>A scheduled watcher composition root with exact release loading, conditional feed leases, response snapshots before parsing, compare-and-swap announcement history, deterministic response pages, and all-or-none checkpoint advancement</li>
-              <li>Watcher paging signals that separate bounded incompletion from unexpected faults, retain scheduled retries, and distinguish immediate fault pages from sustained 15-minute alarm periods</li>
-              <li>Watcher AWS adapters exercised through service mocks from an exact S3 release pointer and raw RSS response to S3 snapshot evidence and both DynamoDB tables</li>
-              <li>Route-scoped candidate construction rebuilt from the committed contract bundle</li>
-              <li>Durable outbox holding the feed checkpoint until candidate and delivery records exist</li>
-              <li>Due-work dispatch with state-version claims, FIFO dedupe reuse, cross-state batch limits, and explicit unknown-send evidence</li>
-              <li>DynamoDB delivery and SQS FIFO producer adapters exercised against service mocks</li>
-              <li>A one-minute dispatcher Lambda composition root with strict schedule validation, bounded results, function-scoped heartbeat, reserved concurrency one, and source-scoped exhausted-event handling</li>
-              <li>Slack delivery worker with exact release and application-artifact checks, release-bound candidate semantics, bounded plain-text rendering, conditional outcomes, pacing state, and retry-safe response classification</li>
-              <li>A public canonical Slack sample generated through the delivery renderer, with validation that rejects page or fixture drift and unsupported block shapes</li>
-              <li>FIFO Lambda handling with strict queue-body validation, remaining-time checks, ordered partial-batch failures, and fixed-name, dimensionless embedded metrics</li>
-              <li>Bounded recovery with exact expired-lease conditions, no automatic replay of unknown or unproven queued work, fixed state dimensions, and a scheduled Lambda composition root</li>
-              <li>A five-minute reconciler schedule with reserved concurrency one, separate exact package inputs, bounded retries, and a source-scoped standard runtime-failure queue</li>
-              <li>Preview-first delivery-DLQ control that verifies the exact FIFO queue pair and uses native SQS start, status, and cancellation actions without reading message bodies</li>
-              <li>Preview-first exact terminal replay with an explicit response allowlist, live-TTL and state-version guards, dedicated bounded audit history, and one reserved attempt that keeps the historical network-attempt count</li>
-              <li>Deterministic Python 3.12 packaging, a complete dependency lock, append-only digest-key publication, exact S3 object-version deployment inputs, and one injected <code>sha256:</code> application identity</li>
-              <li>Slack HTTP transport for incoming-webhook and bot-token modes, sharing feed acquisition&rsquo;s address validation and pinned TLS connection, reporting only observed facts, and proving its no-bytes-sent claim row by row against a truth table</li>
-              <li>Credential readers for both accepted secret stores, Secrets Manager and SSM SecureString, requiring an encrypted parameter type, returning the stored value whole, and keeping it out of every message, repr, and log</li>
-              <li>Permanent credential faults resolved terminally while transient store failures reschedule with a bounded delay, no Slack call, and no pacing advance</li>
-              <li>Corpus evaluation and live feed screening that explicitly load the reviewed dev policy, with screening flagging unrepresented production matches while exact corpus regressions prove represented hard negatives remain no-match</li>
-              <li>S3 release preconditions measured against the mock the publisher is tested on, including where that mock cannot stand in for S3</li>
-              <li>Source-level active-manifest absence detection through one exact-key, one-result S3 list probe after an ambiguous current read, with deployment proof retained for the next ledger</li>
-              <li>Release publication and promotion reproducing the committed release from the contract bundle's own bytes</li>
-              <li>A preview-first configuration-release command that generates the deployed inventory, checks captured Terraform outputs, validates the exact bundle, applies only an unchanged plan and pointer decision, and requires the runtime compatibility probe before completion</li>
-              <li>Release loading that reads exact pinned versions, verifies hashes, validates the fetched bodies against their owned schemas, and binds internal versions to the pointer</li>
-              <li>Rollback that verifies a retained release before restoring it, with promotion times required to move forward so no later write can reproduce a retained version</li>
-              <li>A recorded decision on where the release contract is measured, including the one property the mock contradicts and the suite that will cover it</li>
-              <li>Terraform bootstrap and central roots reconciled in dev with native state locking, 1,800-second delivery visibility, the separate runtime-failure queue, one confirmed Terraform-owned operational subscription, the application-artifact retirement role, the current dashboard and alarms, and zero follow-up drift</li>
-              <li>The watcher, dispatcher, and worker deployed with one exact package while their schedules and FIFO event-source mapping remained disabled.</li>
-              <li>One bounded controller run dispatched 12 exact requests, posted one real public-feed candidate to Slack with durable <code>posted</code>, and left 11 durably <code>queued</code> for M1.</li>
-              <li>Release-publisher write and exact-version read permissions checked against the deployed account, with object deletion still denied</li>
-              <li>Semantic validation, deterministic identity vectors, and mutation tests</li>
-              <li>Repository quality, page drift, link, Mermaid, and HTML checks</li>
-            </ul>
-          </article>
-          <article class="evidence-panel">
-            <h3>Required implementation evidence</h3>
-            <ul class="site-list">
-              <li>Corpus coverage of end-of-support announcements from real feeds</li>
-              <li>A controlled application-package retirement preview and, when naturally eligible packages exist, a separately authorized apply with retained-set verification</li>
-              <li>Publisher-side retirement of superseded releases, which S3 lifecycle cannot express safely</li>
-              <li>Recovery-reconciler deployment and persistent watcher, dispatcher, worker, and reconciler operation</li>
-              <li>Delivery of the remaining queued cohort plus feed, recovery, load, alarm, and security evidence</li>
-              <li>Production preflight and confirmed Slack destination checks</li>
-            </ul>
-          </article>
-        </div>
+        <table class="site-status-table">
+          <tbody>
+            <tr>
+              <th scope="row">Code</th>
+              <td>Python 3.12 runtime paths for release publication, feed watching, matching, outbox dispatch, Slack delivery, and recovery; Terraform roots for bootstrap, central, and isolated preflight infrastructure; operator controls for replay, DLQ movement, and package retirement.</td>
+            </tr>
+            <tr>
+              <th scope="row">Automated checks</th>
+              <td>Invalid fixture mutations must fail. Service mocks cover S3, DynamoDB, SQS, and Lambda entry points. A labeled announcement corpus measures matcher precision and recall. Two Linux package builds must produce the same bytes.</td>
+            </tr>
+            <tr>
+              <th scope="row">Dev run</th>
+              <td>The dev data plane is provisioned. The watcher, dispatcher, and worker ran from the same packaged bytes. One controlled public-feed candidate reached Slack, and DynamoDB recorded <code>posted</code>.</td>
+            </tr>
+            <tr>
+              <th scope="row">Still to run</th>
+              <td>Run the watcher, dispatcher, worker, and reconciler continuously; exercise recovery and the 50-message load case; confirm alarm receipt; add real-feed end-of-support samples; retire superseded releases; complete production preflight.</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
 
     <section class="compact-section" id="source">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Authoritative source</p>
+          <p class="compact-eyebrow">Reference</p>
           <div>
-            <h2 class="compact-section-title">The repository owns the detailed requirements.</h2>
-            <p class="compact-section-copy">This page is the concise explanation. The goal, numbered specification, accepted ADRs, schemas, examples, validators, and tests govern the architecture. The repository indexes that knowledge from the architecture index and guards it with executable contract fixtures, semantic validators, and regression tests, so the documents and the implementation move together.</p>
+            <h2 class="compact-section-title">Read the file that owns each claim.</h2>
+            <p class="compact-section-copy"><code>GOAL.md</code> tracks status. The numbered specification defines behavior. ADRs record tradeoffs. Schemas and tests enforce file shapes and IDs.</p>
             <div class="compact-actions">
               <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed">Open the repository</a>
               <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/GOAL.md">Read the goal</a>
