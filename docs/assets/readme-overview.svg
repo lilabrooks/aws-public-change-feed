@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" width="800" height="267" role="img" aria-labelledby="diagram-title diagram-description" data-drawio-source-sha256="9ec8dfb970b55c9de44b00339d8591804bf9fdcf217f171ad76265d1b338a230">
+  <title id="diagram-title">AWS public feed to Slack review candidate</title>
+  <desc id="diagram-description">Approved AWS RSS and Atom feeds pass through the watcher, deterministic matching and routing, the DynamoDB candidate outbox, SQS FIFO, and Slack delivery. A reconciler records recovery transitions in DynamoDB, and Slack outcomes return to the same delivery record.</desc>
+  <metadata>Editable source: docs/assets/readme-overview.drawio</metadata>
+  <defs>
+    <filter id="node-shadow" x="-10%" y="-10%" width="120%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="4" flood-color="#02060C" flood-opacity="0.35" />
+    </filter>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#65B7FF" />
+    </marker>
+    <marker id="arrow-purple" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#B69DF8" />
+    </marker>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#56D6A3" />
+    </marker>
+    <marker id="arrow-amber" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#FFCB6B" />
+    </marker>
+    <marker id="arrow-rose" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 Z" fill="#FF7B92" />
+    </marker>
+    <style>
+      .title { fill: #F4F7FB; font: 700 21px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; letter-spacing: 0.8px; }
+      .node-title { fill: #F7FAFE; font: 700 19px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-anchor: middle; }
+      .node-title-small { fill: #F7FAFE; font: 700 18px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-anchor: middle; }
+      .node-sub { fill: #D6DFEB; font: 500 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-anchor: middle; }
+      .edge-label { font: 600 13px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-anchor: middle; paint-order: stroke; stroke: #0B1220; stroke-width: 5px; stroke-linejoin: round; }
+      .note { fill: #B8C4D4; font: 500 15px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; text-anchor: middle; }
+      .edge { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+    </style>
+  </defs>
+
+  <rect x="10" y="10" width="1180" height="380" rx="14" fill="#0B1220" stroke="#24354D" />
+  <text class="title" x="30" y="49">PUBLIC FEED TO SLACK REVIEW CANDIDATE</text>
+
+  <g aria-label="Main processing path">
+    <path class="edge" d="M190 145 H220" stroke="#65B7FF" stroke-width="3" marker-end="url(#arrow-blue)" />
+    <path class="edge" d="M380 145 H410" stroke="#B69DF8" stroke-width="3" marker-end="url(#arrow-purple)" />
+    <path class="edge" d="M570 145 H600" stroke="#56D6A3" stroke-width="3" marker-end="url(#arrow-green)" />
+    <path class="edge" d="M760 145 H790" stroke="#56D6A3" stroke-width="3" marker-end="url(#arrow-green)" />
+    <path class="edge" d="M950 145 H980" stroke="#FFCB6B" stroke-width="3" marker-end="url(#arrow-amber)" />
+  </g>
+
+  <g filter="url(#node-shadow)">
+    <rect x="30" y="85" width="160" height="120" rx="12" fill="#173653" stroke="#65B7FF" stroke-width="2" />
+    <rect x="220" y="85" width="160" height="120" rx="12" fill="#312A55" stroke="#B69DF8" stroke-width="2" />
+    <rect x="410" y="85" width="160" height="120" rx="12" fill="#312A55" stroke="#B69DF8" stroke-width="2" />
+    <rect x="600" y="85" width="160" height="120" rx="12" fill="#21483B" stroke="#56D6A3" stroke-width="3" />
+    <rect x="790" y="85" width="160" height="120" rx="12" fill="#21483B" stroke="#56D6A3" stroke-width="2" />
+    <rect x="980" y="85" width="160" height="120" rx="12" fill="#62491B" stroke="#FFCB6B" stroke-width="2" />
+  </g>
+
+  <g aria-label="Processing stages">
+    <text class="node-title" x="110" y="133">Approved feeds</text>
+    <text class="node-sub" x="110" y="165">AWS RSS + Atom</text>
+
+    <text class="node-title" x="300" y="133">Watcher</text>
+    <text class="node-sub" x="300" y="165">Fetch + normalize</text>
+
+    <text class="node-title-small" x="490" y="133">Match + route</text>
+    <text class="node-sub" x="490" y="165">Service · risk · profile</text>
+
+    <text class="node-title" x="680" y="133">DynamoDB</text>
+    <text class="node-sub" x="680" y="165">Candidate + outbox</text>
+
+    <text class="node-title" x="870" y="133">SQS FIFO</text>
+    <text class="node-sub" x="870" y="165">Due work by route</text>
+
+    <text class="node-title-small" x="1060" y="133">Slack delivery</text>
+    <text class="node-sub" x="1060" y="165">Worker posts to channel</text>
+  </g>
+
+  <path class="edge" d="M1060 205 V240 H720 V205" stroke="#FFCB6B" stroke-width="2" marker-end="url(#arrow-amber)" />
+  <text class="edge-label" x="865" y="233" fill="#F4D48A">observed outcome</text>
+
+  <g filter="url(#node-shadow)">
+    <rect x="580" y="270" width="200" height="72" rx="12" fill="#4A2331" stroke="#FF7B92" stroke-width="2" />
+  </g>
+  <text class="node-title-small" x="680" y="300">Recovery reconciler</text>
+  <text class="node-sub" x="680" y="326">Retries + expired leases</text>
+  <path class="edge" d="M600 306 H575 V225 H640 V205" stroke="#FF7B92" stroke-width="2" marker-end="url(#arrow-rose)" />
+  <text class="edge-label" x="503" y="220" fill="#FF9CAF">recovery transition</text>
+
+  <text class="note" x="600" y="371">DynamoDB is the delivery record · SQS is transport · timeouts remain delivery_unknown</text>
+</svg>
