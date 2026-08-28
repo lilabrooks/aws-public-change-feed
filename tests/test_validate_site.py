@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import shutil
 import sys
@@ -11,6 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "tests"))
 
 import generate_slack_sample as slack_sample  # noqa: E402
+import stamp_drawio_export as drawio_export  # noqa: E402
 import validate_site as validator  # noqa: E402
 import workflow_pins  # noqa: E402
 import yaml  # noqa: E402
@@ -100,15 +102,55 @@ class SiteValidatorTests(unittest.TestCase):
         self.assertNotIn("<script>", projected)
         self.assertIn("&lt;script&gt;", projected)
 
-    def test_embedded_mermaid_must_match_committed_source(self):
+    def test_drawio_source_change_makes_the_svg_export_stale(self):
         directory, root = self.make_repository()
         with directory:
-            source = root / "site/architecture.mmd"
-            source.write_text(f"{source.read_text(encoding='utf-8')}\n%% changed\n", encoding="utf-8")
+            source = root / "site/architecture.drawio"
+            source.write_text(
+                source.read_text(encoding="utf-8").replace('agent="Codex"', 'agent="Changed"'), encoding="utf-8"
+            )
             errors = validator.validate_repository(root)
-        self.assertTrue(any("embedded Mermaid source differs" in error for error in errors))
+        self.assertTrue(any("export is stale" in error for error in errors))
 
-    def test_readme_cannot_take_back_the_mermaid_diagram(self):
+    def test_drawio_export_stamp_binds_the_exact_source(self):
+        directory, root = self.make_repository()
+        with directory:
+            source = root / "site/architecture.drawio"
+            export = root / "site/architecture.svg"
+            source.write_text(
+                source.read_text(encoding="utf-8").replace('agent="Codex"', 'agent="Changed"'), encoding="utf-8"
+            )
+            digest = drawio_export.stamp_export(source, export)
+            self.assertEqual(digest, hashlib.sha256(source.read_bytes()).hexdigest())
+            self.assertEqual(validator.validate_drawio_artifacts(root), [])
+
+    def test_drawio_source_requires_the_durable_delivery_edge(self):
+        directory, root = self.make_repository()
+        with directory:
+            source = root / "site/architecture.drawio"
+            source.write_text(
+                source.read_text(encoding="utf-8").replace(
+                    'source="outbox" target="dispatcher"', 'source="outbox" target="worker"', 1
+                ),
+                encoding="utf-8",
+            )
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("e_outbox_dispatcher must connect outbox to dispatcher" in error for error in errors))
+
+    def test_drawio_source_requires_the_aws_service_icons(self):
+        directory, root = self.make_repository()
+        with directory:
+            source = root / "site/architecture.drawio"
+            source.write_text(
+                source.read_text(encoding="utf-8").replace(
+                    "resIcon=mxgraph.aws4.cloudwatch", "resIcon=mxgraph.aws4.lambda", 1
+                ),
+                encoding="utf-8",
+            )
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("icon_operations_cloudwatch must use mxgraph.aws4.cloudwatch" in error for error in errors))
+
+    def test_readme_cannot_take_back_the_architecture_diagram(self):
         directory, root = self.make_repository()
         with directory:
             readme = root / "README.md"
@@ -116,13 +158,20 @@ class SiteValidatorTests(unittest.TestCase):
                 f"{readme.read_text(encoding='utf-8')}\n```mermaid\nflowchart LR\n```\n", encoding="utf-8"
             )
             errors = validator.validate_repository(root)
-        self.assertTrue(any("Mermaid architecture belongs" in error for error in errors))
+        self.assertTrue(any("architecture diagrams use the committed draw.io source" in error for error in errors))
+
+    def test_page_uses_the_static_drawio_export_without_a_mermaid_runtime(self):
+        page = (ROOT / "site/index.html").read_text(encoding="utf-8")
+        self.assertIn('src="./architecture.svg"', page)
+        self.assertIn('href="./architecture.drawio"', page)
+        self.assertNotIn("mermaid", page.casefold())
+        self.assertNotIn("site.js", page)
 
     def test_broken_local_site_reference_is_rejected(self):
         directory, root = self.make_repository()
         with directory:
             page = root / "site/index.html"
-            text = page.read_text(encoding="utf-8").replace("./architecture.mmd", "./missing.mmd", 1)
+            text = page.read_text(encoding="utf-8").replace("./architecture.drawio", "./missing.drawio", 1)
             page.write_text(text, encoding="utf-8")
             errors = validator.validate_repository(root)
         self.assertTrue(any("target does not exist" in error for error in errors))
@@ -134,9 +183,9 @@ class SiteValidatorTests(unittest.TestCase):
             "docs/adr/017-public-feed-only-product-scope.md",
             "schemas/config.schema.json",
             "examples/config.yaml",
-            "site/architecture.mmd",
+            "site/architecture.drawio",
+            "site/architecture.svg",
             "site/compact-theme.css",
-            "site/site.js",
         )
         for path in watched_paths:
             with self.subTest(path=path):
@@ -144,14 +193,13 @@ class SiteValidatorTests(unittest.TestCase):
                 self.assertTrue(any("public architecture content is stale" in error for error in errors))
 
     def test_page_update_satisfies_site_content_sync(self):
-        changed = ["docs/GOAL.md", "site/architecture.mmd", "site/index.html"]
+        changed = ["docs/GOAL.md", "site/architecture.drawio", "site/architecture.svg", "site/index.html"]
         self.assertEqual(validator.validate_site_sync(changed), [])
 
     def test_package_retirement_status_matches_the_implemented_tool(self):
         page = (ROOT / "site/index.html").read_text(encoding="utf-8")
         self.assertIn(
-            "A controlled application-package retirement preview and, when naturally eligible packages exist, "
-            "a separately authorized apply with retained-set verification",
+            "operator controls for replay, DLQ movement, and package retirement",
             page,
         )
         self.assertNotIn("packages accumulate until it exists", page)
