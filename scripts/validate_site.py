@@ -5,6 +5,7 @@ import hashlib
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
+import zipfile
 from collections.abc import Iterable
 from html.parser import HTMLParser
 from pathlib import Path
@@ -17,6 +18,18 @@ PAGE_PATH = Path("site/index.html")
 DRAWIO_PATH = Path("site/architecture.drawio")
 DRAWIO_EXPORT_PATH = Path("site/architecture.svg")
 DRAWIO_HASH_ATTRIBUTE = "data-drawio-source-sha256"
+MVP_MEDIA_DIR = Path("site/media/mvp-evidence-v2")
+MVP_POSTER_PATH = MVP_MEDIA_DIR / "aws-public-change-alerting-mvp-evidence-v2-poster.png"
+MVP_CAPTIONS_PATH = MVP_MEDIA_DIR / "aws-public-change-alerting-mvp-evidence-v2-captions.vtt"
+MVP_PDF_PATH = MVP_MEDIA_DIR / "aws-public-change-alerting-mvp-evidence-v2.pdf"
+MVP_PPTX_PATH = MVP_MEDIA_DIR / "aws-public-change-alerting-mvp-evidence-v2.pptx"
+MVP_WEB_VIDEO_PATH = MVP_MEDIA_DIR / "aws-public-change-alerting-mvp-evidence-v2-web.mp4"
+MVP_HASHES_PATH = MVP_MEDIA_DIR / "SHA256SUMS"
+MVP_VIDEO_NAME = "aws-public-change-alerting-mvp-evidence-v2.mp4"
+MVP_VIDEO_URL = (
+    f"https://github.com/lilabrooks/aws-public-change-feed/releases/download/mvp-evidence-v2/{MVP_VIDEO_NAME}"
+)
+MVP_VIDEO_SHA256 = "24998362d0f0b77a3231c1e4b46c003b6ff4c71baafbdefa4cd67d082c375d43"
 EXPECTED_DIAGRAM_NODES = {
     "feeds",
     "release",
@@ -94,6 +107,12 @@ REQUIRED_SITE_FILES = {
     Path("site/fonts/IBMPlexSans-Regular.woff2"),
     Path("site/fonts/IBMPlexSans-SemiBold.woff2"),
     Path("site/fonts/LICENSE.txt"),
+    MVP_POSTER_PATH,
+    MVP_CAPTIONS_PATH,
+    MVP_PDF_PATH,
+    MVP_PPTX_PATH,
+    MVP_WEB_VIDEO_PATH,
+    MVP_HASHES_PATH,
 }
 PUBLIC_NARRATIVE_PREFIXES = (
     "docs/architecture/",
@@ -102,7 +121,17 @@ PUBLIC_NARRATIVE_PREFIXES = (
     "examples/",
 )
 PUBLIC_NARRATIVE_FILES = {"docs/GOAL.md"}
-REQUIRED_PAGE_IDS = {"content", "value", "contracts", "slack-sample", "flow", "decisions", "evidence", "source"}
+REQUIRED_PAGE_IDS = {
+    "content",
+    "value",
+    "mvp-demo",
+    "contracts",
+    "slack-sample",
+    "flow",
+    "decisions",
+    "evidence",
+    "source",
+}
 
 
 class PublicPageParser(HTMLParser):
@@ -114,6 +143,7 @@ class PublicPageParser(HTMLParser):
         self.title_parts: list[str] = []
         self.h1_parts: list[str] = []
         self.diagram_images: list[dict[str, str | None]] = []
+        self.mvp_videos: list[dict[str, str | None]] = []
         self.html_language: str | None = None
         self._in_title = False
         self._in_h1 = False
@@ -136,6 +166,8 @@ class PublicPageParser(HTMLParser):
             self._in_h1 = True
         if tag == "img" and "data-architecture-diagram" in attributes:
             self.diagram_images.append(attributes)
+        if tag == "video" and "data-mvp-video" in attributes:
+            self.mvp_videos.append(attributes)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
@@ -240,6 +272,58 @@ def validate_drawio_artifacts(root: Path) -> list[str]:
     return errors
 
 
+def validate_mvp_media(root: Path) -> list[str]:
+    errors: list[str] = []
+    media_paths = (MVP_POSTER_PATH, MVP_CAPTIONS_PATH, MVP_PDF_PATH, MVP_PPTX_PATH, MVP_WEB_VIDEO_PATH)
+    if any(not (root / path).is_file() for path in (*media_paths, MVP_HASHES_PATH)):
+        return errors
+
+    captions = (root / MVP_CAPTIONS_PATH).read_text(encoding="utf-8")
+    if not captions.startswith("WEBVTT\n\n"):
+        errors.append(f"{MVP_CAPTIONS_PATH}: captions must start with a WEBVTT header")
+    if any("," in line for line in captions.splitlines() if "-->" in line):
+        errors.append(f"{MVP_CAPTIONS_PATH}: WebVTT timestamps must use decimal points")
+
+    if not (root / MVP_POSTER_PATH).read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
+        errors.append(f"{MVP_POSTER_PATH}: poster must be a PNG image")
+    if not (root / MVP_PDF_PATH).read_bytes().startswith(b"%PDF-"):
+        errors.append(f"{MVP_PDF_PATH}: slide download must be a PDF")
+    web_video_bytes = (root / MVP_WEB_VIDEO_PATH).read_bytes()
+    if len(web_video_bytes) < 12 or web_video_bytes[4:8] != b"ftyp":
+        errors.append(f"{MVP_WEB_VIDEO_PATH}: web video must be an ISO media file")
+    try:
+        with zipfile.ZipFile(root / MVP_PPTX_PATH) as deck:
+            required_parts = {"[Content_Types].xml", "ppt/presentation.xml"}
+            if not required_parts.issubset(deck.namelist()):
+                errors.append(f"{MVP_PPTX_PATH}: PowerPoint package is incomplete")
+    except zipfile.BadZipFile:
+        errors.append(f"{MVP_PPTX_PATH}: PowerPoint package is not a valid ZIP container")
+
+    manifest_entries: dict[str, str] = {}
+    for line in (root / MVP_HASHES_PATH).read_text(encoding="utf-8").splitlines():
+        parts = line.split(maxsplit=1)
+        if len(parts) != 2 or len(parts[0]) != 64:
+            errors.append(f"{MVP_HASHES_PATH}: malformed SHA-256 line: {line!r}")
+            continue
+        digest, filename = parts
+        if filename in manifest_entries:
+            errors.append(f"{MVP_HASHES_PATH}: duplicate filename: {filename}")
+            continue
+        manifest_entries[filename] = digest
+
+    expected_names = {path.name for path in media_paths} | {MVP_VIDEO_NAME}
+    if set(manifest_entries) != expected_names:
+        errors.append(f"{MVP_HASHES_PATH}: entries must exactly match the public evidence artifacts")
+    for relative_path in media_paths:
+        expected_digest = manifest_entries.get(relative_path.name)
+        actual_digest = hashlib.sha256((root / relative_path).read_bytes()).hexdigest()
+        if expected_digest != actual_digest:
+            errors.append(f"{MVP_HASHES_PATH}: digest mismatch for {relative_path.name}")
+    if manifest_entries.get(MVP_VIDEO_NAME) != MVP_VIDEO_SHA256:
+        errors.append(f"{MVP_HASHES_PATH}: release video digest does not match the reviewed MP4")
+    return errors
+
+
 def validate_repository(root: Path) -> list[str]:
     errors: list[str] = []
     for relative_path in sorted(REQUIRED_SITE_FILES):
@@ -318,14 +402,42 @@ def validate_repository(root: Path) -> list[str]:
         if image.get("width") != "1800" or image.get("height") != "780":
             errors.append(f"{PAGE_PATH}: architecture image dimensions must match the SVG viewBox")
 
+    if len(parser.mvp_videos) != 1:
+        errors.append(f"{PAGE_PATH}: expected exactly one MVP evidence video")
+    else:
+        video = parser.mvp_videos[0]
+        required_boolean_attributes = {"controls", "playsinline"}
+        missing_attributes = sorted(required_boolean_attributes - set(video))
+        if missing_attributes:
+            errors.append(f"{PAGE_PATH}: MVP video is missing attributes: {', '.join(missing_attributes)}")
+        if video.get("preload") != "metadata":
+            errors.append(f"{PAGE_PATH}: MVP video must preload metadata only")
+        if video.get("poster") != "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png":
+            errors.append(f"{PAGE_PATH}: MVP video must use the reviewed poster")
+        if video.get("width") != "1920" or video.get("height") != "1080":
+            errors.append(f"{PAGE_PATH}: MVP video dimensions must be 1920 by 1080")
+        if not (video.get("aria-label") or "").strip():
+            errors.append(f"{PAGE_PATH}: MVP video requires an accessible label")
+
     page_references = {reference for _, _, reference in parser.references}
     for expected_reference in ("./architecture.drawio", "./architecture.svg"):
         if expected_reference not in page_references:
             errors.append(f"{PAGE_PATH}: missing architecture artifact link: {expected_reference}")
+    for expected_reference in (
+        MVP_VIDEO_URL,
+        "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-web.mp4",
+        "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-captions.vtt",
+        "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf",
+        "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx",
+        "./media/mvp-evidence-v2/SHA256SUMS",
+    ):
+        if expected_reference not in page_references:
+            errors.append(f"{PAGE_PATH}: missing MVP evidence reference: {expected_reference}")
     if "mermaid" in page.read_text(encoding="utf-8").casefold():
         errors.append(f"{PAGE_PATH}: Mermaid source or runtime references are no longer allowed")
 
     errors.extend(validate_drawio_artifacts(root))
+    errors.extend(validate_mvp_media(root))
 
     theme_css = (root / "site/compact-theme.css").read_text(encoding="utf-8")
     theme_js = (root / "site/compact-theme.js").read_text(encoding="utf-8")

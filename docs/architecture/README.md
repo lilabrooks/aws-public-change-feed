@@ -97,6 +97,8 @@ runner.
 
 [`site/index.html`](../../site/index.html) is the concise public explanation of this architecture. The editable diagram lives in [`site/architecture.drawio`](../../site/architecture.drawio), and the page renders its committed [`site/architecture.svg`](../../site/architecture.svg) export without a client-side diagram runtime.
 
+The dev MVP walkthrough is indexed by [`docs/evidence/mvp-walkthrough.md`](../evidence/mvp-walkthrough.md). Its committed public assets live under [`site/media/mvp-evidence-v2/`](../../site/media/mvp-evidence-v2/): the 720p web video, slide deck, PDF, poster, WebVTT captions, and SHA-256 manifest. The 1080p MP4 is the `mvp-evidence-v2` GitHub Release asset named by the page and manifest, which keeps the largest binary out of Git history.
+
 The draw.io source uses AWS4 resource-icon cells for AWS services. The committed SVG embeds the matching service artwork from AWS's 2026-07-31 Architecture Icons package. Use the [official AWS architecture icons page](https://aws.amazon.com/architecture/icons/) when that artwork needs to be refreshed.
 
 To revise the diagram:
@@ -106,7 +108,7 @@ To revise the diagram:
 3. Run `python scripts/stamp_drawio_export.py`. This records the exact `.drawio` SHA-256 on the SVG and restores the accessible SVG metadata when the exporter omits it.
 4. Run `python scripts/validate_site.py`, then inspect the page at desktop and narrow widths.
 
-[`validate_site.py`](../../scripts/validate_site.py) checks page structure, local assets, required draw.io nodes and edges, the SVG source hash and accessibility metadata, and the README link. During pull requests, the repository quality workflow also requires `site/index.html` to change whenever the goal, architecture, ADRs, schemas, examples, draw.io source, SVG export, or supporting site assets change. This makes public-page review part of every change that can alter its claims.
+[`validate_site.py`](../../scripts/validate_site.py) checks page structure, local assets, MVP media hashes and captions, required draw.io nodes and edges, the SVG source hash and accessibility metadata, and the README link. During pull requests, the repository quality workflow also requires `site/index.html` to change whenever the goal, architecture, ADRs, schemas, examples, draw.io source, SVG export, or supporting site assets change. This makes public-page review part of every change that can alter its claims.
 
 References verified: 2026-07-13.
 

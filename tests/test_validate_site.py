@@ -176,6 +176,40 @@ class SiteValidatorTests(unittest.TestCase):
             errors = validator.validate_repository(root)
         self.assertTrue(any("target does not exist" in error for error in errors))
 
+    def test_changed_mvp_media_is_rejected_by_its_hash_manifest(self):
+        directory, root = self.make_repository()
+        with directory:
+            poster = root / validator.MVP_POSTER_PATH
+            poster.write_bytes(poster.read_bytes() + b"changed")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("digest mismatch" in error and poster.name in error for error in errors))
+
+    def test_mvp_video_requires_metadata_only_preload(self):
+        directory, root = self.make_repository()
+        with directory:
+            page = root / "site/index.html"
+            text = page.read_text(encoding="utf-8").replace('preload="metadata"', 'preload="auto"', 1)
+            page.write_text(text, encoding="utf-8")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("must preload metadata only" in error for error in errors))
+
+    def test_mvp_release_video_digest_is_bound_to_the_reviewed_file(self):
+        directory, root = self.make_repository()
+        with directory:
+            hashes = root / validator.MVP_HASHES_PATH
+            text = hashes.read_text(encoding="utf-8").replace(validator.MVP_VIDEO_SHA256, "0" * 64, 1)
+            hashes.write_text(text, encoding="utf-8")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("release video digest does not match" in error for error in errors))
+
+    def test_mvp_web_video_requires_an_iso_media_container(self):
+        directory, root = self.make_repository()
+        with directory:
+            web_video = root / validator.MVP_WEB_VIDEO_PATH
+            web_video.write_bytes(b"not a video")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("web video must be an ISO media file" in error for error in errors))
+
     def test_public_sources_and_supporting_site_files_require_page_update(self):
         watched_paths = (
             "docs/GOAL.md",

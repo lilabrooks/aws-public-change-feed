@@ -28,6 +28,14 @@ M1 closed after the 4 runtime triggers were enabled in dev, a 12-message public-
 
 See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issues) for the current work queue. The [goal](docs/GOAL.md) defines product scope and completion criteria; its long-form status will be reconciled after the production gate.
 
+## MVP walkthrough
+
+[![Opening frame from the AWS Public Change Alerting dev MVP evidence walkthrough.](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png)](https://lilabrooks.github.io/aws-public-change-feed/)
+
+The 3:05 public walkthrough traces the Terraform roots, Lambda runtimes, matcher corpus, candidate contract, durable DynamoDB and SQS path, and recorded Slack result. Private account and channel details are omitted.
+
+[Watch with captions](https://lilabrooks.github.io/aws-public-change-feed/) · [Open the slide deck as PDF](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf) · [Download the editable PowerPoint](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx) · [Read the transcript and evidence boundary](docs/evidence/mvp-walkthrough.md)
+
 ## Processing path
 
 1. The watcher fetches configured public hosts with TLS, DNS and IP checks, redirect refusal, byte limits, and parser limits.
@@ -49,7 +57,7 @@ See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issue
 | Slack uncertainty stays visible | A timeout becomes `delivery_unknown`. An operator checks Slack before closure or one audited retry. |
 | Credentials stay with the worker | Feed content, configuration, candidates, fixtures, and logs contain no Slack secret values. |
 
-The [numbered specification and 19 accepted ADRs](docs/architecture/README.md) define these rules in full.
+The [numbered specification and 20 accepted ADRs](docs/architecture/README.md) define these rules in full.
 
 ## Run locally
 
@@ -86,7 +94,7 @@ The corpus evaluator and feed screener accept `--root` and `--config`. Relative 
 | [`schemas/`](schemas/) and [`examples/`](examples/) | 8 strict JSON Schemas and one cross-file contract bundle. |
 | [`config/`](config/) | Reviewed environment and matching policy. |
 | [`corpus/`](corpus/) | Labeled announcements and accepted precision and recall thresholds. |
-| [`site/`](site/) | GitHub Pages source, editable draw.io diagram, SVG export, and generated Slack example. |
+| [`site/`](site/) | GitHub Pages source, public MVP media, editable draw.io diagram, SVG export, and generated Slack example. |
 | [`scripts/`](scripts/) and [`tests/`](tests/) | Validators, operator commands, regression tests, and service-mock tests. |
 | [`docs/`](docs/) | Product goal, specification, ADRs, runbooks, agent-tooling notes, and supporting assets. |
 
@@ -94,9 +102,10 @@ The corpus evaluator and feed screener accept `--root` and `--config`. Relative 
 
 - [Public system page](https://lilabrooks.github.io/aws-public-change-feed/): system diagram, processing summary, contract checks, and generated Slack output.
 - [Product goal](docs/GOAL.md): scope, exclusions, quality bar, and completion criteria.
-- [Architecture index](docs/architecture/README.md): 6 specification chapters, 19 accepted ADRs, and the schema-to-example map.
+- [Architecture index](docs/architecture/README.md): 6 specification chapters, 20 accepted ADRs, and the schema-to-example map.
 - [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
 - [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
+- [Dev MVP walkthrough](docs/evidence/mvp-walkthrough.md): narrated evidence pack, slides, captions, transcript, and artifact hashes.
 
 Changes to product scope, trust boundaries, identity, state ownership, delivery guarantees, or version policy require an ADR. Run `make check` before opening a pull request.
 
@@ -106,4 +115,4 @@ Copyright 2026 Lila Brooks.
 
 Licensed under the [Apache License 2.0](LICENSE). Redistributed copies and derivative works must preserve the attribution in [NOTICE](NOTICE).
 
-References verified: 2026-08-27.
+References verified: 2026-08-29.
