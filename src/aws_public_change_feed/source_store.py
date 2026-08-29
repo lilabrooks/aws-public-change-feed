@@ -82,6 +82,8 @@ _ANNOUNCEMENT_REQUIRED = {
     "state_version",
 }
 _PAGE_FIELDS = {field.name for field in fields(ResponsePageMarker)}
+_PAGE_RETENTION_FIELDS = {"expires_at"}
+_PAGE_REQUIRED = _PAGE_FIELDS - _PAGE_RETENTION_FIELDS
 
 
 def _assert_shape(
@@ -163,7 +165,7 @@ def _page_item(marker: ResponsePageMarker) -> dict[str, object]:
         "PK": f"RUN#{marker.run_id}",
         "SK": f"PAGESET#{marker.page_set_id}#PAGE#{marker.page:06d}",
         "item_type": "response_page",
-        **asdict(marker),
+        **_without_none(asdict(marker)),
     }
 
 
@@ -182,7 +184,7 @@ def _page_from_item(item: Mapping[str, Mapping[str, Any]]) -> ResponsePageMarker
     if document.get("item_type") != "response_page":
         raise ValueError("response-page item has the wrong item_type")
     payload = {name: value for name, value in document.items() if name not in {"PK", "SK", "item_type"}}
-    _assert_shape(payload, allowed=_PAGE_FIELDS, required=_PAGE_FIELDS, kind="response-page")
+    _assert_shape(payload, allowed=_PAGE_FIELDS, required=_PAGE_REQUIRED, kind="response-page")
     candidate_ids = payload.get("candidate_ids")
     if not isinstance(candidate_ids, list):
         raise ValueError("response-page candidate_ids must be a list")

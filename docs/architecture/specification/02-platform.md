@@ -31,7 +31,7 @@ Use on-demand capacity for the baseline. A single-table layout may use `PK` and 
 ### Announcement item
 
 - Key: `PK = ANNOUNCEMENT#<announcement_id>`, `SK = STATE`.
-- Fields: canonical URL, current content fingerprint and revision, known revision IDs, normalized title and summary, first, last, and current-content observation times, optional source publication time, merged provenance, emitted candidate IDs, release references, and monotonic state version.
+- Fields: canonical URL, current content fingerprint and revision, known revision IDs, normalized title and summary, first, last, and current-content observation times, optional source publication time, merged provenance, emitted candidate IDs, release references, monotonic state version, and optional numeric `expires_at` retention metadata. Legacy records may omit `expires_at` during migration.
 - Conditional compare-and-swap merges provenance, revision history, emission references, and release references without losing another writer. The sighting with the later `observed_at` owns current content; equal times choose the lexically smaller revision ID.
 - Raw content is excluded. A bounded raw response snapshot may live in S3 for replay during its configured retention.
 
@@ -85,7 +85,7 @@ generation, creation time, and historical network-attempt count.
 
 ## Durable creation boundary
 
-For each feed response, the watcher must make candidate and delivery records durable before saving the response's new ETag or Last-Modified value. A response-run ID is the null-framed SHA-256 of `feed-response-run:v1`, feed name, body SHA-256, release ID, and application digest. Because cross-feed coalescing can give the same response body a different candidate set when another feed succeeds or fails, each immutable page set also has a null-framed SHA-256 identity over `feed-response-pages:v1`, the response-run ID, and every sorted candidate ID. Candidate IDs are sorted into pages of at most 25 within that set; page numbers start at zero, and a zero-candidate response has one empty completion page. A marker is written only after durable read-back. The feed checkpoint advances only after every current page and final candidate, delivery, emission, and release reference is read back.
+For each feed response, the watcher must make candidate and delivery records durable before saving the response's new ETag or Last-Modified value. A response-run ID is the null-framed SHA-256 of `feed-response-run:v1`, feed name, body SHA-256, release ID, and application digest. Because cross-feed coalescing can give the same response body a different candidate set when another feed succeeds or fails, each immutable page set also has a null-framed SHA-256 identity over `feed-response-pages:v1`, the response-run ID, and every sorted candidate ID. Candidate IDs are sorted into pages of at most 25 within that set; page numbers start at zero, and a zero-candidate response has one empty completion page. A marker is written only after durable read-back. Its optional numeric `expires_at` is retention metadata rather than part of the immutable proof, and legacy markers may omit it during migration. The feed checkpoint advances only after every current page and final candidate, delivery, emission, and release reference is read back.
 
 A repeated invocation can safely reconstruct the same candidates and conditionally put missing records. Candidate identity is deterministic, so partial completion cannot create new logical work.
 
