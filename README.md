@@ -30,11 +30,11 @@ See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issue
 
 ## MVP walkthrough
 
-[![Opening frame from the AWS Public Change Alerting dev MVP evidence walkthrough.](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png)](https://lilabrooks.github.io/aws-public-change-feed/#mvp-demo)
+[![Opening frame from the AWS Public Change Alerting dev MVP evidence walkthrough.](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png)](https://lilabrooks.github.io/aws-public-change-feed/)
 
 The 3:05 public walkthrough traces the Terraform roots, Lambda runtimes, matcher corpus, candidate contract, durable DynamoDB and SQS path, and recorded Slack result. Private account and channel details are omitted.
 
-[Watch with captions](https://lilabrooks.github.io/aws-public-change-feed/#mvp-demo) · [Open the slide deck as PDF](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf) · [Download the editable PowerPoint](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx) · [Read the transcript and evidence boundary](docs/evidence/mvp-walkthrough.md)
+[Watch with captions](https://lilabrooks.github.io/aws-public-change-feed/) · [Open the slide deck as PDF](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf) · [Download the editable PowerPoint](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx) · [Read the transcript and evidence boundary](docs/evidence/mvp-walkthrough.md)
 
 ## Processing path
 

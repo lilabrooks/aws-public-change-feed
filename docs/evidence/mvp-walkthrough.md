@@ -6,13 +6,14 @@ The pack was captured on 2026-08-29 from source revision `04370df`. Private AWS 
 
 ## Watch or download
 
-- [Watch the 3:05 narrated video](https://github.com/lilabrooks/aws-public-change-feed/releases/download/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.mp4)
+- [Watch the 3:05 narrated video with captions](https://lilabrooks.github.io/aws-public-change-feed/)
+- [Download the 1080p MP4](https://github.com/lilabrooks/aws-public-change-feed/releases/download/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.mp4)
 - [Open the slide deck as PDF](../../site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf)
 - [Download the editable PowerPoint](../../site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx)
 - [Read the WebVTT captions](../../site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-captions.vtt)
 - [Verify the artifact hashes](../../site/media/mvp-evidence-v2/SHA256SUMS)
 
-The video uses locally generated Kokoro-82M `af_heart` narration. Watching or downloading it does not invoke the model.
+The site plays a 720p web copy and the GitHub Release carries the 1080p source. Both use locally generated Kokoro-82M `af_heart` narration. Watching or downloading either file does not invoke the model.
 
 ## Evidence boundary
 

@@ -23,6 +23,7 @@ MVP_POSTER_PATH = MVP_MEDIA_DIR / "aws-public-change-alerting-mvp-evidence-v2-po
 MVP_CAPTIONS_PATH = MVP_MEDIA_DIR / "aws-public-change-alerting-mvp-evidence-v2-captions.vtt"
 MVP_PDF_PATH = MVP_MEDIA_DIR / "aws-public-change-alerting-mvp-evidence-v2.pdf"
 MVP_PPTX_PATH = MVP_MEDIA_DIR / "aws-public-change-alerting-mvp-evidence-v2.pptx"
+MVP_WEB_VIDEO_PATH = MVP_MEDIA_DIR / "aws-public-change-alerting-mvp-evidence-v2-web.mp4"
 MVP_HASHES_PATH = MVP_MEDIA_DIR / "SHA256SUMS"
 MVP_VIDEO_NAME = "aws-public-change-alerting-mvp-evidence-v2.mp4"
 MVP_VIDEO_URL = (
@@ -110,6 +111,7 @@ REQUIRED_SITE_FILES = {
     MVP_CAPTIONS_PATH,
     MVP_PDF_PATH,
     MVP_PPTX_PATH,
+    MVP_WEB_VIDEO_PATH,
     MVP_HASHES_PATH,
 }
 PUBLIC_NARRATIVE_PREFIXES = (
@@ -272,7 +274,7 @@ def validate_drawio_artifacts(root: Path) -> list[str]:
 
 def validate_mvp_media(root: Path) -> list[str]:
     errors: list[str] = []
-    media_paths = (MVP_POSTER_PATH, MVP_CAPTIONS_PATH, MVP_PDF_PATH, MVP_PPTX_PATH)
+    media_paths = (MVP_POSTER_PATH, MVP_CAPTIONS_PATH, MVP_PDF_PATH, MVP_PPTX_PATH, MVP_WEB_VIDEO_PATH)
     if any(not (root / path).is_file() for path in (*media_paths, MVP_HASHES_PATH)):
         return errors
 
@@ -286,6 +288,9 @@ def validate_mvp_media(root: Path) -> list[str]:
         errors.append(f"{MVP_POSTER_PATH}: poster must be a PNG image")
     if not (root / MVP_PDF_PATH).read_bytes().startswith(b"%PDF-"):
         errors.append(f"{MVP_PDF_PATH}: slide download must be a PDF")
+    web_video_bytes = (root / MVP_WEB_VIDEO_PATH).read_bytes()
+    if len(web_video_bytes) < 12 or web_video_bytes[4:8] != b"ftyp":
+        errors.append(f"{MVP_WEB_VIDEO_PATH}: web video must be an ISO media file")
     try:
         with zipfile.ZipFile(root / MVP_PPTX_PATH) as deck:
             required_parts = {"[Content_Types].xml", "ppt/presentation.xml"}
@@ -420,6 +425,7 @@ def validate_repository(root: Path) -> list[str]:
             errors.append(f"{PAGE_PATH}: missing architecture artifact link: {expected_reference}")
     for expected_reference in (
         MVP_VIDEO_URL,
+        "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-web.mp4",
         "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-captions.vtt",
         "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf",
         "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx",

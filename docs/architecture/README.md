@@ -97,7 +97,7 @@ runner.
 
 [`site/index.html`](../../site/index.html) is the concise public explanation of this architecture. The editable diagram lives in [`site/architecture.drawio`](../../site/architecture.drawio), and the page renders its committed [`site/architecture.svg`](../../site/architecture.svg) export without a client-side diagram runtime.
 
-The dev MVP walkthrough is indexed by [`docs/evidence/mvp-walkthrough.md`](../evidence/mvp-walkthrough.md). Its committed public assets live under [`site/media/mvp-evidence-v2/`](../../site/media/mvp-evidence-v2/): the slide deck, PDF, poster, WebVTT captions, and SHA-256 manifest. The HD MP4 is the `mvp-evidence-v2` GitHub Release asset named by the page and manifest, which keeps the large binary out of Git history.
+The dev MVP walkthrough is indexed by [`docs/evidence/mvp-walkthrough.md`](../evidence/mvp-walkthrough.md). Its committed public assets live under [`site/media/mvp-evidence-v2/`](../../site/media/mvp-evidence-v2/): the 720p web video, slide deck, PDF, poster, WebVTT captions, and SHA-256 manifest. The 1080p MP4 is the `mvp-evidence-v2` GitHub Release asset named by the page and manifest, which keeps the largest binary out of Git history.
 
 The draw.io source uses AWS4 resource-icon cells for AWS services. The committed SVG embeds the matching service artwork from AWS's 2026-07-31 Architecture Icons package. Use the [official AWS architecture icons page](https://aws.amazon.com/architecture/icons/) when that artwork needs to be refreshed.
 

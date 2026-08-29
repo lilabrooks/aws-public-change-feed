@@ -202,6 +202,14 @@ class SiteValidatorTests(unittest.TestCase):
             errors = validator.validate_repository(root)
         self.assertTrue(any("release video digest does not match" in error for error in errors))
 
+    def test_mvp_web_video_requires_an_iso_media_container(self):
+        directory, root = self.make_repository()
+        with directory:
+            web_video = root / validator.MVP_WEB_VIDEO_PATH
+            web_video.write_bytes(b"not a video")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("web video must be an ISO media file" in error for error in errors))
+
     def test_public_sources_and_supporting_site_files_require_page_update(self):
         watched_paths = (
             "docs/GOAL.md",
