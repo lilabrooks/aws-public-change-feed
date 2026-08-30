@@ -238,6 +238,12 @@ class SiteValidatorTests(unittest.TestCase):
         )
         self.assertNotIn("packages accumulate until it exists", page)
 
+    def test_source_state_lifecycle_matches_the_accepted_decision(self):
+        page = (ROOT / "site/index.html").read_text(encoding="utf-8")
+        self.assertIn("Twenty-one accepted ADRs", page)
+        self.assertIn("Active feed checkpoints do not expire", page)
+        self.assertIn("docs/adr/025-source-state-and-response-page-retirement.md", page)
+
     def test_unrelated_change_does_not_require_page_update(self):
         self.assertEqual(validator.validate_site_sync(["tests/test_validate_config.py"]), [])
 

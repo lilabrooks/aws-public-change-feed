@@ -377,7 +377,22 @@ class DynamoDBAnnouncementStateTests(unittest.TestCase):
             ConsistentRead=True,
         )["Item"]
         self.assertEqual(raw["item_type"], {"S": "announcement"})
+        self.assertNotIn("expires_at", raw)
         self.assertEqual(self.store.load(result.record.announcement_id), result.record)
+
+    def test_announcement_expiry_round_trips_without_becoming_required(self):
+        record = replace(observe(self.store, self.announcement()).record, expires_at=2_000_000_000)
+        self.store.save(record)
+        raw = self.client.get_item(
+            TableName=TABLE,
+            Key={
+                "PK": {"S": f"ANNOUNCEMENT#{record.announcement_id}"},
+                "SK": {"S": "STATE"},
+            },
+            ConsistentRead=True,
+        )["Item"]
+        self.assertEqual(raw["expires_at"], {"N": "2000000000"})
+        self.assertEqual(self.store.load(record.announcement_id), record)
 
     def test_forged_durable_announcement_identity_is_refused_on_read(self):
         record = observe(self.store, self.announcement()).record
@@ -442,6 +457,63 @@ class DynamoDBAnnouncementStateTests(unittest.TestCase):
             ConsistentRead=True,
         )["Item"]
         self.assertEqual(raw["item_type"], {"S": "response_page"})
+        self.assertNotIn("expires_at", raw)
+
+    def test_response_page_expiry_round_trips_as_non_proof_metadata(self):
+        marker = ResponsePageMarker(
+            run_id="d" * 64,
+            page_set_id="f" * 64,
+            feed_name="feed-a",
+            page=0,
+            candidate_ids=("e" * 64,),
+            expires_at=2_000_000_000,
+        )
+        self.assertTrue(self.store.put_page_if_absent(marker))
+        loaded = self.store.load_page(marker.run_id, marker.page_set_id, marker.page)
+        assert loaded is not None
+        self.assertEqual(loaded.expires_at, 2_000_000_000)
+        self.assertEqual(loaded, replace(marker, expires_at=2_100_000_000))
+
+    def test_response_page_expiry_rejects_malformed_durable_metadata(self):
+        marker = ResponsePageMarker(
+            run_id="d" * 64,
+            page_set_id="f" * 64,
+            feed_name="feed-a",
+            page=0,
+            candidate_ids=("e" * 64,),
+        )
+        self.assertTrue(self.store.put_page_if_absent(marker))
+        self.client.update_item(
+            TableName=TABLE,
+            Key={
+                "PK": {"S": f"RUN#{marker.run_id}"},
+                "SK": {"S": f"PAGESET#{marker.page_set_id}#PAGE#000000"},
+            },
+            UpdateExpression="SET expires_at = :expiry",
+            ExpressionAttributeValues={":expiry": {"S": "later"}},
+        )
+        with self.assertRaisesRegex(ValueError, "non-negative integer Unix timestamp"):
+            self.store.load_page(marker.run_id, marker.page_set_id, marker.page)
+
+    def test_optional_expiry_does_not_make_page_proof_fields_optional(self):
+        marker = ResponsePageMarker(
+            run_id="d" * 64,
+            page_set_id="f" * 64,
+            feed_name="feed-a",
+            page=0,
+            candidate_ids=("e" * 64,),
+        )
+        self.assertTrue(self.store.put_page_if_absent(marker))
+        self.client.update_item(
+            TableName=TABLE,
+            Key={
+                "PK": {"S": f"RUN#{marker.run_id}"},
+                "SK": {"S": f"PAGESET#{marker.page_set_id}#PAGE#000000"},
+            },
+            UpdateExpression="REMOVE complete",
+        )
+        with self.assertRaisesRegex(ValueError, "missing fields: complete"):
+            self.store.load_page(marker.run_id, marker.page_set_id, marker.page)
 
 
 class S3SnapshotStoreTests(unittest.TestCase):

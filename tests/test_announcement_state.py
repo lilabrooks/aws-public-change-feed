@@ -14,7 +14,7 @@ contract rather than to the runtime's own output.
 import json
 import sys
 import unittest
-from dataclasses import FrozenInstanceError
+from dataclasses import FrozenInstanceError, replace
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -286,6 +286,7 @@ class RecordShapeTests(AnnouncementStateTestCase):
             "provenance",
             "emitted_candidate_ids",
             "release_ids",
+            "expires_at",
         ):
             with self.subTest(field=name):
                 self.assertTrue(hasattr(record, name))
@@ -317,6 +318,14 @@ class RecordShapeTests(AnnouncementStateTestCase):
         )
         self.assertEqual(record.provenance, ())
         self.assertEqual(record.emitted_candidate_ids, ())
+        self.assertIsNone(record.expires_at)
+
+    def test_expiry_must_be_a_non_negative_integer_unix_timestamp(self):
+        record = observe(self.store, self.announcement()).record
+        for value in (-1, True, "1"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "non-negative integer Unix timestamp"):
+                    replace(record, expires_at=value)  # type: ignore[arg-type]
 
 
 if __name__ == "__main__":

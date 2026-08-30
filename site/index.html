@@ -381,7 +381,7 @@
         <dl class="site-spec">
           <div class="site-spec-row">
             <dt>Required behavior</dt>
-            <dd>Six specification chapters and 20 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
+            <dd>Six specification chapters and 21 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
           </div>
           <div class="site-spec-row">
             <dt>Contracts</dt>
@@ -505,7 +505,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <p class="compact-eyebrow">Required rules</p>
           <div>
             <h2 class="compact-section-title">Public feeds only. DynamoDB owns delivery history.</h2>
-            <p class="compact-section-copy">Twenty accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
+            <p class="compact-section-copy">Twenty-one accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
           </div>
         </div>
         <dl class="site-spec">
@@ -520,6 +520,10 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <div class="site-spec-row">
             <dt>Delivery state</dt>
             <dd>DynamoDB stores each request and outcome. SQS FIFO carries ready work in order for each Slack destination. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/007-central-slack-delivery-queue-and-worker.md">ADR-007</a></dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Source-state lifecycle</dt>
+            <dd>Active feed checkpoints do not expire. Announcement and response-page history uses bounded TTL metadata, while removed feeds require reviewed retirement and a permanent identity tombstone. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/025-source-state-and-response-page-retirement.md">ADR-025</a></dd>
           </div>
           <div class="site-spec-row">
             <dt>Slack timeout</dt>

@@ -37,6 +37,7 @@ The [goal](../GOAL.md) defines the outcome and milestones. The [operations runbo
 - [ADR-022: Preview-first application package retirement](../adr/022-preview-first-application-package-retirement.md)
 - [ADR-023: Scoped active-manifest absence detection](../adr/023-scoped-active-manifest-absence-detection.md)
 - [ADR-024: Isolated live runtime exercises](../adr/024-isolated-live-runtime-exercises.md)
+- [ADR-025: Source-state and response-page retirement](../adr/025-source-state-and-response-page-retirement.md)
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 

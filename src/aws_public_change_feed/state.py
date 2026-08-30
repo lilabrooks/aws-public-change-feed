@@ -90,6 +90,12 @@ def _positive_integer(name: str, value: object) -> int:
     return value
 
 
+def _unix_timestamp(name: str, value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{name} must be a non-negative integer Unix timestamp")
+    return value
+
+
 @dataclass(frozen=True, slots=True)
 class FeedCheckpoint:
     """Durable state for one feed."""
@@ -513,6 +519,7 @@ class AnnouncementRecord:
     emitted_candidate_ids: tuple[str, ...] = field(default=())
     release_ids: tuple[str, ...] = field(default=())
     state_version: int = 1
+    expires_at: int | None = None
 
     def __post_init__(self) -> None:
         _digest("announcement_id", self.announcement_id)
@@ -568,6 +575,8 @@ class AnnouncementRecord:
             if tuple(sorted(set(values))) != values:
                 raise ValueError(f"{name} must be sorted and deduplicated")
         _positive_integer("state_version", self.state_version)
+        if self.expires_at is not None:
+            _unix_timestamp("expires_at", self.expires_at)
 
     def with_emission(
         self,
@@ -606,6 +615,7 @@ class ResponsePageMarker:
     page: int
     candidate_ids: tuple[str, ...]
     complete: bool = True
+    expires_at: int | None = field(default=None, compare=False)
 
     def __post_init__(self) -> None:
         _digest("run_id", self.run_id)
@@ -616,6 +626,8 @@ class ResponsePageMarker:
             raise ValueError("page must be a non-negative integer")
         if not isinstance(self.complete, bool):
             raise ValueError("complete must be a boolean")
+        if self.expires_at is not None:
+            _unix_timestamp("expires_at", self.expires_at)
         if not isinstance(self.candidate_ids, tuple) or len(self.candidate_ids) > 25:
             raise ValueError("candidate_ids must be a tuple with at most 25 entries")
         for candidate in self.candidate_ids:
