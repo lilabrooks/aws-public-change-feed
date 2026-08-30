@@ -57,6 +57,12 @@ resource "aws_iam_role" "source_state_retirement" {
   tags               = local.tags
 }
 
+resource "aws_iam_role" "source_replay" {
+  name               = "apcf-${local.deployment_id}-source-replay"
+  assume_role_policy = data.aws_iam_policy_document.publisher_assume_role.json
+  tags               = local.tags
+}
+
 resource "aws_iam_role" "feed_watcher" {
   name               = local.role_names.watcher
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
@@ -275,6 +281,47 @@ data "aws_iam_policy_document" "source_state_retirement" {
   }
 }
 
+data "aws_iam_policy_document" "source_replay" {
+  statement {
+    sid       = "ReadExactRawSnapshot"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.config.arn}/${local.raw_snapshot_prefix}*"]
+  }
+
+  statement {
+    sid     = "ReadExactReleaseVersions"
+    actions = ["s3:GetObjectVersion"]
+    resources = [
+      "${aws_s3_bucket.config.arn}/${local.active_versions_key}",
+      "${aws_s3_bucket.config.arn}/${local.release_prefix}/*",
+    ]
+  }
+
+  statement {
+    sid       = "FillAnnouncementAndPageState"
+    actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
+    resources = [aws_dynamodb_table.source_state.arn]
+
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["ANNOUNCEMENT#*", "RUN#*"]
+    }
+  }
+
+  statement {
+    sid       = "FillCandidateAndDeliveryState"
+    actions   = ["dynamodb:GetItem", "dynamodb:PutItem"]
+    resources = [aws_dynamodb_table.delivery.arn]
+
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["CANDIDATE#*"]
+    }
+  }
+}
+
 data "aws_iam_policy_document" "feed_watcher" {
   statement {
     sid       = "ListActiveManifestKey"
@@ -459,6 +506,12 @@ resource "aws_iam_role_policy" "source_state_retirement" {
   name   = "source-state-retirement"
   role   = aws_iam_role.source_state_retirement.id
   policy = data.aws_iam_policy_document.source_state_retirement.json
+}
+
+resource "aws_iam_role_policy" "source_replay" {
+  name   = "source-replay"
+  role   = aws_iam_role.source_replay.id
+  policy = data.aws_iam_policy_document.source_replay.json
 }
 
 resource "aws_iam_role_policy" "feed_watcher" {

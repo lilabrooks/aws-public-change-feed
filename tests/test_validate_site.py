@@ -233,7 +233,7 @@ class SiteValidatorTests(unittest.TestCase):
     def test_retirement_status_matches_the_implemented_tools(self):
         page = (ROOT / "site/index.html").read_text(encoding="utf-8")
         self.assertIn(
-            "operator controls for replay, DLQ movement, package retirement, and configuration-release retirement",
+            "operator controls for retained-source replay, delivery replay, DLQ movement, package retirement, and configuration-release retirement",
             page,
         )
         self.assertNotIn("packages accumulate until it exists", page)

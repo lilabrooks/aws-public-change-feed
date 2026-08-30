@@ -452,6 +452,36 @@ class TerraformContractTests(unittest.TestCase):
 
         self.assertNotIn("dynamodb:DeleteItem", watcher)
 
+    def test_source_replay_role_cannot_read_or_write_feed_checkpoints(self):
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        outputs = (ROOT / "infra/central/outputs.tf").read_text(encoding="utf-8")
+        role = iam[iam.index('resource "aws_iam_role" "source_replay"') :]
+        role = role[: role.index("\n}") + 2]
+        policy = iam[iam.index('data "aws_iam_policy_document" "source_replay"') :]
+        policy = policy[: policy.index('\ndata "aws_iam_policy_document"', 1)]
+
+        self.assertNotIn("count =", role)
+        self.assertIn('actions   = ["s3:GetObject"]', policy)
+        self.assertIn('actions = ["s3:GetObjectVersion"]', policy)
+        self.assertIn("${local.raw_snapshot_prefix}*", policy)
+        self.assertIn("${local.active_versions_key}", policy)
+        self.assertIn("${local.release_prefix}/*", policy)
+        self.assertIn('values   = ["ANNOUNCEMENT#*", "RUN#*"]', policy)
+        self.assertIn('values   = ["CANDIDATE#*"]', policy)
+        self.assertNotIn("FEED#", policy)
+        for forbidden in (
+            "dynamodb:DeleteItem",
+            "dynamodb:Scan",
+            "dynamodb:Query",
+            "dynamodb:TransactWriteItems",
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "secretsmanager:",
+            "sqs:",
+        ):
+            self.assertNotIn(forbidden, policy)
+        self.assertRegex(outputs, r"source_replay\s+= aws_iam_role\.source_replay\.arn")
+
     def test_watcher_uses_the_exact_worker_package_and_frozen_schedule(self):
         locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
         lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")

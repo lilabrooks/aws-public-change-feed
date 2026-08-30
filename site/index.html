@@ -76,6 +76,23 @@
       margin: 0;
     }
 
+    .site-rationale {
+      margin-top: 48px;
+    }
+
+    .site-rationale h3 {
+      max-width: 760px;
+      margin: 0;
+      font-size: clamp(1.5rem, 3vw, 2.25rem);
+      line-height: 1.1;
+    }
+
+    .site-rationale > p {
+      max-width: 52rem;
+      margin: 14px 0 24px;
+      color: var(--compact-muted);
+    }
+
     .mvp-video-frame {
       margin-top: 32px;
       overflow: hidden;
@@ -500,6 +517,32 @@ Recommended review action: Review supported Kubernetes versions and plan require
             <p>The reconciler retries due work and turns expired sending leases into <code>delivery_unknown</code>. Operator commands require the current state version before closure or replay.</p>
           </li>
         </ol>
+
+        <div class="site-rationale">
+          <h3>What does the delivery record catch?</h3>
+          <p>SQS hands each request to a Lambda worker, and the worker calls Slack. Four concrete failures explain why the service keeps a separate DynamoDB record.</p>
+          <dl class="site-spec">
+            <div class="site-spec-row">
+              <dt>Watcher stops</dt>
+              <dd>The watcher saves a <code>pending_queue</code> record before moving the feed checkpoint. If it stops before calling SQS, the dispatcher finds the saved record and queues it. If the save never finished, the next watcher run rebuilds the candidate from the old checkpoint.</dd>
+            </div>
+            <div class="site-spec-row">
+              <dt>Message returns</dt>
+              <dd>Lambda can receive the same SQS message again. The worker checks DynamoDB first. A <code>posted</code> record makes it acknowledge the message without posting to Slack twice, even after SQS FIFO&rsquo;s 5-minute send-deduplication window.</dd>
+            </div>
+            <div class="site-spec-row">
+              <dt>Slack says retry</dt>
+              <dd>When Slack returns <code>429</code> with a retry time, the worker saves that time and acknowledges the current queue message. The dispatcher queues a new attempt later. The Lambda does not sit idle and sleep.</dd>
+            </div>
+            <div class="site-spec-row">
+              <dt>Slack answer is lost</dt>
+              <dd>Slack may accept a post just before the worker times out. The expired <code>sending</code> record becomes <code>delivery_unknown</code>, and automatic delivery stops until an operator checks the channel.</dd>
+            </div>
+          </dl>
+          <aside class="site-note" aria-label="Slack delivery guarantee">
+            <p>A direct SQS-to-Lambda-to-Slack path is smaller when repeated posts and a short outcome history are acceptable. This service keeps the record so those four failures have a saved next step. It does not claim exactly-once Slack delivery. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004</a> and <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/007-central-slack-delivery-queue-and-worker.md">ADR-007</a> define the boundary.</p>
+          </aside>
+        </div>
       </div>
     </section>
 
@@ -563,7 +606,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
             </tr>
             <tr>
               <th scope="row">M2 · Open</th>
-              <td>M2 sets rules for old feed data, removed feeds, saved responses, and known recovery failures. New writes now include 730-day expiry dates, and a one-time migration updated 164 older rows. Exact-feed plans now cover retirement, post-retention tombstone compaction, and reviewed same-URL restoration; no live feed has been retired. Immutable configuration releases now have a bounded preview/apply retirement command that protects retained manifest references and operator-declared evidence, keeps at least 400 days and the newest 10 releases, rechecks state, and deletes exact versions only; no live release retirement has run. Remaining work replays exact saved feed bytes, removes the unused DynamoDB transaction permission, makes source-state reads choose feed or announcement records, keeps cache files out of Lambda packages, replaces an exception-text check, and keeps <code>IncompleteRuns</code> separate from <code>WatcherFaults</code>.</td>
+              <td>M2 sets rules for old feed data, removed feeds, saved responses, and known recovery failures. New writes now include 730-day expiry dates, and a one-time migration updated 164 older rows. Exact-feed plans now cover retirement, post-retention tombstone compaction, and reviewed same-URL restoration; no live feed has been retired. Immutable configuration releases now have a bounded preview/apply retirement command that protects retained manifest references and operator-declared evidence, keeps at least 400 days and the newest 10 releases, rechecks state, and deletes exact versions only; no live release retirement has run. Retained-source replay now binds one saved response, one retained pointer version, explicit routes, and inspected durable state into a reviewed plan. It fills missing records, suppresses existing candidates, and cannot access feed checkpoints; no live source replay has run. Remaining work removes the unused DynamoDB transaction permission, makes source-state reads choose feed or announcement records, keeps cache files out of Lambda packages, replaces an exception-text check, and keeps <code>IncompleteRuns</code> separate from <code>WatcherFaults</code>.</td>
             </tr>
             <tr>
               <th scope="row">M3 · Open</th>
@@ -572,7 +615,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           </tbody>
         </table>
         <div class="site-note">
-          <p>The repository already includes operator controls for replay, DLQ movement, package retirement, and configuration-release retirement.</p>
+          <p>The repository includes separate operator controls for retained-source replay, delivery replay, DLQ movement, package retirement, and configuration-release retirement.</p>
         </div>
       </div>
     </section>

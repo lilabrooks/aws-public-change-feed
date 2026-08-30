@@ -100,6 +100,7 @@ output "roles" {
     application_artifact_retirement  = aws_iam_role.application_artifact_retirement.arn
     source_state_retention_migration = try(aws_iam_role.source_state_retention_migration[0].arn, null)
     source_state_retirement          = aws_iam_role.source_state_retirement.arn
+    source_replay                    = aws_iam_role.source_replay.arn
     feed_watcher                     = aws_iam_role.feed_watcher.arn
     outbox_dispatcher                = aws_iam_role.outbox_dispatcher.arn
     slack_worker                     = aws_iam_role.slack_worker.arn
