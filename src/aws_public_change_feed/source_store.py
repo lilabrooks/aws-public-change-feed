@@ -13,7 +13,13 @@ from typing import Any
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 
 from .announcements import Provenance
-from .state import AnnouncementRecord, FeedCheckpoint, FeedCompletion, ResponsePageMarker
+from .state import (
+    AnnouncementRecord,
+    ConditionalStateConflict,
+    FeedCheckpoint,
+    FeedCompletion,
+    ResponsePageMarker,
+)
 
 __all__ = [
     "DynamoDBAnnouncementStateStore",
@@ -27,6 +33,7 @@ _FEED_SK = "STATE"
 _ANNOUNCEMENT_SK = "STATE"
 _SERIALIZER = TypeSerializer()
 _DESERIALIZER = TypeDeserializer()
+_MAX_PAGE_WRITE_RETRIES = 8
 
 
 def _conditional_failed(error: Exception) -> bool:
@@ -441,18 +448,92 @@ class DynamoDBSourceStateStore:
         item = self._get(f"RUN#{run_id}", f"PAGESET#{page_set_id}#PAGE#{page:06d}")
         return None if item is None else _page_from_item(item)
 
-    def put_page_if_absent(self, marker: ResponsePageMarker) -> bool:
-        try:
-            self._client.put_item(
-                TableName=self._table_name,
-                Item=_wire(_page_item(marker)),
-                ConditionExpression="attribute_not_exists(PK)",
-            )
-        except Exception as error:
-            if _conditional_failed(error):
+    def put_page(self, marker: ResponsePageMarker) -> bool:
+        """Create an exact page proof or extend its non-proof expiry metadata."""
+
+        key = {
+            "PK": f"RUN#{marker.run_id}",
+            "SK": f"PAGESET#{marker.page_set_id}#PAGE#{marker.page:06d}",
+        }
+        for _ in range(_MAX_PAGE_WRITE_RETRIES):
+            try:
+                self._client.put_item(
+                    TableName=self._table_name,
+                    Item=_wire(_page_item(marker)),
+                    ConditionExpression="attribute_not_exists(PK)",
+                )
+                return True
+            except Exception as error:
+                if not _conditional_failed(error):
+                    durable = self.load_page(marker.run_id, marker.page_set_id, marker.page)
+                    if durable is None:
+                        raise
+                    if durable != marker:
+                        return False
+                    if marker.expires_at is None or (
+                        durable.expires_at is not None and durable.expires_at >= marker.expires_at
+                    ):
+                        return True
+
+            existing = self.load_page(marker.run_id, marker.page_set_id, marker.page)
+            if existing is None:
+                continue
+            if existing != marker:
                 return False
-            raise
-        return True
+            if marker.expires_at is None or (
+                existing.expires_at is not None and existing.expires_at >= marker.expires_at
+            ):
+                return True
+
+            names = {
+                "#item_type": "item_type",
+                "#run_id": "run_id",
+                "#page_set_id": "page_set_id",
+                "#feed_name": "feed_name",
+                "#page": "page",
+                "#candidate_ids": "candidate_ids",
+                "#complete": "complete",
+                "#expires_at": "expires_at",
+            }
+            values: dict[str, object] = {
+                ":item_type": "response_page",
+                ":run_id": marker.run_id,
+                ":page_set_id": marker.page_set_id,
+                ":feed_name": marker.feed_name,
+                ":page": marker.page,
+                ":candidate_ids": list(marker.candidate_ids),
+                ":complete": marker.complete,
+                ":expires_at": marker.expires_at,
+            }
+            proof_condition = (
+                "#item_type = :item_type AND #run_id = :run_id AND "
+                "#page_set_id = :page_set_id AND #feed_name = :feed_name AND "
+                "#page = :page AND #candidate_ids = :candidate_ids AND #complete = :complete"
+            )
+            if existing.expires_at is None:
+                expiry_condition = "attribute_not_exists(#expires_at)"
+            else:
+                expiry_condition = "#expires_at = :prior_expiry"
+                values[":prior_expiry"] = existing.expires_at
+            try:
+                self._client.update_item(
+                    TableName=self._table_name,
+                    Key=_wire(key),
+                    UpdateExpression="SET #expires_at = :expires_at",
+                    ConditionExpression=f"{proof_condition} AND {expiry_condition}",
+                    ExpressionAttributeNames=names,
+                    ExpressionAttributeValues=_wire(values),
+                )
+                return True
+            except Exception as error:
+                if _conditional_failed(error):
+                    continue
+                durable = self.load_page(marker.run_id, marker.page_set_id, marker.page)
+                if durable is not None and durable == marker and durable.expires_at is not None:
+                    if durable.expires_at >= marker.expires_at:
+                        return True
+                raise
+        raise ConditionalStateConflict("response-page expiry lost its conditional write repeatedly")
 
 
 class S3SnapshotStore:
@@ -608,5 +689,5 @@ class DynamoDBAnnouncementStateStore:
     def load_page(self, run_id: str, page_set_id: str, page: int) -> ResponsePageMarker | None:
         return self._source.load_page(run_id, page_set_id, page)
 
-    def put_page_if_absent(self, marker: ResponsePageMarker) -> bool:
-        return self._source.put_page_if_absent(marker)
+    def put_page(self, marker: ResponsePageMarker) -> bool:
+        return self._source.put_page(marker)

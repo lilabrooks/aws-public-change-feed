@@ -219,6 +219,58 @@ class WatcherOrchestratorTests(unittest.TestCase):
         assert announcement is not None
         self.assertEqual(announcement.emitted_candidate_ids, (candidate_id,))
         self.assertEqual(announcement.release_ids, (self.release.release_id,))
+        self.assertEqual(
+            announcement.expires_at,
+            int(
+                (
+                    OBSERVED + timedelta(days=self.release.config["state_retention"]["announcement_state_ttl_days"])
+                ).timestamp()
+            ),
+        )
+        run_id = response_run_id(
+            "aws-whats-new",
+            hashlib.sha256(RSS).hexdigest(),
+            self.release.release_id,
+            self.release.reference["application_version"],
+        )
+        page_set_id = response_page_set_id(run_id, (candidate_id,))
+        marker = self.announcement_state.load_page(run_id, page_set_id, 0)
+        assert marker is not None
+        self.assertEqual(
+            marker.expires_at,
+            int((CREATED + timedelta(days=self.release.config["state_retention"]["feed_state_ttl_days"])).timestamp()),
+        )
+
+    def test_writers_use_the_exact_loaded_release_retention(self):
+        config = copy.deepcopy(dict(self.release.config))
+        config["state_retention"]["announcement_state_ttl_days"] = 3
+        config["state_retention"]["feed_state_ttl_days"] = 5
+        release = LoadedRelease(
+            release_id=self.release.release_id,
+            config=config,
+            inventory=self.release.inventory,
+            reference=self.release.reference,
+        )
+
+        result = self.orchestrator(release=release).run(
+            release,
+            invocation_id="request-1",
+            remaining_time_ms=lambda: 300_000,
+        )
+
+        announcement = self.announcement_state.load(self.expected["announcement"]["announcement_id"])
+        assert announcement is not None
+        self.assertEqual(announcement.expires_at, int((OBSERVED + timedelta(days=3)).timestamp()))
+        run_id = response_run_id(
+            "aws-whats-new",
+            hashlib.sha256(RSS).hexdigest(),
+            release.release_id,
+            release.reference["application_version"],
+        )
+        page_set_id = response_page_set_id(run_id, result.candidate_ids)
+        marker = self.announcement_state.load_page(run_id, page_set_id, 0)
+        assert marker is not None
+        self.assertEqual(marker.expires_at, int((CREATED + timedelta(days=5)).timestamp()))
 
     def test_reused_candidate_does_not_report_a_new_delivery(self):
         first = self.orchestrator().run(
@@ -237,6 +289,33 @@ class WatcherOrchestratorTests(unittest.TestCase):
         self.assertEqual(second.candidate_ids, first.candidate_ids)
         self.assertEqual(second.created_delivery_ids, ())
         self.assertEqual(second.repaired_delivery_ids, ())
+        announcement = self.announcement_state.load(self.expected["announcement"]["announcement_id"])
+        assert announcement is not None
+        self.assertEqual(
+            announcement.expires_at,
+            int(
+                (
+                    replayed_at + timedelta(days=self.release.config["state_retention"]["announcement_state_ttl_days"])
+                ).timestamp()
+            ),
+        )
+        run_id = response_run_id(
+            "aws-whats-new",
+            hashlib.sha256(RSS).hexdigest(),
+            self.release.release_id,
+            self.release.reference["application_version"],
+        )
+        page_set_id = response_page_set_id(run_id, first.candidate_ids)
+        marker = self.announcement_state.load_page(run_id, page_set_id, 0)
+        assert marker is not None
+        self.assertEqual(
+            marker.expires_at,
+            int(
+                (
+                    replayed_at + timedelta(days=self.release.config["state_retention"]["feed_state_ttl_days"])
+                ).timestamp()
+            ),
+        )
 
     def test_response_page_set_identity_normalizes_candidate_order(self):
         run_id = "a" * 64
@@ -289,6 +368,30 @@ class WatcherOrchestratorTests(unittest.TestCase):
             )
         self.assertIsNone(self.feed_state.load("aws-whats-new"))
         self.assertIsNone(self.outbox.get_candidate(self.expected["candidate_id"]))
+
+    def test_malformed_release_retention_happens_before_any_claim(self):
+        for name, value in (
+            ("announcement_state_ttl_days", 0),
+            ("announcement_state_ttl_days", True),
+            ("feed_state_ttl_days", 3651),
+            ("feed_state_ttl_days", "730"),
+        ):
+            with self.subTest(name=name, value=value):
+                config = copy.deepcopy(dict(self.release.config))
+                config["state_retention"][name] = value
+                release = LoadedRelease(
+                    release_id=self.release.release_id,
+                    config=config,
+                    inventory=self.release.inventory,
+                    reference=self.release.reference,
+                )
+                with self.assertRaisesRegex(WatcherReleaseMismatch, f"release {name} is malformed"):
+                    self.orchestrator(release=release).run(
+                        release,
+                        invocation_id="request-1",
+                        remaining_time_ms=lambda: 300_000,
+                    )
+                self.assertIsNone(self.feed_state.load("aws-whats-new"))
 
     def test_snapshot_failure_blocks_only_that_response(self):
         config = copy.deepcopy(dict(self.release.config))

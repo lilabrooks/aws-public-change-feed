@@ -9,7 +9,7 @@ revision history, observation precedence, merged provenance, emission IDs, and
 release references.
 
 The ports are defined here with in-memory and file-backed implementations; the
-production DynamoDB and S3 adapters live in `source_store`. Active source state
+production DynamoDB and S3 adapters live in `source_store`. Active feed state
 has no cleanup TTL because removed-feed retirement is a separate policy.
 """
 
@@ -20,7 +20,7 @@ import json
 import re
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Protocol
 
@@ -663,7 +663,7 @@ class AnnouncementStateStore(Protocol):
 
     def load_page(self, run_id: str, page_set_id: str, page: int) -> ResponsePageMarker | None: ...
 
-    def put_page_if_absent(self, marker: ResponsePageMarker) -> bool: ...
+    def put_page(self, marker: ResponsePageMarker) -> bool: ...
 
 
 class InMemoryAnnouncementStateStore:
@@ -696,11 +696,16 @@ class InMemoryAnnouncementStateStore:
     def load_page(self, run_id: str, page_set_id: str, page: int) -> ResponsePageMarker | None:
         return self._pages.get((run_id, page_set_id, page))
 
-    def put_page_if_absent(self, marker: ResponsePageMarker) -> bool:
+    def put_page(self, marker: ResponsePageMarker) -> bool:
         key = (marker.run_id, marker.page_set_id, marker.page)
-        if key in self._pages:
+        existing = self._pages.get(key)
+        if existing is None:
+            self._pages[key] = marker
+            return True
+        if existing != marker:
             return False
-        self._pages[key] = marker
+        if marker.expires_at is not None and (existing.expires_at is None or marker.expires_at > existing.expires_at):
+            self._pages[key] = replace(existing, expires_at=marker.expires_at)
         return True
 
 
@@ -715,6 +720,8 @@ def _later(left: str, right: str) -> str:
 def observe(
     store: AnnouncementStateStore,
     announcement: NormalizedAnnouncement,
+    *,
+    retention_days: int,
 ) -> Observation:
     """Merge one sighting into announcement state and classify what changed.
 
@@ -727,8 +734,12 @@ def observe(
     Observation times are compared as timestamps rather than strings, because a
     replay can present sightings out of order and string order is only
     coincidentally correct across offsets.
+
+    `retention_days` comes from the exact loaded release. Expiry follows the
+    durable latest observation and never moves backward.
     """
 
+    retention_days = _positive_integer("retention_days", retention_days)
     key = announcement.announcement_id
     revision = announcement.revision_id
     observed = announcement.observed_at.isoformat()
@@ -750,6 +761,7 @@ def observe(
                 current_observed_at=observed,
                 published_at=published,
                 provenance=tuple(sorted(set(announcement.provenance))),
+                expires_at=int((announcement.observed_at + timedelta(days=retention_days)).timestamp()),
             )
             if not store.put(record, expected_state_version=None):
                 continue
@@ -769,6 +781,9 @@ def observe(
         input_wins = observed_time > current_time or (observed_time == current_time and revision < existing.revision_id)
         content_changed = input_wins and revision != existing.revision_id
         revisions = existing.revision_ids + (revision,) if is_new_revision else existing.revision_ids
+        last_observed_at = _later(existing.last_observed_at, observed)
+        calculated_expiry = int((datetime.fromisoformat(last_observed_at) + timedelta(days=retention_days)).timestamp())
+        expires_at = max(existing.expires_at or 0, calculated_expiry)
         merged = replace(
             existing,
             content_fingerprint=(announcement.content_fingerprint if input_wins else existing.content_fingerprint),
@@ -778,9 +793,10 @@ def observe(
             summary=announcement.summary if input_wins else existing.summary,
             current_observed_at=observed if input_wins else current_observed,
             first_observed_at=_earlier(existing.first_observed_at, observed),
-            last_observed_at=_later(existing.last_observed_at, observed),
+            last_observed_at=last_observed_at,
             published_at=published if published is not None else existing.published_at,
             provenance=tuple(sorted(set(existing.provenance) | set(announcement.provenance))),
+            expires_at=expires_at,
         )
         if merged == existing:
             return Observation(

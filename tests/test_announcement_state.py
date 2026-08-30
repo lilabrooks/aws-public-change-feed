@@ -32,9 +32,17 @@ from aws_public_change_feed.identity import (  # noqa: E402
 )
 from aws_public_change_feed.state import (  # noqa: E402
     AnnouncementRecord,
+    AnnouncementStateStore,
     InMemoryAnnouncementStateStore,
-    observe,
+    Observation,
 )
+from aws_public_change_feed.state import observe as merge_observation  # noqa: E402
+
+RETENTION_DAYS = 730
+
+
+def observe(store: AnnouncementStateStore, announcement: NormalizedAnnouncement) -> Observation:
+    return merge_observation(store, announcement, retention_days=RETENTION_DAYS)
 
 
 def load_json(name):
@@ -245,6 +253,66 @@ class ObservationWindowTests(AnnouncementStateTestCase):
 
         self.assertEqual(result.record.revision_id, expected.revision_id)
         self.assertEqual(result.record.title, expected.title)
+
+
+class RetentionTests(AnnouncementStateTestCase):
+    def test_first_sighting_sets_the_exact_ttl_boundary(self):
+        record = observe(self.store, self.announcement()).record
+
+        self.assertEqual(
+            record.expires_at,
+            int((self.observed_at + timedelta(days=RETENTION_DAYS)).timestamp()),
+        )
+
+    def test_later_sighting_extends_expiry_in_the_same_merge(self):
+        first = observe(self.store, self.announcement()).record
+        later = self.observed_at + timedelta(days=2)
+
+        refreshed = observe(self.store, self.announcement(observed_at=later)).record
+
+        self.assertEqual(refreshed.expires_at, int((later + timedelta(days=RETENTION_DAYS)).timestamp()))
+        self.assertEqual(refreshed.state_version, first.state_version + 1)
+
+    def test_older_replay_does_not_shorten_expiry(self):
+        later = self.observed_at + timedelta(days=2)
+        newest = observe(self.store, self.announcement(observed_at=later)).record
+
+        replayed = observe(self.store, self.announcement(observed_at=self.observed_at)).record
+
+        self.assertEqual(replayed.expires_at, newest.expires_at)
+
+    def test_existing_longer_expiry_is_preserved(self):
+        first = observe(self.store, self.announcement()).record
+        assert first.expires_at is not None
+        longer_expiry = first.expires_at + 86400
+        self.store.save(replace(first, expires_at=longer_expiry))
+
+        repeated = observe(self.store, self.announcement()).record
+
+        self.assertEqual(repeated.expires_at, longer_expiry)
+        self.assertEqual(repeated.state_version, first.state_version)
+
+    def test_legacy_record_receives_expiry_on_reobservation(self):
+        first = observe(self.store, self.announcement()).record
+        self.store.save(replace(first, expires_at=None))
+
+        refreshed = observe(self.store, self.announcement()).record
+
+        self.assertEqual(
+            refreshed.expires_at,
+            int((self.observed_at + timedelta(days=RETENTION_DAYS)).timestamp()),
+        )
+        self.assertEqual(refreshed.state_version, first.state_version + 1)
+
+    def test_retention_days_must_be_a_positive_integer(self):
+        for value in (0, -1, True, "730"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, "retention_days must be a positive integer"):
+                    merge_observation(
+                        self.store,
+                        self.announcement(),
+                        retention_days=value,  # type: ignore[arg-type]
+                    )
 
 
 class EmissionRecordTests(AnnouncementStateTestCase):

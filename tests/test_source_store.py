@@ -20,18 +20,25 @@ from aws_public_change_feed.source_store import (  # noqa: E402
     S3SnapshotStore,
 )
 from aws_public_change_feed.state import (  # noqa: E402
+    AnnouncementStateStore,
     FeedCompletion,
     InMemoryFeedStateStore,
+    Observation,
     ResponsePageMarker,
-    observe,
     record_emission,
 )
+from aws_public_change_feed.state import observe as merge_observation  # noqa: E402
 
 REGION = "us-east-1"
 TABLE = "source-state"
 BUCKET = "snapshot-bucket"
 NOW = datetime(2026, 8, 10, 15, 0, tzinfo=UTC)
 FEED_URL = "https://aws.amazon.com/about-aws/whats-new/recent/feed/"
+RETENTION_DAYS = 730
+
+
+def observe(store: AnnouncementStateStore, announcement: NormalizedAnnouncement) -> Observation:
+    return merge_observation(store, announcement, retention_days=RETENTION_DAYS)
 
 
 def create_table(client):
@@ -377,11 +384,14 @@ class DynamoDBAnnouncementStateTests(unittest.TestCase):
             ConsistentRead=True,
         )["Item"]
         self.assertEqual(raw["item_type"], {"S": "announcement"})
-        self.assertNotIn("expires_at", raw)
+        self.assertEqual(
+            raw["expires_at"],
+            {"N": str(int((NOW + timedelta(days=RETENTION_DAYS)).timestamp()))},
+        )
         self.assertEqual(self.store.load(result.record.announcement_id), result.record)
 
-    def test_announcement_expiry_round_trips_without_becoming_required(self):
-        record = replace(observe(self.store, self.announcement()).record, expires_at=2_000_000_000)
+    def test_legacy_announcement_without_expiry_remains_readable(self):
+        record = replace(observe(self.store, self.announcement()).record, expires_at=None)
         self.store.save(record)
         raw = self.client.get_item(
             TableName=TABLE,
@@ -391,7 +401,7 @@ class DynamoDBAnnouncementStateTests(unittest.TestCase):
             },
             ConsistentRead=True,
         )["Item"]
-        self.assertEqual(raw["expires_at"], {"N": "2000000000"})
+        self.assertNotIn("expires_at", raw)
         self.assertEqual(self.store.load(record.announcement_id), record)
 
     def test_forged_durable_announcement_identity_is_refused_on_read(self):
@@ -445,8 +455,9 @@ class DynamoDBAnnouncementStateTests(unittest.TestCase):
             page=0,
             candidate_ids=("e" * 64,),
         )
-        self.assertTrue(self.store.put_page_if_absent(marker))
-        self.assertFalse(self.store.put_page_if_absent(marker))
+        self.assertTrue(self.store.put_page(marker))
+        self.assertTrue(self.store.put_page(marker))
+        self.assertFalse(self.store.put_page(replace(marker, candidate_ids=("a" * 64,))))
         self.assertEqual(self.store.load_page(marker.run_id, marker.page_set_id, 0), marker)
         raw = self.client.get_item(
             TableName=TABLE,
@@ -468,11 +479,104 @@ class DynamoDBAnnouncementStateTests(unittest.TestCase):
             candidate_ids=("e" * 64,),
             expires_at=2_000_000_000,
         )
-        self.assertTrue(self.store.put_page_if_absent(marker))
+        self.assertTrue(self.store.put_page(marker))
         loaded = self.store.load_page(marker.run_id, marker.page_set_id, marker.page)
         assert loaded is not None
         self.assertEqual(loaded.expires_at, 2_000_000_000)
         self.assertEqual(loaded, replace(marker, expires_at=2_100_000_000))
+
+    def test_exact_response_page_reobservation_only_extends_expiry(self):
+        marker = ResponsePageMarker(
+            run_id="d" * 64,
+            page_set_id="f" * 64,
+            feed_name="feed-a",
+            page=0,
+            candidate_ids=("e" * 64,),
+            expires_at=2_000_000_000,
+        )
+        self.assertTrue(self.store.put_page(marker))
+
+        self.assertTrue(self.store.put_page(replace(marker, expires_at=2_100_000_000)))
+        self.assertTrue(self.store.put_page(replace(marker, expires_at=1_900_000_000)))
+
+        durable = self.store.load_page(marker.run_id, marker.page_set_id, marker.page)
+        assert durable is not None
+        self.assertEqual(durable.expires_at, 2_100_000_000)
+        self.assertEqual(durable.candidate_ids, marker.candidate_ids)
+
+    def test_expired_but_present_exact_page_is_refreshed(self):
+        expired = ResponsePageMarker(
+            run_id="d" * 64,
+            page_set_id="f" * 64,
+            feed_name="feed-a",
+            page=0,
+            candidate_ids=("e" * 64,),
+            expires_at=int(NOW.timestamp()) - 1,
+        )
+        self.assertTrue(self.store.put_page(expired))
+
+        refreshed_expiry = int((NOW + timedelta(days=RETENTION_DAYS)).timestamp())
+        self.assertTrue(self.store.put_page(replace(expired, expires_at=refreshed_expiry)))
+
+        durable = self.store.load_page(expired.run_id, expired.page_set_id, expired.page)
+        assert durable is not None
+        self.assertEqual(durable.expires_at, refreshed_expiry)
+
+    def test_conflicting_page_proof_cannot_change_expiry(self):
+        marker = ResponsePageMarker(
+            run_id="d" * 64,
+            page_set_id="f" * 64,
+            feed_name="feed-a",
+            page=0,
+            candidate_ids=("e" * 64,),
+            expires_at=2_000_000_000,
+        )
+        self.assertTrue(self.store.put_page(marker))
+
+        conflict = replace(marker, candidate_ids=("a" * 64,), expires_at=2_100_000_000)
+        self.assertFalse(self.store.put_page(conflict))
+
+        durable = self.store.load_page(marker.run_id, marker.page_set_id, marker.page)
+        assert durable is not None
+        self.assertEqual(durable.expires_at, marker.expires_at)
+        self.assertEqual(durable.candidate_ids, marker.candidate_ids)
+
+    def test_concurrent_later_page_expiry_wins_the_conditional_retry(self):
+        marker = ResponsePageMarker(
+            run_id="d" * 64,
+            page_set_id="f" * 64,
+            feed_name="feed-a",
+            page=0,
+            candidate_ids=("e" * 64,),
+            expires_at=2_000_000_000,
+        )
+        self.assertTrue(self.store.put_page(marker))
+
+        class RacingClient:
+            def __init__(self, client):
+                self.client = client
+                self.raced = False
+
+            def __getattr__(self, name):
+                return getattr(self.client, name)
+
+            def update_item(self, **kwargs):
+                if not self.raced and kwargs.get("UpdateExpression") == "SET #expires_at = :expires_at":
+                    self.raced = True
+                    self.client.update_item(
+                        TableName=TABLE,
+                        Key=kwargs["Key"],
+                        UpdateExpression="SET expires_at = :expiry",
+                        ExpressionAttributeValues={":expiry": {"N": "2200000000"}},
+                    )
+                return self.client.update_item(**kwargs)
+
+        racing_store = DynamoDBAnnouncementStateStore(RacingClient(self.client), TABLE)
+        self.assertTrue(racing_store.put_page(replace(marker, expires_at=2_100_000_000)))
+
+        durable = self.store.load_page(marker.run_id, marker.page_set_id, marker.page)
+        assert durable is not None
+        self.assertEqual(durable.expires_at, 2_200_000_000)
 
     def test_response_page_expiry_rejects_malformed_durable_metadata(self):
         marker = ResponsePageMarker(
@@ -482,7 +586,7 @@ class DynamoDBAnnouncementStateTests(unittest.TestCase):
             page=0,
             candidate_ids=("e" * 64,),
         )
-        self.assertTrue(self.store.put_page_if_absent(marker))
+        self.assertTrue(self.store.put_page(marker))
         self.client.update_item(
             TableName=TABLE,
             Key={
@@ -503,7 +607,7 @@ class DynamoDBAnnouncementStateTests(unittest.TestCase):
             page=0,
             candidate_ids=("e" * 64,),
         )
-        self.assertTrue(self.store.put_page_if_absent(marker))
+        self.assertTrue(self.store.put_page(marker))
         self.client.update_item(
             TableName=TABLE,
             Key={

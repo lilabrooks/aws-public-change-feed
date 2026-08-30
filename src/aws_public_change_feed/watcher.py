@@ -6,7 +6,7 @@ import hashlib
 from collections.abc import Callable, Mapping, Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
@@ -48,10 +48,21 @@ __all__ = [
 
 _MINIMUM_REMAINING_MILLISECONDS = 60_000
 _PAGE_SIZE = 25
+_MAX_RETENTION_DAYS = 3650
 
 
 class WatcherReleaseMismatch(ValueError):
     """The loaded release cannot run under the deployment-owned fetch policy."""
+
+
+def _retention_days(release: LoadedRelease, name: str) -> int:
+    retention = release.config.get("state_retention")
+    if not isinstance(retention, Mapping):
+        raise WatcherReleaseMismatch("release state_retention is malformed")
+    value = retention.get(name)
+    if isinstance(value, bool) or not isinstance(value, int) or not 1 <= value <= _MAX_RETENTION_DAYS:
+        raise WatcherReleaseMismatch(f"release {name} is malformed")
+    return value
 
 
 class WatcherMetrics(Protocol):
@@ -382,6 +393,8 @@ class WatcherOrchestrator:
     ) -> WatcherResult:
         metrics = metrics or NullWatcherMetrics()
         self._validate_release_fetch_policy(release)
+        announcement_retention_days = _retention_days(release, "announcement_state_ttl_days")
+        page_retention_days = _retention_days(release, "feed_state_ttl_days")
         observed_at = self.clock()
         feeds = load_feeds(release.config)
         claimed: list[tuple[FeedDefinition, FeedCheckpoint]] = []
@@ -445,7 +458,11 @@ class WatcherOrchestrator:
         created_at = self.clock()
 
         for announcement in announcements:
-            observation = observe(self.announcement_state, announcement)
+            observation = observe(
+                self.announcement_state,
+                announcement,
+                retention_days=announcement_retention_days,
+            )
             metrics.announcement_state(
                 new_revision=observation.is_new_revision,
                 provenance_only=observation.provenance_only,
@@ -528,6 +545,7 @@ class WatcherOrchestrator:
             ]
             if not pages:
                 pages = [()]
+            page_expires_at = int((created_at + timedelta(days=page_retention_days)).timestamp())
             for page_number, page_ids in enumerate(pages):
                 marker = ResponsePageMarker(
                     run_id=entry.run_id,
@@ -535,12 +553,17 @@ class WatcherOrchestrator:
                     feed_name=entry.feed.name,
                     page=page_number,
                     candidate_ids=page_ids,
+                    expires_at=page_expires_at,
                 )
-                if not self.announcement_state.put_page_if_absent(marker):
-                    existing = self.announcement_state.load_page(entry.run_id, page_set_id, page_number)
-                    if existing != marker:
-                        raise RuntimeError("response-page marker conflicts with durable state")
-                if self.announcement_state.load_page(entry.run_id, page_set_id, page_number) != marker:
+                if not self.announcement_state.put_page(marker):
+                    raise RuntimeError("response-page marker conflicts with durable state")
+                durable_page = self.announcement_state.load_page(entry.run_id, page_set_id, page_number)
+                if (
+                    durable_page is None
+                    or durable_page != marker
+                    or durable_page.expires_at is None
+                    or durable_page.expires_at < page_expires_at
+                ):
                     raise RuntimeError("response-page marker read-back failed")
             if not verify_durable(self.outbox, response_candidate_ids):
                 raise RuntimeError("final response durability read-back failed")

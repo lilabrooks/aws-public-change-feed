@@ -145,7 +145,11 @@ class PipelineTests(unittest.TestCase):
         rules = load_risk_rules(self.config)
         built: list[dict] = []
         for announcement in result.announcements:
-            observation = observe(self.announcements, announcement)
+            observation = observe(
+                self.announcements,
+                announcement,
+                retention_days=self.config["state_retention"]["announcement_state_ttl_days"],
+            )
             for match in match_announcement(
                 Announcement(title=announcement.title, summary=announcement.summary),
                 services,

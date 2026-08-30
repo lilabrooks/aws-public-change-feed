@@ -49,6 +49,9 @@ Concurrent or replayed observations merge with compare-and-swap. The later
 `observed_at` owns the current title and summary while older revisions remain in
 history; equal observation times choose the lexically smaller revision ID. A
 provenance-only replay may extend history but cannot rewind current content.
+The same merge derives announcement expiry from the durable latest observation
+and the exact loaded release's retention period. It preserves any later stored
+expiry.
 If an overlap replay observes different normalized title or summary content,
 the deterministic content fingerprint, revision, candidate, and request
 identities differ. Both revisions may therefore reach delivery. Dedupe

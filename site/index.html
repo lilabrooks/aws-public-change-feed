@@ -527,7 +527,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           </div>
           <div class="site-spec-row">
             <dt>Source-state lifecycle</dt>
-            <dd>Active feed checkpoints do not expire. Announcement and response-page history uses bounded TTL metadata, while removed feeds require reviewed retirement and a permanent identity tombstone. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/025-source-state-and-response-page-retirement.md">ADR-025</a></dd>
+            <dd>Active feed checkpoints do not expire. Announcement and response-page history use exact-release TTL metadata. Removed feeds require reviewed retirement and a permanent identity tombstone. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/025-source-state-and-response-page-retirement.md">ADR-025</a></dd>
           </div>
           <div class="site-spec-row">
             <dt>Slack timeout</dt>
