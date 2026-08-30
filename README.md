@@ -17,14 +17,54 @@ Each candidate includes the matched text, service, risk type, mapped environment
 
 GitHub Issues and milestones hold the current backlog state.
 
-| Milestone | State | Result or remaining work |
+| Milestone | State | Purpose |
 | --- | --- | --- |
-| [D0: first live Slack delivery](https://github.com/lilabrooks/aws-public-change-feed/milestone/1) | Closed | One controlled public-feed candidate reached Slack and DynamoDB recorded `posted`. |
-| [M1: dev MVP](https://github.com/lilabrooks/aws-public-change-feed/milestone/2) | Closed | Persistent dev operation, recovery, the declared load case, and alarm receipt were exercised. |
-| [M2: lifecycle and replay](https://github.com/lilabrooks/aws-public-change-feed/milestone/3) | Open | Source-state retirement, release retirement, retained-source replay, and watcher and dispatcher correctness fixes. |
-| [M3: production-readiness proof](https://github.com/lilabrooks/aws-public-change-feed/milestone/4) | Open | Production policy, recovery objectives, rollback proof, the production gate, and final status reconciliation. |
+| [D0: first live Slack delivery](https://github.com/lilabrooks/aws-public-change-feed/milestone/1) | Closed | Send one real public AWS announcement through the deployed dev service and record the Slack result. |
+| [M1: dev MVP](https://github.com/lilabrooks/aws-public-change-feed/milestone/2) | Closed | Run the dev service on schedule and exercise delivery, recovery, the fixed load case, and alarm notification. |
+| [M2: lifecycle and replay](https://github.com/lilabrooks/aws-public-change-feed/milestone/3) | Open | Set expiry and retirement rules for feed state and releases, add saved-response replay, and fix named recovery failures. |
+| [M3: production-readiness proof](https://github.com/lilabrooks/aws-public-change-feed/milestone/4) | Open | Choose production policy and recovery targets, prove rollback, then run the production-readiness gate. |
 
-M1 closed after the 4 runtime triggers were enabled in dev, a 12-message public-feed cohort reached Slack, 2 isolated recovery cases passed, a fixed 50-message run completed at 5 messages per minute, and the owner confirmed receipt of the alarm email. Production readiness remains open under M2 and M3.
+### D0: first live Slack delivery
+
+D0 sent one real public AWS announcement through the deployed dev service to Slack.
+
+- The first active dev configuration release was published and loaded with the exact application package.
+- The watcher created a candidate and delivery record. The dispatcher sent the request through SQS FIFO, the worker posted it, and DynamoDB recorded `posted`.
+- One request was sent while the other 11 stayed durably queued for M1. The owner confirmed the complete message in Slack.
+- A missing active manifest was separated from a denied read, and one Lambda security false positive caused by use-case prose was removed before the live run.
+
+### M1: dev MVP
+
+M1 ran the whole dev service on schedule and exercised delivery, recovery, load, and alarms.
+
+- All 4 runtime triggers were enabled in dev. The 12-message public-feed cohort reached Slack with 1 network attempt and an HTTP 200 response per post, and DynamoDB recorded `posted` for all 12.
+- The recovery exercise moved one `pending_queue` record to `posted` with 1 Slack attempt and one expired `sending` record to `delivery_unknown` with 0 Slack attempts.
+- The fixed load run created 5 records per minute for 10 minutes and stopped at 50 records.
+- The owner confirmed receipt of the alarm email.
+- Pull requests, pushes to `main`, and weekly CI now scan all 3 pinned Python dependency manifests and tracked plaintext for high and critical findings. Terraform findings remain report-only because the reviewed baseline includes accepted AWS defaults and service-managed encryption choices.
+
+### M2: lifecycle and replay
+
+M2 sets rules for old feed data, removed feeds, saved responses, and known recovery failures.
+
+- The post-MVP policy review kept the current 4 feeds, matching rules, message limits, and retention periods.
+- Announcement history now expires 730 days after its latest observation. Response-page completion records get the same 730-day window. Active feed checkpoints stay until a reviewed feed-retirement operation.
+- On 2026-08-30, the one-time migration added retention dates to 76 announcement rows and 88 response-page rows. It left the 4 active feed checkpoints alone and removed the temporary table-scan role after verification.
+- [L-48](https://github.com/lilabrooks/aws-public-change-feed/issues/159) is next. It will mark one removed feed as retired, keep its full checkpoint for 730 days from the reviewed decision, then replace that checkpoint with a permanent feed-name and URL-hash tombstone. The tombstone stops a different URL from silently taking over the old feed name.
+- [L-14](https://github.com/lilabrooks/aws-public-change-feed/issues/92) will add reviewed deletion of old configuration and inventory releases. It must preserve the active release, at least the newest 10, and every release still needed for delivery review, replay, investigation, or rollback. Eligible releases are at least 400 days old. The publisher will calculate the protected set and delete only an unchanged reviewed plan.
+- [L-35](https://github.com/lilabrooks/aws-public-change-feed/issues/122) will replay exact retained feed-response bytes through the same parser and matcher during the 30-day raw-snapshot window. Replay uses the exact configuration release, keeps the live feed's ETag and Last-Modified checkpoint values unchanged, fills missing state, and suppresses existing candidates by default.
+- State and package cleanup will remove the unused `dynamodb:TransactWriteItems` IAM action, make each source-state load name whether it wants a feed or announcement record, test that `__pycache__` directories and `.pyc` files stay out of Lambda packages, and document the order for changing the deployment host allowlist and configuration feed-host set.
+- Recovery fixes will replace a check against exception text with a dedicated error type, prove `IncompleteRuns` and `WatcherFaults` cannot both fire for one watcher failure, decide whether an expired Slack send lease should still become `delivery_unknown`, and define recovery after a failed Terraform-output capture leaves its temporary file behind.
+
+### M3: production-readiness proof
+
+M3 decides whether the current service and deployment are ready for production.
+
+- [L-40](https://github.com/lilabrooks/aws-public-change-feed/issues/145) will choose the production feed and matching policy, review evidence for every enabled service and risk-type pair, and record thin sample sizes without inventing unsupported thresholds.
+- [L-41](https://github.com/lilabrooks/aws-public-change-feed/issues/146) will set recovery time and data-loss limits for both DynamoDB tables. It will either prove a restore into new tables or record the accepted loss boundary and rebuild procedure.
+- [L-42](https://github.com/lilabrooks/aws-public-change-feed/issues/147) will run a read-only shadow evaluation, roll configuration back and forward, roll the application package back and forward, and prove that historical replay references still resolve.
+- [L-43](https://github.com/lilabrooks/aws-public-change-feed/issues/148) will map every M2 change to the M1 evidence it could affect. It will reuse evidence only for unchanged mechanisms, rerun affected or missing checks, and record the result as passed, failed, or incomplete.
+- [L-44](https://github.com/lilabrooks/aws-public-change-feed/issues/149) will update the goal, architecture status, README, and public site after the production gate so every completion claim matches the recorded result.
 
 See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issues) for the current work queue. The [goal](docs/GOAL.md) defines product scope and completion criteria; its long-form status will be reconciled after the production gate.
 
@@ -57,7 +97,7 @@ The public walkthrough traces the Terraform roots, Lambda runtimes, matcher corp
 | Slack uncertainty stays visible | A timeout becomes `delivery_unknown`. An operator checks Slack before closure or one audited retry. |
 | Credentials stay with the worker | Feed content, configuration, candidates, fixtures, and logs contain no Slack secret values. |
 
-The [numbered specification and 20 accepted ADRs](docs/architecture/README.md) define these rules in full.
+The [numbered specification and 21 accepted ADRs](docs/architecture/README.md) define these rules in full.
 
 ## Run locally
 
@@ -102,7 +142,7 @@ The corpus evaluator and feed screener accept `--root` and `--config`. Relative 
 
 - [Public system page](https://lilabrooks.github.io/aws-public-change-feed/): system diagram, processing summary, contract checks, and generated Slack output.
 - [Product goal](docs/GOAL.md): scope, exclusions, quality bar, and completion criteria.
-- [Architecture index](docs/architecture/README.md): 6 specification chapters, 20 accepted ADRs, and the schema-to-example map.
+- [Architecture index](docs/architecture/README.md): 6 specification chapters, 21 accepted ADRs, and the schema-to-example map.
 - [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
 - [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
 - [Dev MVP walkthrough](docs/evidence/mvp-walkthrough.md): narrated video, slides, captions, transcript, recorded results, and artifact hashes.
