@@ -402,6 +402,49 @@ class TerraformContractTests(unittest.TestCase):
             r"source_state_retention_migration\s+= try\(aws_iam_role\.source_state_retention_migration\[0\]\.arn, null\)",
         )
 
+    def test_source_state_retirement_role_is_permanent_and_exact_feed_scoped(self):
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        outputs = (ROOT / "infra/central/outputs.tf").read_text(encoding="utf-8")
+        trust = iam[iam.index('data "aws_iam_policy_document" "source_state_retirement_assume_role"') :]
+        trust = trust[: trust.index('\nresource "aws_iam_role"', 1)]
+        role = iam[iam.index('resource "aws_iam_role" "source_state_retirement"') :]
+        role = role[: role.index("\n}") + 2]
+        policy = iam[iam.index('data "aws_iam_policy_document" "source_state_retirement"') :]
+        policy = policy[: policy.index('\ndata "aws_iam_policy_document"', 1)]
+
+        self.assertIn('actions = ["sts:AssumeRole", "sts:TagSession"]', trust)
+        self.assertIn(
+            "assume_role_policy = data.aws_iam_policy_document.source_state_retirement_assume_role.json",
+            role,
+        )
+        self.assertNotIn("count =", role)
+        self.assertIn('actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]', policy)
+        self.assertIn('variable = "dynamodb:LeadingKeys"', policy)
+        self.assertIn('values   = ["FEED#$${aws:PrincipalTag/FeedName}"]', policy)
+        self.assertIn("aws_dynamodb_table.source_state.arn", policy)
+        for forbidden in (
+            "dynamodb:Scan",
+            "dynamodb:Query",
+            "dynamodb:DeleteItem",
+            "dynamodb:PutItem",
+            "delivery_table",
+            "secretsmanager:",
+            "ssm:",
+            "s3:",
+        ):
+            self.assertNotIn(forbidden, policy)
+        self.assertRegex(
+            outputs,
+            r"source_state_retirement\s+= aws_iam_role\.source_state_retirement\.arn",
+        )
+
+    def test_watcher_has_no_source_state_delete_permission(self):
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        watcher = iam[iam.index('data "aws_iam_policy_document" "feed_watcher"') :]
+        watcher = watcher[: watcher.index('\ndata "aws_iam_policy_document"', 1)]
+
+        self.assertNotIn("dynamodb:DeleteItem", watcher)
+
     def test_watcher_uses_the_exact_worker_package_and_frozen_schedule(self):
         locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
         lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")

@@ -20,6 +20,17 @@ data "aws_iam_policy_document" "publisher_assume_role" {
   }
 }
 
+data "aws_iam_policy_document" "source_state_retirement_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole", "sts:TagSession"]
+
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+  }
+}
+
 resource "aws_iam_role" "release_publisher" {
   name               = local.role_names.publisher
   assume_role_policy = data.aws_iam_policy_document.publisher_assume_role.json
@@ -37,6 +48,12 @@ resource "aws_iam_role" "source_state_retention_migration" {
 
   name               = "apcf-${local.deployment_id}-source-state-retention-migration"
   assume_role_policy = data.aws_iam_policy_document.publisher_assume_role.json
+  tags               = local.tags
+}
+
+resource "aws_iam_role" "source_state_retirement" {
+  name               = "apcf-${local.deployment_id}-source-state-retirement"
+  assume_role_policy = data.aws_iam_policy_document.source_state_retirement_assume_role.json
   tags               = local.tags
 }
 
@@ -198,6 +215,20 @@ data "aws_iam_policy_document" "source_state_retention_migration" {
         "run_id",
         "state_version",
       ]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "source_state_retirement" {
+  statement {
+    sid       = "ReadAndConditionallyUpdateExactFeed"
+    actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
+    resources = [aws_dynamodb_table.source_state.arn]
+
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["FEED#$${aws:PrincipalTag/FeedName}"]
     }
   }
 }
@@ -380,6 +411,12 @@ resource "aws_iam_role_policy" "source_state_retention_migration" {
   name   = "source-state-retention-migration"
   role   = aws_iam_role.source_state_retention_migration[0].id
   policy = data.aws_iam_policy_document.source_state_retention_migration[0].json
+}
+
+resource "aws_iam_role_policy" "source_state_retirement" {
+  name   = "source-state-retirement"
+  role   = aws_iam_role.source_state_retirement.id
+  policy = data.aws_iam_policy_document.source_state_retirement.json
 }
 
 resource "aws_iam_role_policy" "feed_watcher" {

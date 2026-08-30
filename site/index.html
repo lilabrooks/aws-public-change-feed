@@ -527,7 +527,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           </div>
           <div class="site-spec-row">
             <dt>Source-state lifecycle</dt>
-            <dd>Active feed checkpoints do not expire. Announcement and response-page history use exact-release TTL metadata. Legacy rows use a bounded conditional migration under a temporary scan role that is removed after the result is recorded. Removed feeds require reviewed retirement and a permanent identity tombstone. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/025-source-state-and-response-page-retirement.md">ADR-025</a></dd>
+            <dd>Active feed checkpoints do not expire. Announcement and response-page history use exact-release TTL metadata. Legacy rows use a bounded conditional migration under a temporary scan role that is removed after the result is recorded. Removed feeds use exact-feed retirement and compaction plans under a permanent session-tagged role; same-name restoration requires the original URL hash. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/025-source-state-and-response-page-retirement.md">ADR-025</a></dd>
           </div>
           <div class="site-spec-row">
             <dt>Slack timeout</dt>
@@ -563,7 +563,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
             </tr>
             <tr>
               <th scope="row">M2 · Open</th>
-              <td>M2 sets rules for old feed data, removed feeds, saved responses, and known recovery failures. New writes now include 730-day expiry dates, and a one-time migration updated 164 older rows. Remaining work retires removed-feed checkpoints and old releases, replays exact saved feed bytes, removes the unused DynamoDB transaction permission, makes source-state reads choose feed or announcement records, keeps cache files out of Lambda packages, replaces an exception-text check, and keeps <code>IncompleteRuns</code> separate from <code>WatcherFaults</code>.</td>
+              <td>M2 sets rules for old feed data, removed feeds, saved responses, and known recovery failures. New writes now include 730-day expiry dates, and a one-time migration updated 164 older rows. Exact-feed plans now cover retirement, post-retention tombstone compaction, and reviewed same-URL restoration; no live feed has been retired. Remaining work retires old releases, replays exact saved feed bytes, removes the unused DynamoDB transaction permission, makes source-state reads choose feed or announcement records, keeps cache files out of Lambda packages, replaces an exception-text check, and keeps <code>IncompleteRuns</code> separate from <code>WatcherFaults</code>.</td>
             </tr>
             <tr>
               <th scope="row">M3 · Open</th>

@@ -11,6 +11,7 @@ The `infra/central` root creates:
 - An encrypted SQS FIFO queue and FIFO DLQ.
 - Conditional outbox dispatcher, Slack worker, and recovery reconciler Lambdas, plus their least-privilege roles.
 - A default-off, one-time source-state retention migration role whose projected scan and conditioned update authority is removed after use.
+- A permanent source-state retirement role whose tagged session can strongly read and conditionally update one exact feed partition key.
 - Secrets Manager secrets or SecureString parameters referenced by exact identifier.
 - CloudWatch logs, metrics, dashboard, alarms, and an operational SNS topic.
 
@@ -28,6 +29,19 @@ Use on-demand capacity for the baseline. A single-table layout may use `PK` and 
 - A `304 Not Modified` response updates success and freshness without source items.
 - Fetched validators remain pending until downstream durability is proved. Attempt, failure, pending, `304`, and final writes require the exact lease owner and state version. The final fetched-feed commits use one transaction, so a lost condition advances none of the batch.
 - Active feed items have no cleanup TTL. Removed-feed retirement needs a separate policy.
+- A removed feed remains a full checkpoint for `feed_state_ttl_days` from the
+  reviewed `retired_at` decision. The same conditional write records
+  `retire_after`, the decision identifier, and a higher state version. A live
+  lease, pending response state, or active-release reference makes the feed
+  ineligible.
+- After `retire_after`, a second exact-content plan may compact the checkpoint
+  into a permanent `feed_tombstone`. The tombstone keeps the feed name, SHA-256
+  of its URL, retirement and compaction times, decision identifier, and state
+  version. It carries no validators, lease, pending work, or raw feed content.
+- A watcher claim cannot replace a retired checkpoint or tombstone. Restoring a
+  tombstoned name requires an exact-feed plan against an active release that
+  contains the same URL hash. A different URL continues to require a new feed
+  name.
 
 ### Announcement item
 
