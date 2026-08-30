@@ -12,6 +12,7 @@ The `infra/central` root creates:
 - Conditional outbox dispatcher, Slack worker, and recovery reconciler Lambdas, plus their least-privilege roles.
 - A default-off, one-time source-state retention migration role whose projected scan and conditioned update authority is removed after use.
 - A permanent source-state retirement role whose tagged session can strongly read and conditionally update one exact feed partition key.
+- A permanent source-replay role that reads retained response and release bytes, then reads or fills only announcement, response-page, candidate, and delivery records.
 - Secrets Manager secrets or SecureString parameters referenced by exact identifier.
 - CloudWatch logs, metrics, dashboard, alarms, and an operational SNS topic.
 
@@ -111,6 +112,12 @@ The one-time legacy migration gives every marker without expiry a fresh boundary
 The feed checkpoint advances only after every current page and final candidate, delivery, emission, and release reference is read back. Page read-back compares the immutable proof and also requires a stored expiry at least as late as the current observation requested.
 
 A repeated invocation can safely reconstruct the same candidates and conditionally put missing records. Candidate identity is deterministic, so partial completion cannot create new logical work.
+
+Retained-source replay accepts one exact raw-snapshot key and one retained active-pointer version. Preview runs the production parser, normalizer, matcher, candidate builder, validators, and durable emission logic against shadow stores seeded by strongly consistent reads. Its canonical plan binds the snapshot key and digest, release references, application digest, parser limits, operator, purpose, expected route IDs, result IDs, and a digest of every durable record it inspected.
+
+Apply rebuilds that preview before its first write. Missing snapshot bytes, a missing release version, changed input bytes, changed deployment inputs, changed Terraform outputs, or changed durable state makes the plan stale. Successful apply conditionally fills missing announcement history, candidate, delivery, emission-reference, and response-page state. Existing candidates and delivery records stay unchanged. Resending an existing delivery remains a separate manual delivery replay decision.
+
+The source-replay role has no `FEED#` key permission, so replay cannot inspect or change ETag, Last-Modified, pending validators, leases, or checkpoint versions. It has no queue, Slack secret, scan, query, delete, or snapshot-write permission.
 
 ## Outbox dispatcher
 

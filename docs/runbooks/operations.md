@@ -610,11 +610,27 @@ readable after its expiry time.
 
 ## Manual source replay
 
-1. Name the retained raw snapshot or bounded time range, target release, purpose, operator, and expected route scope.
-2. Run dry mode first and compare candidate IDs with existing candidate history.
-3. By default, replay fills missing state and suppresses existing candidates.
-4. Any request to resend an existing candidate uses the manual delivery replay path and its audit fields.
-5. Keep feed validators unchanged during snapshot replay.
+1. Name one retained raw-snapshot key, the retained active-pointer VersionId for the target release, purpose, operator, plan time, and exact expected route IDs. Capture fresh central Terraform outputs in a restricted file.
+2. Confirm the `source_replay` role ARN, configuration bucket, snapshot prefix, source-state table, delivery table, watcher application digest, and deployment parser limits. Preview first:
+
+   ```bash
+   python3 scripts/replay_source_snapshot.py preview \
+     --deployment infra/central/deployment.yaml \
+     --terraform-output <restricted-central-outputs.json> \
+     --expected-account <12-digit-account> \
+     --snapshot-key <exact-raw-snapshot-key> \
+     --release-version-id <retained-active-pointer-version-id> \
+     --operator <operator> \
+     --purpose <bounded-purpose> \
+     --planned-at <YYYY-MM-DDTHH:MM:SSZ> \
+     --expected-route <route-id> \
+     --plan <source-replay-plan.json>
+   ```
+
+   Use `--expect-no-routes` instead of `--expected-route` when zero routes are expected. Review the snapshot digest and observation time, exact release references, route set, announcement and candidate IDs, missing and existing delivery IDs, response-page identity, durable-state digest, and printed plan SHA-256.
+3. Apply the unchanged bytes by replacing `preview` with `apply`, removing operator, purpose, plan time, and route arguments, and adding `--expected-plan-sha256 <preview-plan-sha256>`. Missing bytes, release objects, or changed durable state require a new preview. Never retry the old plan.
+4. Existing candidates and deliveries remain unchanged. The command fills missing state and repairs a missing delivery from its immutable stored candidate. Any request to resend an existing candidate uses the manual delivery replay path and its audit fields.
+5. Read back the named announcement, candidate, delivery, and response-page records. Confirm the live `FEED#<name>` item still has its prior ETag, Last-Modified, pending fields, lease, and state version. The replay role cannot read or write that key, so this final check uses the normal read-only operational path.
 
 ## Removed-feed retirement, compaction, and restoration
 

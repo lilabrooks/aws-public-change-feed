@@ -154,6 +154,14 @@ If a candidate ID already exists, load and validate the stored candidate rather 
 
 Announcement provenance can grow after a candidate was emitted. Historical candidates remain immutable. The announcement record shows the merged current provenance.
 
+## Retained-source replay
+
+`scripts/replay_source_snapshot.py` reprocesses one exact retained raw response. Preview is mandatory. It reads the snapshot bytes and metadata, verifies their SHA-256 against the runtime object key, loads one retained active-pointer version and every release object it pins, then uses the production feed parser, item normalizer, matcher, route mapping, candidate validation, and outbox emission code.
+
+The operator supplies a bounded purpose, operator identity, exact plan time, and an exact expected route set. A different computed route set refuses the preview. The saved canonical JSON plan records missing and existing candidate and delivery IDs plus response-page identity. Apply accepts only the reviewed plan bytes and digest, rebuilds the same plan from fresh strong reads, and refuses changed input or state.
+
+Existing candidate and delivery records suppress new work. A missing delivery record is rebuilt from the immutable stored candidate. Missing announcement and page records are filled through their normal conditional writers. Replay records no delivery resend decision and never calls a feed checkpoint store.
+
 ## Slack rendering
 
 The Slack message includes:

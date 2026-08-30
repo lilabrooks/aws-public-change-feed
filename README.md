@@ -51,8 +51,8 @@ M2 sets rules for old feed data, removed feeds, saved responses, and known recov
 - Announcement history now expires 730 days after its latest observation. Response-page completion records get the same 730-day window. Active feed checkpoints stay until a reviewed feed-retirement operation.
 - On 2026-08-30, the one-time migration added retention dates to 76 announcement rows and 88 response-page rows. It left the 4 active feed checkpoints alone and removed the temporary table-scan role after verification.
 - [L-48](https://github.com/lilabrooks/aws-public-change-feed/issues/159) adds exact-feed preview/apply plans for retirement, post-retention tombstone compaction, and reviewed same-URL restoration. The permanent operator role can read and conditionally update only the session-tagged feed key. Repository tests simulate the 730-day boundary; no live feed has been retired or restored.
-- [L-14](https://github.com/lilabrooks/aws-public-change-feed/issues/92) will add reviewed deletion of old configuration and inventory releases. It must preserve the active release, at least the newest 10, and every release still needed for delivery review, replay, investigation, or rollback. Eligible releases are at least 400 days old. The publisher will calculate the protected set and delete only an unchanged reviewed plan.
-- [L-35](https://github.com/lilabrooks/aws-public-change-feed/issues/122) will replay exact retained feed-response bytes through the same parser and matcher during the 30-day raw-snapshot window. Replay uses the exact configuration release, keeps the live feed's ETag and Last-Modified checkpoint values unchanged, fills missing state, and suppresses existing candidates by default.
+- [L-14](https://github.com/lilabrooks/aws-public-change-feed/issues/92) adds reviewed deletion of old configuration and inventory releases. It preserves the active release, at least the newest 10, and every release still needed for delivery review, replay, investigation, or rollback. Eligible releases are at least 400 days old, and deletion accepts only an unchanged reviewed plan. The command has local simulated coverage; no live release retirement has run.
+- [L-35](https://github.com/lilabrooks/aws-public-change-feed/issues/122) adds a preview-first command that replays one exact retained feed response through the runtime parser, normalizer, matcher, and candidate builder during the 30-day raw-snapshot window. Its saved plan binds the response digest, retained pointer version, durable-state fingerprint, operator, purpose, and expected routes. Apply fills missing state, suppresses existing candidates, and has no permission to read or write feed checkpoints.
 - State and package cleanup will remove the unused `dynamodb:TransactWriteItems` IAM action, make each source-state load name whether it wants a feed or announcement record, test that `__pycache__` directories and `.pyc` files stay out of Lambda packages, and document the order for changing the deployment host allowlist and configuration feed-host set.
 - Recovery fixes will replace a check against exception text with a dedicated error type, prove `IncompleteRuns` and `WatcherFaults` cannot both fire for one watcher failure, decide whether an expired Slack send lease should still become `delivery_unknown`, and define recovery after a failed Terraform-output capture leaves its temporary file behind.
 
@@ -85,6 +85,17 @@ The public walkthrough traces the Terraform roots, Lambda runtimes, matcher corp
 5. DynamoDB stores the candidate and delivery request before the feed checkpoint advances.
 6. The dispatcher sends due work through SQS FIFO. The worker posts to Slack and writes the observed outcome back to DynamoDB.
 7. The reconciler retries eligible work and converts expired sending leases to `delivery_unknown`.
+
+## Why DynamoDB and SQS both exist
+
+Four failure cases explain the delivery table:
+
+- **The watcher stops before queueing the alert.** It saves the candidate and a `pending_queue` record before moving the feed checkpoint. The dispatcher finds that saved record and sends it to SQS. If the save never finished, the old checkpoint makes the next watcher run rebuild the same candidate.
+- **The same SQS message arrives again.** The worker checks DynamoDB before calling Slack. A `posted` record means the message has already completed, so the worker acknowledges the queue message without posting twice. This check still works after SQS FIFO's 5-minute send-deduplication window has passed.
+- **Slack asks the service to retry later.** The worker records the next allowed attempt time in `next_action_at` and acknowledges the current queue message. The dispatcher sends a new queue message when that time arrives. The Lambda does not sleep while it waits.
+- **Slack may have posted the message, but the worker lost the response.** A timeout or stopped Lambda can leave the record in `sending`. When its lease expires, the reconciler changes it to `delivery_unknown`. Automatic delivery stops until an operator checks Slack and records what happened.
+
+A direct SQS-to-Lambda-to-Slack path is a smaller design for notifications that can tolerate repeated posts and limited outcome history. This project requires missed, delayed, duplicate, and ambiguous work to remain visible. [ADR-004](docs/adr/004-explicit-slack-delivery-guarantees.md) defines the Slack outcome rules, and [ADR-007](docs/adr/007-central-slack-delivery-queue-and-worker.md) defines the outbox and queue boundary. The service does not claim exactly-once Slack delivery.
 
 ## Required runtime rules
 

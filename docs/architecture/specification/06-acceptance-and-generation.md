@@ -48,6 +48,15 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - Given a crash after partial durable writes, replay fills missing records without changing logical IDs or duplicating posted work.
 - Given less than the invocation reserve, the watcher claims no additional feed and leaves it for a later schedule.
 
+## Retained-source replay acceptance
+
+- Given one exact retained snapshot and retained pointer version, preview verifies the runtime key, metadata, body digest, exact release object versions, application digest, parser limits, operator, purpose, and expected route set before writing a canonical plan.
+- Preview runs against shadow stores seeded by strong reads. Announcement, response-page, candidate, delivery, and feed-checkpoint state remain byte-for-byte unchanged.
+- Given an existing candidate and delivery record, apply reuses both and creates no delivery work. Given an existing candidate with a missing delivery record, apply rebuilds the request from that stored candidate.
+- Given missing announcement, candidate, delivery, emission-reference, or page state, unchanged apply fills the missing records through the normal conditional writers and verifies their durable read-back.
+- A changed snapshot, missing exact release, changed release reference, changed parser limit, changed route result, changed inspected state, changed plan byte, or wrong plan digest refuses apply before its first write.
+- The source-replay role can read only retained snapshot and release inputs, can read or write only `ANNOUNCEMENT#*`, `RUN#*`, and `CANDIDATE#*` records, and has no feed-checkpoint, scan, query, delete, queue, secret, or snapshot-write permission.
+
 ## Matching acceptance
 
 - Given service evidence and distinct positive risk evidence, the configured rule can match.
