@@ -361,9 +361,9 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn('actions   = ["s3:GetObjectVersion", "s3:DeleteObjectVersion"]', retirement)
         self.assertIn("${aws_s3_bucket.config.arn}/${local.application_artifact_prefix}/*", retirement)
         self.assertNotIn('s3:DeleteObject"', retirement)
-        self.assertIn(
-            "application_artifact_retirement = aws_iam_role.application_artifact_retirement.arn",
+        self.assertRegex(
             outputs,
+            r"application_artifact_retirement\s+= aws_iam_role\.application_artifact_retirement\.arn",
         )
 
     def test_publisher_and_runtime_roles_cannot_retire_application_artifacts(self):
@@ -372,6 +372,35 @@ class TerraformContractTests(unittest.TestCase):
         retirement_end = iam.index('\ndata "aws_iam_policy_document"', retirement_start + 1)
         without_retirement_policy = iam[:retirement_start] + iam[retirement_end:]
         self.assertNotIn("s3:DeleteObjectVersion", without_retirement_policy)
+
+    def test_source_state_retention_migration_role_is_temporary_and_attribute_limited(self):
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        outputs = (ROOT / "infra/central/outputs.tf").read_text(encoding="utf-8")
+        variable = variables[variables.index('variable "source_state_retention_migration_enabled"') :]
+        variable = variable[: variable.index("\n}") + 2]
+        role = iam[iam.index('resource "aws_iam_role" "source_state_retention_migration"') :]
+        role = role[: role.index("\n}") + 2]
+        policy = iam[iam.index('data "aws_iam_policy_document" "source_state_retention_migration"') :]
+        policy = policy[: policy.index('\ndata "aws_iam_policy_document"', 1)]
+
+        self.assertIn("default     = false", variable)
+        self.assertIn("nullable    = false", variable)
+        self.assertIn("count = var.source_state_retention_migration_enabled ? 1 : 0", role)
+        self.assertIn('actions   = ["dynamodb:Scan"]', policy)
+        self.assertIn('variable = "dynamodb:Select"', policy)
+        self.assertIn('values   = ["SPECIFIC_ATTRIBUTES"]', policy)
+        self.assertIn('variable = "dynamodb:Attributes"', policy)
+        self.assertIn('actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]', policy)
+        self.assertIn('variable = "dynamodb:LeadingKeys"', policy)
+        self.assertIn('values   = ["ANNOUNCEMENT#*", "RUN#*"]', policy)
+        self.assertIn("aws_dynamodb_table.source_state.arn", policy)
+        for forbidden in ("dynamodb:DeleteItem", "dynamodb:PutItem", "dynamodb:Query", "dynamodb:TransactWriteItems"):
+            self.assertNotIn(forbidden, policy)
+        self.assertRegex(
+            outputs,
+            r"source_state_retention_migration\s+= try\(aws_iam_role\.source_state_retention_migration\[0\]\.arn, null\)",
+        )
 
     def test_watcher_uses_the_exact_worker_package_and_frozen_schedule(self):
         locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")

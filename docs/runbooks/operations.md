@@ -477,6 +477,80 @@ Git and shell history.
    and preserve the exact remaining inventory. Never widen deletion to the
    state bucket or persistent artifact object.
 
+## One-time source-state retention migration
+
+This operation adds expiry metadata to legacy announcement history and response
+page-set markers. It never expires active feed checkpoints and never calls
+`DeleteItem`. DynamoDB TTL deletion is asynchronous, so an item can remain
+readable after its expiry time.
+
+1. Start from the exact merged migration-tool revision. Confirm the active
+   pointer, deployed watcher application version, account, Region, source-state
+   table, and current trigger state. Preserve the watcher state; concurrent
+   writer changes make the migration plan stale or cause a conditional stop.
+2. Review a Terraform plan that changes only
+   `source_state_retention_migration_enabled` from false to true while preserving
+   every deployed artifact and trigger input. Apply only those plan bytes under
+   separate authority.
+3. Read the role and inline policy from AWS. Confirm the role can project a
+   bounded source-state scan and can strongly read and conditionally update
+   `ANNOUNCEMENT#*` and `RUN#*` keys. Confirm it has no `DeleteItem`, `PutItem`,
+   delivery-table, queue, secret, S3 write, or deployment permission.
+4. Capture fresh Terraform outputs to a restricted temporary file. Pick one
+   second-precision UTC `migration_as_of`; it starts the fresh page-marker
+   retention period and classifies announcements whose derived expiry is
+   already eligible. It does not invent an announcement age.
+5. Run one bounded preview through the temporary role:
+
+   ```bash
+   python3 scripts/migrate_source_state_retention.py preview \
+     --deployment infra/central/deployment.yaml \
+     --terraform-output <restricted-central-outputs.json> \
+     --expected-account <12-digit-account> \
+     --inventory-limit <reviewed-positive-bound-at-most-1000> \
+     --migration-as-of <YYYY-MM-DDTHH:MM:SSZ> \
+     --plan <source-state-retention-plan.json>
+   ```
+
+   Preview strongly scans a projected attribute set. Its cap counts every table
+   item evaluated, including feed checkpoints, even though only announcements
+   and response pages enter the migration inventory.
+6. Review the canonical plan bytes and record the printed SHA-256. Check the
+   active pointer version and ETag, release/configuration identity, retention
+   values, scan count, announcement and page counts, every proposed update, and
+   every already-eligible announcement. Obtain separate owner authorization for
+   this exact plan.
+7. Apply those unchanged bytes:
+
+   ```bash
+   python3 scripts/migrate_source_state_retention.py apply \
+     --deployment infra/central/deployment.yaml \
+     --terraform-output <same-restricted-central-outputs.json> \
+     --expected-account <12-digit-account> \
+     --inventory-limit <same-reviewed-bound> \
+     --plan <source-state-retention-plan.json> \
+     --expected-plan-sha256 <preview-plan-sha256>
+   ```
+
+   Apply rereads the active release and complete projected inventory before its
+   first write. Each announcement update conditions on its state version,
+   observation time, item type, and absent expiry, then increments the state
+   version. Each page update conditions on the exact immutable proof and absent
+   expiry. A failed response gets one strong reread.
+8. Treat only `status=applied` as a complete migration. Preserve the completed,
+   untouched, stopped-at, already-eligible, observed-deletion, and final class
+   counts. On `conflict`, `write_failed`, `ambiguous`, or `applied_unverified`,
+   keep the partial record and create a fresh inventory before any later
+   decision. Never retry the old plan.
+9. Read back a bounded sample and recompute announcement expiry from
+   `last_observed_at`. Recompute page expiry from the recorded migration clock.
+   Report expired items still returned by DynamoDB separately from eligible
+   items no longer present; neither count promises a TTL deletion deadline.
+10. Review and apply a Terraform plan that changes only
+    `source_state_retention_migration_enabled` back to false. Direct AWS readback
+    must show the role and its inline policy absent. Remove restricted output,
+    plan, and session files after their hashes and bounded results are recorded.
+
 ## Manual source replay
 
 1. Name the retained raw snapshot or bounded time range, target release, purpose, operator, and expected route scope.
@@ -525,7 +599,7 @@ Close an incident when the root cause and affected range are known, state is rec
 
 ## References
 
-References verified: 2026-08-27.
+References verified: 2026-08-29.
 
 - [AWS IAM policy simulator](https://docs.aws.amazon.com/IAM/latest/UserGuide/access_policies_testing-policies.html)
 - [CloudWatch alarm troubleshooting](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/troubleshooting-alarms.html)
@@ -534,3 +608,4 @@ References verified: 2026-08-27.
 - [SQS DLQ redrive](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-configure-dead-letter-queue-redrive.html)
 - [Slack incoming webhooks](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/)
 - [DynamoDB condition expressions](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Expressions.ConditionExpressions.html)
+- [DynamoDB TTL](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/TTL.html)

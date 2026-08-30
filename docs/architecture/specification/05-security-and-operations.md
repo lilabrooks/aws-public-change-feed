@@ -115,6 +115,15 @@ exception attached for a chain walker to reach.
 - Permanently delete only an exact version in that prefix.
 - Receive no release publication, runtime, secret, queue, table, or customer-account permission.
 
+### Source-state retention migration operator
+
+- Exists only while the one-time ADR-025 migration is under review or running. Its Terraform gate defaults to false.
+- Assumes a role separate from every runtime, publisher, and retirement role.
+- Scans only the source-state table with `Select=SPECIFIC_ATTRIBUTES` and the exact projected key, item-type, retention, announcement-version, observation-time, and response-page proof attributes.
+- Strongly reads and conditionally updates only `ANNOUNCEMENT#*` and `RUN#*` keys in that table.
+- Receives no `DeleteItem`, `PutItem`, delivery-table, queue, secret, release-publication, deployment-mutation, or customer-account permission.
+- Is removed after the migration result and untouched remainder are recorded. A Terraform and AWS readback proves the role and inline policy are absent.
+
 The watcher uses the same content-addressed package digest and exact S3 object
 version as the delivery worker. It runs every 15 minutes with a 300-second
 timeout, reserved concurrency one, a 360-second feed lease, and a 60-second
@@ -168,7 +177,10 @@ Deployment roles follow least privilege for provisioned resources. Backend acces
 ## Retention
 
 - Raw feed snapshots: 30 days in the canonical deployment.
-- Feed and announcement state: 730 days.
+- Active feed checkpoints: no expiry.
+- Announcement history: 730 days from `last_observed_at`.
+- Response page-set markers: 730 days from the latest exact observation; the one-time legacy migration starts a fresh 730-day period.
+- Removed-feed checkpoints: 730 days from the reviewed retirement decision before permanent tombstone compaction.
 - Terminal delivery state: 365 days.
 - Retired immutable releases: 400 days and at least 10 releases.
 - Logs: 30 days.

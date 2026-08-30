@@ -24,6 +24,13 @@ variable "enable_dynamodb_point_in_time_recovery" {
   default     = false
 }
 
+variable "source_state_retention_migration_enabled" {
+  description = "Temporarily create the one-time ADR-025 source-state retention migration role. Disable it immediately after the recorded migration result."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "tags" {
   description = "Tags applied to created resources."
   type        = map(string)
