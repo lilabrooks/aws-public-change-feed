@@ -139,6 +139,34 @@ Rollback reads an earlier retained pointer version by ID and writes its release 
 
 This sequence follows [ADR-019](../../adr/019-s3-preconditions-for-release-publication-and-promotion.md).
 
+## Immutable retirement
+
+Release retirement is a separate preview/apply operation performed only after
+publication, promotion, rollback, and replay work for the deployment has
+finished. Preview reads a complete bounded version inventory for the release
+prefix and the exact active-manifest key. It reads every exact object version,
+recomputes both object hashes and each release ID, and requires one current
+data version for each release object. A malformed key, incomplete release,
+version history, delete marker, missing pointer target, or mismatched pointer
+reference refuses the plan.
+
+Every release named by retained active-manifest history is protected. The
+operator also supplies every release ID still required by retained candidate,
+replay, or investigation evidence, or records an explicit assertion that this
+additional set is empty. A release becomes a deletion candidate only when its
+newer object is at least `retired_release_retention_days` old, it falls outside
+the newest `minimum_retained_releases` boundary, and neither protection set
+names it. Timestamp ties at the newest-retained boundary remain protected.
+
+Preview writes canonical plan bytes and performs no S3 mutation. Apply accepts
+only those exact bytes and repeats both inventories before its first delete.
+Every delete names one object key, VersionId, and recorded ETag. The result of
+each delete is checked with one exact-version read, including when the delete
+response failed or was lost. A partial two-object release deletion can resume
+only from the same digest-bound plan when the fresh inventory proves that its
+only missing rows are exact deletion candidates from that plan. Changed or
+missing retained state makes the plan stale.
+
 ## Change review
 
 Reviewers assess rule quality, route isolation, support-envelope impact, and source trust. New feeds require proof of ownership, stable HTTPS location, allowed host, safe fetch behavior, terms of use where applicable, and a historical sample. New Slack destinations require a credential preflight through the deployed worker.

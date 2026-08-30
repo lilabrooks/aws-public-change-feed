@@ -368,10 +368,17 @@ class TerraformContractTests(unittest.TestCase):
 
     def test_publisher_and_runtime_roles_cannot_retire_application_artifacts(self):
         iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
-        retirement_start = iam.index('data "aws_iam_policy_document" "application_artifact_retirement"')
-        retirement_end = iam.index('\ndata "aws_iam_policy_document"', retirement_start + 1)
-        without_retirement_policy = iam[:retirement_start] + iam[retirement_end:]
-        self.assertNotIn("s3:DeleteObjectVersion", without_retirement_policy)
+        publisher = iam[iam.index('data "aws_iam_policy_document" "release_publisher"') :]
+        publisher = publisher[: publisher.index('\ndata "aws_iam_policy_document"', 1)]
+        delete_statement = publisher[publisher.index('sid       = "RetireExactReleaseVersions"') :]
+        delete_statement = delete_statement[: delete_statement.index("\n  }")]
+        self.assertIn('actions   = ["s3:DeleteObjectVersion"]', delete_statement)
+        self.assertIn("${aws_s3_bucket.config.arn}/${local.release_prefix}/*", delete_statement)
+        self.assertNotIn("application_artifact_prefix", delete_statement)
+
+        runtime_start = iam.index('data "aws_iam_policy_document" "feed_watcher"')
+        runtime_policies = iam[runtime_start:]
+        self.assertNotIn("s3:DeleteObjectVersion", runtime_policies)
 
     def test_source_state_retention_migration_role_is_temporary_and_attribute_limited(self):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
@@ -1115,7 +1122,7 @@ resource "aws_cloudwatch_metric_alarm" "undocumented_delivery_gate" {
         heartbeat = heartbeat[: heartbeat.index("\nresource ", 1)]
         self.assertIn("count = local.watcher_trigger_enabled ? 1 : 0", heartbeat)
 
-    def test_publisher_and_watcher_list_only_the_active_manifest_key(self):
+    def test_publisher_and_watcher_current_reads_list_only_the_active_manifest_key(self):
         iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
         publisher = iam[iam.index('data "aws_iam_policy_document" "release_publisher"') :]
         publisher = publisher[: publisher.index('\ndata "aws_iam_policy_document"', 1)]
@@ -1137,7 +1144,31 @@ resource "aws_cloudwatch_metric_alarm" "undocumented_delivery_gate" {
                 self.assertIn('values   = ["1"]', statement)
                 self.assertEqual(statement.count("s3:ListBucket"), 1)
                 self.assertEqual(policy.count('"s3:ListBucket"'), 1)
-                self.assertNotIn('"s3:ListBucketVersions"', policy)
+                if name == "watcher":
+                    self.assertNotIn('"s3:ListBucketVersions"', policy)
+
+    def test_publisher_version_inventory_and_delete_permissions_are_exact(self):
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        publisher = iam[iam.index('data "aws_iam_policy_document" "release_publisher"') :]
+        publisher = publisher[: publisher.index('\ndata "aws_iam_policy_document"', 1)]
+
+        manifest = publisher[publisher.index('sid       = "ListActiveManifestVersions"') :]
+        manifest = manifest[: manifest.index("\n  }")]
+        self.assertIn('actions   = ["s3:ListBucketVersions"]', manifest)
+        self.assertIn("values   = [local.active_versions_key]", manifest)
+        self.assertIn('values   = ["1000"]', manifest)
+
+        releases = publisher[publisher.index('sid       = "ListReleaseVersions"') :]
+        releases = releases[: releases.index("\n  }")]
+        self.assertIn('actions   = ["s3:ListBucketVersions"]', releases)
+        self.assertIn('values   = ["${local.release_prefix}/*"]', releases)
+        self.assertIn('values   = ["1000"]', releases)
+
+        delete = publisher[publisher.index('sid       = "RetireExactReleaseVersions"') :]
+        delete = delete[: delete.index("\n  }")]
+        self.assertIn('actions   = ["s3:DeleteObjectVersion"]', delete)
+        self.assertIn('resources = ["${aws_s3_bucket.config.arn}/${local.release_prefix}/*"]', delete)
+        self.assertNotIn("active_versions_key", delete)
 
     def test_worker_metric_names_match_the_operator_alarms(self):
         runtime = (ROOT / "src/aws_public_change_feed/slack_worker_runtime.py").read_text(encoding="utf-8")

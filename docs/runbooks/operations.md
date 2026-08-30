@@ -319,6 +319,63 @@ Running it against the dev bucket is a live AWS operation and requires separate
 deployment authority. Its local tests do not prove an applied release, Lambda
 execution, public-feed processing, or Slack delivery.
 
+## Configuration release retirement
+
+Finish or abandon every release publication, rollback, source replay, and
+investigation before retirement. Assume the release-publisher role. This role
+can permanently delete exact versions under the release prefix, so use a fresh
+session for the reviewed retirement operation and finish it before another
+publication or rollback begins.
+
+1. Record every release ID still required by retained candidates, unresolved
+   delivery work, replay, or investigation. Retained versions of
+   `active-versions.json` are inventoried and protected automatically. If the
+   additional set is empty, record that assertion explicitly.
+2. Preview one complete bounded inventory:
+
+   ```bash
+   python3 scripts/retire_config_releases.py preview \
+     --deployment infra/central/deployment.yaml \
+     --plan build/config-release-retirement-plan.json \
+     --inventory-limit <reviewed-positive-bound> \
+     --protected-release <64-hex-release-id>
+   ```
+
+   Repeat `--protected-release` for each additional release. Use
+   `--no-additional-protected-releases` only for the reviewed empty assertion.
+   Preview reads exact release and pointer versions, verifies every object hash
+   and release ID, applies the 400-day and newest-10 floors, writes canonical
+   plan bytes, and performs no S3 mutation.
+3. Review every release, retained manifest, protection reason, deletion
+   candidate, object key, VersionId, ETag, timestamp, and the printed plan
+   SHA-256. Obtain separate authority for that exact plan.
+4. Apply the unchanged bytes with the same deployment, inventory limit, and
+   protection arguments:
+
+   ```bash
+   python3 scripts/retire_config_releases.py apply \
+     --deployment infra/central/deployment.yaml \
+     --plan build/config-release-retirement-plan.json \
+     --inventory-limit <same-reviewed-bound> \
+     --protected-release <same-64-hex-release-id> \
+     --expected-plan-sha256 <preview-plan-sha256>
+   ```
+
+5. Treat only `status=applied` as completion. Preserve the plan, output, exact
+   role session, proved-deleted rows, and untouched rows. A refused, failed,
+   ambiguous, or unverified result needs inspection before another command.
+   When one object of a two-object release was proved deleted, the same exact
+   plan may resume only if the command's fresh inventory accepts that sole
+   planned difference. Any other change requires a new preview.
+6. Restoration requires the approved exact configuration and inventory bytes.
+   Recompute their release ID and publish them through the normal immutable
+   publication path. S3 assigns new VersionIds, so retained candidates that
+   embed deleted VersionIds cannot use the restored copies. This is why the
+   protection review happens before deletion.
+
+Repository verification uses simulated eligible releases. It performs no live
+retirement and does not claim that 400 days have elapsed in a deployment.
+
 ## Application package rollout and rollback
 
 1. Pause candidate creation at its event source. Record the current Lambda package digest and query actionable delivery records for every distinct embedded `application_version`.

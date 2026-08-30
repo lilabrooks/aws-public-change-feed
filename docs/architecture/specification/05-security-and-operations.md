@@ -95,6 +95,10 @@ exception attached for a chain walker to reach.
 - Probe active-manifest absence after a current-read 403, which needs
   `s3:ListBucket` on the configuration bucket with the complete manifest key
   required as `s3:prefix` and `s3:max-keys` bounded to 1.
+- For a separate retirement operation, list versions only under the exact
+  release prefix and exact active-manifest key, then permanently delete only
+  digest-bound exact versions under the release prefix. The manifest key has no
+  delete grant.
 - No Slack credential access.
 
 ### Feed watcher
@@ -200,7 +204,15 @@ Deployment roles follow least privilege for provisioned resources. Backend acces
 
 Unresolved delivery work cannot expire before resolution. Retention changes must keep releases available longer than any delivery replay or investigation period.
 
-S3 lifecycle enforces the manifest history, the log groups, and the raw-snapshot window. It does not enforce release retirement, and `infra/central` deliberately configures no rule over the release prefix. Release objects are write-once at a per-release key, so they never become noncurrent versions and a noncurrent-version rule cannot reach them. Expiring them by object age instead would delete on age alone, with no notion of which release is active: a deployment that has not republished within the retention window would lose the release its stored candidates still resolve against. Lifecycle also cannot express the “at least 10 releases” floor, which counts releases rather than versions. Retiring superseded releases belongs to the publisher, which knows both the active pointer and the release order. Until that exists, releases accumulate, which preserves the retention invariant above and costs storage.
+S3 lifecycle enforces the manifest history, the log groups, and the raw-snapshot window. It does not enforce release retirement, and `infra/central` deliberately configures no rule over the release prefix. Release objects are write-once at a per-release key, so they never become noncurrent versions and a noncurrent-version rule cannot reach them. Expiring them by object age instead would delete on age alone, with no notion of which release is active: a deployment that has not republished within the retention window would lose the release its stored candidates still resolve against. Lifecycle also cannot express the “at least 10 releases” floor, which counts releases rather than versions.
+
+`scripts/retire_config_releases.py` owns the publisher-side retirement path. It
+protects every release still named by retained manifest history, requires an
+explicit operator protection set for candidate, replay, and investigation
+evidence, and applies the age and newest-release floors together. Its canonical
+plan binds the complete release and manifest inventories. Exact-version reads
+settle each delete response, and only a final inventory matching the proved
+retained set reports completion.
 
 ## Metrics
 
