@@ -2,9 +2,9 @@
 
 ## Purpose
 
-AWS Public Change Alerting produces an explainable feed from public AWS announcements. It fetches approved RSS or Atom sources, identifies configured services and risks, maps those matches to environment profiles and Slack routes, persists route-scoped candidates, and delivers them through Slack.
+AWS Public Change Alerting creates route-scoped review candidates from public AWS announcements. Each candidate records the source text, configured service and risk phrase, mapped environment profiles, and Slack route. The service fetches approved RSS or Atom sources, persists candidates, and delivers them through Slack.
 
-The key distinction is evidence. A public announcement plus a configured profile establishes potential relevance. It does not establish that a customer account or resource is affected. Candidate fields, Slack messages, metrics, and documentation must preserve that wording.
+A public announcement plus a configured profile establishes potential relevance. It does not establish that a customer account or resource is affected. Candidate fields, Slack messages, metrics, and documentation must preserve that wording.
 
 ## Value proposition
 
@@ -15,7 +15,7 @@ The service closes the gap between a broad public news stream and account-specif
 - Static environment context without customer-account credentials.
 - Route isolation and grouped review work for repeated stacks.
 - Exact release and application provenance for every result.
-- Durable Slack delivery state, retry, dedupe, and recovery evidence.
+- DynamoDB delivery state, retry, dedupe, and stored recovery results.
 
 ## Product boundary
 

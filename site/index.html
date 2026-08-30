@@ -11,12 +11,12 @@
   <meta property="og:description" content="Matches public AWS feed items to configured services and risk phrases, then queues route-scoped Slack review candidates.">
   <meta property="og:url" content="https://lilabrooks.github.io/aws-public-change-feed/">
   <meta property="og:image" content="https://lilabrooks.github.io/aws-public-change-feed/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png">
-  <meta property="og:image:alt" content="Opening frame from the AWS Public Change Alerting dev MVP evidence walkthrough.">
+  <meta property="og:image:alt" content="Opening frame from the AWS Public Change Alerting dev MVP results walkthrough.">
   <meta property="og:image:width" content="1920">
   <meta property="og:image:height" content="1080">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="AWS Public Change Alerting">
-  <meta name="twitter:description" content="A public walkthrough of the dev MVP, from AWS feeds and Terraform through durable state and Slack delivery.">
+  <meta name="twitter:description" content="A public walkthrough of the dev MVP, from AWS feeds and Terraform through DynamoDB state, SQS FIFO, and Slack delivery.">
   <meta name="twitter:image" content="https://lilabrooks.github.io/aws-public-change-feed/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png">
   <link rel="canonical" href="https://lilabrooks.github.io/aws-public-change-feed/">
   <link rel="license" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/LICENSE">
@@ -313,10 +313,10 @@
     <section class="compact-section" id="mvp-demo">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Dev MVP evidence</p>
+          <p class="compact-eyebrow">Dev MVP results</p>
           <div>
             <h2 class="compact-section-title">Watch one AWS announcement cross the system and reach Slack.</h2>
-            <p class="compact-section-copy">This 3:05 public walkthrough traces the Terraform roots, Lambda jobs, matcher corpus, candidate contract, durable delivery path, and recorded M1 result. Private account and Slack channel details are omitted.</p>
+            <p class="compact-section-copy">This public walkthrough traces the Terraform roots, Lambda jobs, matcher corpus, candidate fields, DynamoDB state, SQS FIFO delivery, and recorded Slack responses. Private account and Slack channel details are omitted.</p>
           </div>
         </div>
 
@@ -330,7 +330,7 @@
             poster="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png"
             width="1920"
             height="1080"
-            aria-label="Narrated dev MVP evidence walkthrough"
+            aria-label="Narrated dev MVP walkthrough"
           >
             <source src="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-web.mp4" type="video/mp4">
             <track
@@ -346,7 +346,7 @@
 
         <dl class="site-spec mvp-evidence-meta">
           <div class="site-spec-row">
-            <dt>Evidence window</dt>
+            <dt>Recorded run</dt>
             <dd>M1 closed. Captured 2026-08-29 from source revision <code>04370df</code>.</dd>
           </div>
           <div class="site-spec-row">
@@ -355,7 +355,7 @@
           </div>
           <div class="site-spec-row">
             <dt>Boundary</dt>
-            <dd>The walkthrough summarizes repository evidence. Production policy, rollback proof, recovery objectives, and the final production gate remain open.</dd>
+            <dd>The walkthrough summarizes the recorded Slack, recovery, load, and alarm results. Production policy, rollback proof, recovery objectives, and the final production gate remain open.</dd>
           </div>
           <div class="site-spec-row">
             <dt>Attribution</dt>
@@ -401,7 +401,7 @@
           </div>
         </dl>
 
-        <aside class="site-note" aria-label="Contract evidence boundary">
+        <aside class="site-note" aria-label="What automated checks cover">
           <p>These checks show that code and committed contracts agree. Controlled AWS runs test deployed paths separately.</p>
         </aside>
       </div>
@@ -445,7 +445,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
         </article>
         <!-- GENERATED_SLACK_SAMPLE_END -->
         </details>
-        <p class="site-note">The first controlled D0 run posted one public-feed candidate and recorded <code>posted</code>. The later M1 cohort produced 12 durable Slack posts.</p>
+        <p class="site-note">The first controlled D0 run posted one public-feed candidate and recorded <code>posted</code>. In the later M1 cohort, Slack accepted 12 posts and DynamoDB recorded <code>posted</code> for all 12.</p>
       </div>
     </section>
 
@@ -469,7 +469,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
               height="780"
               loading="lazy"
               decoding="async"
-              alt="AWS Public Change Alerting processing flow. Approved public feeds, immutable releases, and an exact application package produce route-scoped candidates that move through a durable DynamoDB outbox, destination-grouped SQS FIFO delivery, Slack, and bounded recovery."
+              alt="AWS Public Change Alerting processing flow. Approved public feeds, immutable releases, and an exact application package produce route-scoped candidates. DynamoDB stores candidate and delivery state, SQS FIFO carries destination-grouped work, Slack receives messages, and the reconciler queues due work or writes delivery_unknown for expired leases."
             >
           </div>
           <figcaption>
@@ -547,7 +547,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
         <div class="compact-section-head">
           <p class="compact-eyebrow">Status</p>
           <div>
-            <h2 class="compact-section-title">The dev MVP passed its live delivery and operational exercises.</h2>
+            <h2 class="compact-section-title">The dev MVP passed its Slack, recovery, load, and alarm checks.</h2>
             <p class="compact-section-copy">M1 is closed. Production policy, rollback proof, recovery objectives, and the final production gate remain under M2 and M3.</p>
           </div>
         </div>

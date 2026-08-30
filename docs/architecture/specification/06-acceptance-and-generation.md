@@ -241,7 +241,7 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 7. Add Terraform bootstrap and central roots with IAM, encryption, schedules, indexes, logs, alarms, and packaging.
 8. Run integration, recovery, load, security, shadow, and production preflight tests.
 
-Each step ends with executable evidence before the next layer treats it as a dependency.
+Each step records the passing contracts, tests, or live-exercise result required before the next layer treats it as a dependency.
 
 ## Required test fixtures
 

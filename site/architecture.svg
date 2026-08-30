@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 780" role="img" aria-labelledby="diagram-title diagram-description" data-drawio-source-sha256="df16f3b51589dea7f5a065466d310c979d347b729722371f3fe6767a4a71603b">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1800 780" role="img" aria-labelledby="diagram-title diagram-description" data-drawio-source-sha256="b262943163793f0d66fece7014ec196b8d66461bb51fb450eede02cb297b5cfe">
   <title id="diagram-title">AWS Public Change Alerting processing flow</title>
-  <desc id="diagram-description">Approved public AWS feeds, an immutable configuration and inventory release, and an exact application package enter deterministic candidate generation. Official AWS service icons identify Lambda, S3, DynamoDB, SQS, Secrets Manager, Systems Manager, CloudWatch, and SNS components. Candidates and delivery state are durable in DynamoDB. A dispatcher sends destination-grouped work through SQS FIFO to a Slack worker. Known and unknown outcomes return to DynamoDB, while bounded recovery and operational monitoring preserve evidence.</desc>
+  <desc id="diagram-description">Approved public AWS feeds, an immutable configuration and inventory release, and an exact application package enter deterministic candidate generation. Official AWS service icons identify Lambda, S3, DynamoDB, SQS, Secrets Manager, Systems Manager, CloudWatch, and SNS components. DynamoDB stores candidates and delivery state. A dispatcher sends destination-grouped work through SQS FIFO to a Slack worker. Known and unknown outcomes return to DynamoDB. The reconciler queues due work and writes delivery_unknown for expired leases.</desc>
   <defs>
     <filter id="node-shadow" x="-10%" y="-10%" width="120%" height="130%">
       <feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#020817" flood-opacity="0.38" />
@@ -77,7 +77,7 @@
   </g>
   <g id="delivery-panel" data-drawio-cell-id="delivery_panel">
     <rect x="1025" y="70" width="740" height="660" rx="14" fill="#10221D" stroke="#35634F" stroke-width="2" />
-    <text x="1045" y="111" class="panel-title" fill="#56D6A3">DURABLE SLACK DELIVERY</text>
+    <text x="1045" y="111" class="panel-title" fill="#56D6A3">SLACK DELIVERY AND STATE</text>
     <line x1="1045" y1="130" x2="1745" y2="130" stroke="#35634F" stroke-width="2" />
   </g>
 
@@ -121,14 +121,14 @@
     <text x="1190" y="143" class="edge-label">route + display data</text>
     <text x="612" y="494" class="edge-label">exact application package</text>
     <text x="859" y="342" class="edge-label">route-scoped candidates</text>
-    <text x="470" y="378" class="edge-label">durable source history</text>
+    <text x="470" y="378" class="edge-label">checkpoints + announcement history</text>
     <text x="468" y="565" class="edge-label">exact response bytes</text>
     <text x="1030" y="440" class="edge-label">due exact request</text>
     <text x="1587" y="192" class="edge-label">one network call</text>
     <text x="1230" y="347" class="edge-label">known or unknown outcome</text>
     <text x="1538" y="385" class="edge-label">credential</text>
     <text x="1410" y="322" class="edge-label">operator redrive</text>
-    <text x="1014" y="548" class="edge-label">safe repair</text>
+    <text x="1014" y="548" class="edge-label">due work</text>
   </g>
 
   <g id="feeds" data-drawio-cell-id="feeds" filter="url(#node-shadow)">
@@ -174,19 +174,19 @@
     <rect x="365" y="405" width="185" height="95" rx="12" fill="#232C43" stroke="#8EA0B8" stroke-width="2" />
     <use href="#aws-icon-dynamodb" x="440.5" y="412" width="34" height="34" aria-hidden="true" />
     <text x="457.5" y="465" class="node-title">DynamoDB source state</text>
-    <text x="457.5" y="487" class="node-sub">Checkpoints + announcement history</text>
+    <text x="457.5" y="487" class="node-sub">Checkpoints + revisions</text>
   </g>
   <g id="raw-snapshots" data-drawio-cell-id="raw_snapshots" filter="url(#node-shadow)">
     <rect x="580" y="530" width="180" height="85" rx="12" fill="#232C43" stroke="#8EA0B8" stroke-width="2" />
     <use href="#aws-icon-s3" x="654" y="536" width="32" height="32" aria-hidden="true" />
     <text x="670" y="585" class="node-title">S3 raw snapshots</text>
-    <text x="670" y="605" class="node-sub">Bounded replay evidence</text>
+    <text x="670" y="605" class="node-sub">Stored response bytes</text>
   </g>
   <g id="outbox" data-drawio-cell-id="outbox" filter="url(#node-shadow)">
     <rect x="750" y="405" width="220" height="100" rx="12" fill="#21483B" stroke="#56D6A3" stroke-width="3" />
     <use href="#aws-icon-dynamodb" x="843" y="412" width="34" height="34" aria-hidden="true" />
     <text x="860" y="464" class="node-title">DynamoDB candidates</text>
-    <text x="860" y="482" class="node-title">+ durable outbox</text>
+    <text x="860" y="482" class="node-title">+ delivery requests</text>
     <text x="860" y="499" class="node-sub">Delivery system of record</text>
   </g>
 
@@ -230,14 +230,14 @@
     <rect x="1055" y="535" width="200" height="95" rx="12" fill="#4A2331" stroke="#FF7B92" stroke-width="2" />
     <use href="#aws-icon-lambda" x="1139" y="542" width="32" height="32" aria-hidden="true" />
     <text x="1155" y="592" class="node-title">Recovery reconciler</text>
-    <text x="1155" y="614" class="node-sub">Safe repairs + stale-lease resolution</text>
+    <text x="1155" y="614" class="node-sub">Due work · lease → unknown</text>
   </g>
 
   <g id="operations" data-drawio-cell-id="operations">
     <rect x="365" y="650" width="1335" height="52" rx="12" fill="#233044" stroke="#8EA0B8" stroke-width="2" />
     <use href="#aws-icon-cloudwatch" x="380" y="660" width="32" height="32" aria-hidden="true" />
     <use href="#aws-icon-sns" x="420" y="660" width="32" height="32" aria-hidden="true" />
-    <text x="1075" y="682" class="node-title">OBSERVABILITY: CloudWatch metrics + alarms  ·  SNS operational notifications</text>
+    <text x="1075" y="682" class="node-title">MONITORING: CloudWatch metrics + alarms  ·  SNS alarm notifications</text>
   </g>
-  <text x="900" y="735" class="scope-note">Logical architecture. Deployment status and evidence are maintained on the page below.</text>
+  <text x="900" y="735" class="scope-note">Logical architecture. Deployment and test results are listed on the page below.</text>
 </svg>

@@ -42,8 +42,8 @@ packaging, digest injection, artifact storage, and the pause-and-drain rollout
 procedure remain milestone-five deployment work and must exist before a
 worker is deployed. Status documents must describe that split directly.
 
-Artifact availability and delivery-record evidence have separate lifetimes.
-Unresolved delivery evidence can remain after an artifact's supported replay
+Artifact packages and unresolved delivery records have separate lifetimes.
+An unresolved delivery record can remain after an artifact's supported replay
 window. Before deployment, the deployment contract must set that replay
 window, retain every referenced package for it, and define the operator outcome
 when older evidence no longer has a runnable artifact. Until those terms exist,
@@ -64,10 +64,10 @@ least the newest 10 package versions regardless of age. Package retirement must
 prove both conditions before deletion. Until that retirement mechanism exists,
 packages accumulate.
 
-Unresolved delivery evidence may outlive that replay window. If its recorded
+An unresolved delivery record may outlive that replay window. If its recorded
 package is no longer available, automatic processing leaves the record unchanged
 and reports the bounded reason `artifact_unavailable` through the deployment's
-metrics and operator tooling. The operator may preserve it as evidence, close it
+metrics and operator tooling. The operator may preserve the record, close it
 under a documented manual decision, or restore the package from an approved
 archive. Current code cannot reinterpret it under another digest.
 
@@ -75,7 +75,7 @@ Application rollout pauses candidate creation, drains actionable work produced b
 the current package, records any remaining versions, deploys producer and worker
 composition roots with the same new package digest, then resumes candidate
 creation. A rollback deploys the retained package named by the queued work before
-an operator redrives it. `delivery_unknown` records remain evidence and do not
+an operator redrives it. `delivery_unknown` records remain unchanged and do not
 block rollout; their package remains subject to the same replay window.
 
 Revisit the 400-day and 10-package floor when measured artifact size makes it a

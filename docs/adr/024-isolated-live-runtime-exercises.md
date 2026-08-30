@@ -10,9 +10,10 @@
 The L-09 dev exercise proved that the source-defined triggers were active. It
 also proved the deployed recovery reconciler, alarm delivery, EventBridge
 retry behavior, and delivery of the queued M1 cohort. The exercised cohort
-contains 12 durable Slack posts. Each post completed in one network attempt
-with an HTTP 200 response. The measured cohort peaked at roughly 144
-deliveries per hour, below ADR-010's declared 300-delivery-per-hour envelope.
+contains 12 Slack posts. Each post completed in one network attempt with an
+HTTP 200 response, and DynamoDB recorded `posted` for all 12. The measured
+cohort peaked at roughly 144 deliveries per hour, below ADR-010's declared
+300-delivery-per-hour envelope.
 
 Two acceptance cases remain unsafe to manufacture in the persistent dev
 deployment. Recovery needs deliberately created `pending_queue` and expired
@@ -183,7 +184,7 @@ proposed choice.
   Terraform state did not change during the exercise.
 - Review and apply the exact cleanup plan, then prove no preflight triggers,
   resources, configuration versions, or credentials remain. Retain the state
-  history and evidence artifact according to the repository evidence policy.
+  history and run record under the repository retention policy.
 
 ## Migration and rollback
 

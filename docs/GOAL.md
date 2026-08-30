@@ -2,9 +2,9 @@
 
 ## Outcome
 
-Deliver an AWS-hosted service that converts approved public AWS announcements into a filtered, explainable feed of review candidates and delivers that feed to the correct Slack destinations.
+Deliver an AWS-hosted service that matches approved public AWS announcements against configured services and risk phrases, records the matched text and mapped audience in route-scoped review candidates, and delivers those candidates to the correct Slack destinations.
 
-The service helps a team operating repeated AWS stacks answer a narrow question: which public AWS changes deserve review for the services declared in each environment profile? It infers possible relevance from configuration and preserves the source evidence. It does not assert confirmed account or resource impact.
+The service helps a team operating repeated AWS stacks answer a narrow question: which public AWS changes deserve review for the services declared in each environment profile? It infers possible relevance from configuration and preserves the announcement title, summary, URL, matched terms, and release. It does not assert confirmed account or resource impact.
 
 ## Product value
 

@@ -14,8 +14,9 @@ SVG_TAG = re.compile(r"<svg\b[^>]*>", re.DOTALL)
 HASH_VALUE = re.compile(rf'\s{HASH_ATTRIBUTE}="[0-9a-f]{{64}}"')
 TITLE = "AWS Public Change Alerting processing flow"
 DESCRIPTION = (
-    "Approved public AWS feeds and exact immutable releases produce route-scoped candidates, "
-    "durable delivery state, destination-grouped SQS FIFO work, Slack delivery, and bounded recovery. "
+    "Approved public AWS feeds and exact immutable releases produce route-scoped candidates. "
+    "DynamoDB stores candidate and delivery state, SQS FIFO carries destination-grouped work, "
+    "Slack receives messages, and the reconciler queues due work or writes delivery_unknown for expired leases. "
     "AWS service icons identify Lambda, S3, DynamoDB, SQS, Secrets Manager, Systems Manager, CloudWatch, and SNS."
 )
 

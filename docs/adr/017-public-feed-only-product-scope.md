@@ -17,7 +17,7 @@ The service performs these jobs:
 2. Normalize and coalesce announcements across feeds.
 3. Match each announcement against configured service definitions and risk rules.
 4. Map inferred relevance through service profiles to configured customer environments.
-5. Create one route-scoped, explainable candidate for each announcement revision, service, risk type, and Slack route.
+5. Create one route-scoped candidate for each announcement revision, service, risk type, and Slack route, with the matched terms and mapped audience recorded in the candidate.
 6. Persist the candidate in a durable outbox.
 7. Deliver grouped candidate details to Slack with destination pacing, retries, dedupe, and explicit unknown outcomes.
 
