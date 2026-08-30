@@ -180,7 +180,7 @@ silently omit identity, evidence, or source URL.
 
 ## Slack outcomes
 
-- Documented success becomes `posted`.
+- A Slack success response under the reviewed webhook or bot response rules becomes `posted`.
 - `429` with a valid bounded `Retry-After` becomes `failed_retryable` with a future next action.
 - Reviewed transient server responses become `failed_retryable` with bounded exponential backoff and jitter derived without changing identity.
 - Authentication, revoked hook, invalid channel, or permanent payload errors become `failed_terminal`.

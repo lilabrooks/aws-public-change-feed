@@ -1,12 +1,12 @@
 # Dev MVP walkthrough
 
-This public evidence pack records the AWS Public Change Alerting dev MVP after M1 closed. It traces one announcement through matching, route mapping, durable state, SQS FIFO delivery, and Slack, then records the corpus and live-exercise results behind the milestone.
+This public walkthrough records the AWS Public Change Alerting dev MVP after M1 closed. It follows one announcement through matching, route mapping, DynamoDB state, SQS FIFO delivery, and Slack, then lists the corpus and live-exercise results used to close the milestone.
 
-The pack was captured on 2026-08-29 from source revision `04370df`. Private AWS account details and Slack channel details are omitted.
+The walkthrough was captured on 2026-08-29 from source revision `04370df`. Private AWS account details and Slack channel details are omitted.
 
 ## Watch or download
 
-- [Watch the 3:05 narrated video with captions](https://lilabrooks.github.io/aws-public-change-feed/)
+- [Watch the 3:12 narrated video with captions](https://lilabrooks.github.io/aws-public-change-feed/)
 - [Download the 1080p MP4](https://github.com/lilabrooks/aws-public-change-feed/releases/download/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.mp4)
 - [Open the slide deck as PDF](../../site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf)
 - [Download the editable PowerPoint](../../site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx)
@@ -15,23 +15,23 @@ The pack was captured on 2026-08-29 from source revision `04370df`. Private AWS 
 
 The site plays a 720p web copy and the GitHub Release carries the 1080p source. Both use locally generated Kokoro-82M `af_heart` narration. Watching or downloading either file does not invoke the model.
 
-## Evidence boundary
+## What the walkthrough records
 
-The walkthrough summarizes evidence already recorded by the repository. It does not replace the contracts, accepted ADRs, tests, or production-readiness gate.
+The walkthrough summarizes results already recorded by the repository. It does not replace the contracts, accepted ADRs, tests, or production-readiness gate.
 
 The [README project status](../../README.md#project-status) records the M1 result: 4 enabled runtime triggers, 12 public-feed Slack posts, 2 passed recovery cases, a fixed 50-message run at 5 messages per minute, and confirmed alarm-email receipt. [ADR-024](../adr/024-isolated-live-runtime-exercises.md) defines the isolated recovery and load boundary. Production readiness remains open under M2 and M3.
 
-The corpus slide records the committed 47-item evaluation set: 32 historical announcements, 15 synthetic cases, and 29 expected positive service and risk pairs. The recorded evaluation produced 1.000 precision and 1.000 recall against global promotion floors of 0.950 and 0.800. Four of the 10 reported service and risk pairs still have only 1 or 2 positive examples, so the evidence remains thin for those pairs.
+The corpus slide records the committed 47-item evaluation set: 32 historical announcements, 15 synthetic cases, and 29 expected positive service and risk pairs. The recorded evaluation produced 1.000 precision and 1.000 recall against global promotion floors of 0.950 and 0.800. Four of the 10 reported service and risk pairs still have only 1 or 2 positive examples, so those pairs need more labeled examples before their measured precision and recall are well supported.
 
 ## Narration transcript
 
-### 1. Dev MVP evidence
+### 1. Dev MVP results
 
-This is AWS Public Change Alerting. I built it to turn public AWS announcements into a short, explainable review feed for the teams that use the affected services. This is the dev MVP evidence pack, captured after the first milestone closed.
+This is AWS Public Change Alerting. I built it to match public AWS announcements against configured services and risk phrases, map each result to a Slack route, and deliver it through DynamoDB and SQS. This walkthrough records the dev MVP after the first milestone closed.
 
 ### 2. System path
 
-Here’s the whole trip. A watcher reads approved RSS and Atom feeds, saves the raw response, and works out which service and risk rule fired. The candidate is tied to configured environments, then written to DynamoDB. SQS carries the delivery request to Slack, and the result comes back to the same durable record.
+Here’s the whole trip. A watcher reads approved RSS and Atom feeds, saves the raw response, and works out which service and risk rule fired. The candidate is tied to configured environments, then written to DynamoDB. SQS carries the delivery request to Slack, and the result comes back to the same DynamoDB delivery record.
 
 ### 3. Deployed surface
 
@@ -49,16 +49,16 @@ Delivery only matters if the matcher is worth listening to. The current corpus h
 
 This is one candidate in full. You can see the original announcement, the exact service alias and phrase that matched, the route, and the 3 environments that may need review. The candidate ID commits those inputs, which makes a replay land on the same decision.
 
-### 7. Durable delivery
+### 7. Delivery state
 
-That identity stays with the delivery request. The dispatcher moves it from pending to queued. The worker claims a lease, makes the Slack call, and writes the outcome. A documented success becomes posted. An ambiguous result stays delivery unknown for an operator to examine.
+That identity stays with the delivery request. The dispatcher moves it from pending to queued. The worker claims a lease, makes the Slack call, and writes the outcome. When Slack returns a success response, the worker writes posted. An ambiguous result stays delivery unknown for an operator to examine.
 
-### 8. Delivery evidence
+### 8. Recorded delivery result
 
 The panel on the left is the message generated by the real renderer. The live exercise is recorded separately: 12 posts reached Slack, each with 1 network attempt and an HTTP 200 response. DynamoDB recorded posted for the same cohort.
 
 ### 9. What the MVP proved
 
-So, what closed the milestone? Four runtime triggers were enabled. Twelve public-feed posts reached Slack. Both recovery cases passed. The isolated load run created 50 messages at 5 per minute, and the alarm email arrived. That gives the dev MVP executable evidence. Production readiness stays a later gate.
+So, what closed the milestone? Four runtime triggers were enabled. Twelve public-feed posts reached Slack. Both recovery cases passed. The isolated load run created 50 messages at 5 per minute, and the alarm email arrived. Those recorded Slack, recovery, load, and alarm results close the dev MVP. Production readiness stays a later gate.
 
 References verified: 2026-08-29.

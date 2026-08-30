@@ -2,7 +2,7 @@
 
 ## Mission
 
-Build and maintain AWS Public Change Alerting as a public-feed intelligence service. The product ingests approved public AWS feeds, produces explainable route-scoped candidates, and uses Slack as its delivery channel.
+Build and maintain AWS Public Change Alerting as a public-feed matching and Slack delivery service. The product ingests approved public AWS feeds, matches configured services and risk phrases, creates route-scoped candidates that record why each match fired, and sends them to Slack.
 
 ## Read order
 

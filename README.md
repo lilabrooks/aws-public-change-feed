@@ -30,11 +30,11 @@ See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issue
 
 ## MVP walkthrough
 
-[![Opening frame from the AWS Public Change Alerting dev MVP evidence walkthrough.](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png)](https://lilabrooks.github.io/aws-public-change-feed/)
+[![Opening frame from the AWS Public Change Alerting dev MVP walkthrough.](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png)](https://lilabrooks.github.io/aws-public-change-feed/)
 
-The 3:05 public walkthrough traces the Terraform roots, Lambda runtimes, matcher corpus, candidate contract, durable DynamoDB and SQS path, and recorded Slack result. Private account and channel details are omitted.
+The public walkthrough traces the Terraform roots, Lambda runtimes, matcher corpus, candidate fields, DynamoDB state, SQS FIFO delivery, and recorded Slack responses. Private account and channel details are omitted.
 
-[Watch with captions](https://lilabrooks.github.io/aws-public-change-feed/) · [Open the slide deck as PDF](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf) · [Download the editable PowerPoint](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx) · [Read the transcript and evidence boundary](docs/evidence/mvp-walkthrough.md)
+[Watch with captions](https://lilabrooks.github.io/aws-public-change-feed/) · [Open the slide deck as PDF](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf) · [Download the editable PowerPoint](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx) · [Read the transcript and recorded results](docs/evidence/mvp-walkthrough.md)
 
 ## Processing path
 
@@ -105,7 +105,7 @@ The corpus evaluator and feed screener accept `--root` and `--config`. Relative 
 - [Architecture index](docs/architecture/README.md): 6 specification chapters, 20 accepted ADRs, and the schema-to-example map.
 - [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
 - [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
-- [Dev MVP walkthrough](docs/evidence/mvp-walkthrough.md): narrated evidence pack, slides, captions, transcript, and artifact hashes.
+- [Dev MVP walkthrough](docs/evidence/mvp-walkthrough.md): narrated video, slides, captions, transcript, recorded results, and artifact hashes.
 
 Changes to product scope, trust boundaries, identity, state ownership, delivery guarantees, or version policy require an ADR. Run `make check` before opening a pull request.
 

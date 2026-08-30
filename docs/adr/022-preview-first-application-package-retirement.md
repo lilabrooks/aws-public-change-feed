@@ -178,7 +178,7 @@ and continues storage accumulation.
 
 Positive consequences:
 
-- Every deleted version has retained plan evidence for both policy floors.
+- Every deleted version has a retained plan record for both policy floors.
 - Active, rollout, and rollback packages have an explicit protection seam.
 - Publication remains append-only under its own role.
 - A partial run never looks complete.
@@ -193,8 +193,8 @@ Costs and limits:
   is investigated through separate authority.
 - A permanent deletion has no in-place rollback. Restoration needs approved
   exact bytes and creates a new S3 version.
-- This tool does not decide whether old unresolved delivery evidence should be
-  closed. ADR-020 leaves that evidence unchanged when its package is absent.
+- This tool does not decide whether old unresolved delivery records should be
+  closed. ADR-020 leaves those records unchanged when their package is absent.
 
 ## Failure semantics
 

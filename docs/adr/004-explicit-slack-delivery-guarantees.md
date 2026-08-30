@@ -16,7 +16,7 @@ Delivery records use these states:
 - `pending_queue`: durable request exists and awaits queue dispatch.
 - `queued`: dispatch to SQS succeeded.
 - `sending`: a worker holds a lease and has an `attempt_id`.
-- `posted`: Slack returned a documented success response.
+- `posted`: Slack returned a success response under the reviewed webhook or bot response rules.
 - `failed_retryable`: Slack explicitly permits another attempt.
 - `failed_terminal`: configuration or payload correction is required.
 - `delivery_unknown`: Slack may have accepted the request.

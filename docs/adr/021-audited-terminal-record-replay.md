@@ -25,8 +25,9 @@ ADR-020 require the worker to use the exact release and application digest
 embedded in the historical record. Replaying that record cannot silently
 reinterpret it under current configuration or code.
 
-The historical network-attempt count is delivery evidence. Resetting it would
-erase the reason the item became terminal and reopen the automatic budget.
+The stored network-attempt count records how many Slack requests were made.
+Resetting it would erase the reason the item became terminal and reopen the
+automatic budget.
 Terminal expiry is also a concurrency boundary: a replay must not revive an
 expired or replacement record while retention is deleting it.
 
@@ -37,7 +38,7 @@ expired or replacement record while retention is deleting it.
 - Keep terminal records inert unless one explicit preview-first action applies.
 - Preserve historical attempts and reserve one auditable operator-approved
   attempt.
-- Retain bounded terminal evidence without credentials, URLs, request bodies,
+- Retain bounded terminal records without credentials, URLs, request bodies,
   message bodies, or raw provider responses.
 - Make stale, expired, concurrent, and ambiguous outcomes truthful.
 - Keep in-memory and DynamoDB behavior identical.
@@ -46,7 +47,7 @@ expired or replacement record while retention is deleting it.
 
 We will add an operator-only, preview-first terminal-record replay action. It
 may conditionally move one live `failed_terminal` record to immediately due
-`pending_queue`, remove terminal expiry, append bounded replay evidence, and
+`pending_queue`, remove terminal expiry, append a replay audit entry, and
 reserve exactly one new attempt.
 
 The action reuses the existing dispatcher, destination pacing, FIFO transport,
