@@ -32,6 +32,14 @@ resource "aws_iam_role" "application_artifact_retirement" {
   tags               = local.tags
 }
 
+resource "aws_iam_role" "source_state_retention_migration" {
+  count = var.source_state_retention_migration_enabled ? 1 : 0
+
+  name               = "apcf-${local.deployment_id}-source-state-retention-migration"
+  assume_role_policy = data.aws_iam_policy_document.publisher_assume_role.json
+  tags               = local.tags
+}
+
 resource "aws_iam_role" "feed_watcher" {
   name               = local.role_names.watcher
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
@@ -125,6 +133,72 @@ data "aws_iam_policy_document" "application_artifact_retirement" {
     sid       = "ReadAndRetireExactApplicationArtifactVersions"
     actions   = ["s3:GetObjectVersion", "s3:DeleteObjectVersion"]
     resources = ["${aws_s3_bucket.config.arn}/${local.application_artifact_prefix}/*"]
+  }
+}
+
+data "aws_iam_policy_document" "source_state_retention_migration" {
+  count = var.source_state_retention_migration_enabled ? 1 : 0
+
+  statement {
+    sid       = "ProjectedSourceStateInventory"
+    actions   = ["dynamodb:Scan"]
+    resources = [aws_dynamodb_table.source_state.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "dynamodb:Select"
+      values   = ["SPECIFIC_ATTRIBUTES"]
+    }
+
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "dynamodb:Attributes"
+      values = [
+        "PK",
+        "SK",
+        "candidate_ids",
+        "complete",
+        "expires_at",
+        "feed_name",
+        "item_type",
+        "last_observed_at",
+        "page",
+        "page_set_id",
+        "run_id",
+        "state_version",
+      ]
+    }
+  }
+
+  statement {
+    sid       = "ConditionedRetentionMetadataWrites"
+    actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
+    resources = [aws_dynamodb_table.source_state.arn]
+
+    condition {
+      test     = "ForAllValues:StringLike"
+      variable = "dynamodb:LeadingKeys"
+      values   = ["ANNOUNCEMENT#*", "RUN#*"]
+    }
+
+    condition {
+      test     = "ForAllValues:StringEquals"
+      variable = "dynamodb:Attributes"
+      values = [
+        "PK",
+        "SK",
+        "candidate_ids",
+        "complete",
+        "expires_at",
+        "feed_name",
+        "item_type",
+        "last_observed_at",
+        "page",
+        "page_set_id",
+        "run_id",
+        "state_version",
+      ]
+    }
   }
 }
 
@@ -298,6 +372,14 @@ resource "aws_iam_role_policy" "application_artifact_retirement" {
   name   = "application-artifact-retirement"
   role   = aws_iam_role.application_artifact_retirement.id
   policy = data.aws_iam_policy_document.application_artifact_retirement.json
+}
+
+resource "aws_iam_role_policy" "source_state_retention_migration" {
+  count = var.source_state_retention_migration_enabled ? 1 : 0
+
+  name   = "source-state-retention-migration"
+  role   = aws_iam_role.source_state_retention_migration[0].id
+  policy = data.aws_iam_policy_document.source_state_retention_migration[0].json
 }
 
 resource "aws_iam_role_policy" "feed_watcher" {

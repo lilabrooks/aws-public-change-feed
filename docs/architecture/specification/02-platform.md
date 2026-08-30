@@ -10,6 +10,7 @@ The `infra/central` root creates:
 - A DynamoDB delivery table for candidates, outbox work, destination pacing, and delivery outcomes.
 - An encrypted SQS FIFO queue and FIFO DLQ.
 - Conditional outbox dispatcher, Slack worker, and recovery reconciler Lambdas, plus their least-privilege roles.
+- A default-off, one-time source-state retention migration role whose projected scan and conditioned update authority is removed after use.
 - Secrets Manager secrets or SecureString parameters referenced by exact identifier.
 - CloudWatch logs, metrics, dashboard, alarms, and an operational SNS topic.
 
@@ -34,6 +35,7 @@ Use on-demand capacity for the baseline. A single-table layout may use `PK` and 
 - Fields: canonical URL, current content fingerprint and revision, known revision IDs, normalized title and summary, first, last, and current-content observation times, optional source publication time, merged provenance, emitted candidate IDs, release references, monotonic state version, and numeric `expires_at` retention metadata. Legacy records may omit `expires_at` during migration.
 - Conditional compare-and-swap merges provenance, revision history, emission references, release references, and expiry without losing another writer. The sighting with the later `observed_at` owns current content; equal times choose the lexically smaller revision ID. The same merge sets `expires_at` to the later of its stored value and `last_observed_at + announcement_state_ttl_days`, using the exact loaded release. The sum is stored as whole Unix epoch seconds.
 - A record whose `expires_at` is in the past remains authoritative while DynamoDB still returns it. Eligibility does not prove TTL deletion.
+- The one-time legacy migration computes expiry from the stored `last_observed_at`, conditions on that value and the exact state version, and increments the version with the expiry write. Preview lists every announcement already eligible at the migration clock before apply.
 - Raw content is excluded. A bounded raw response snapshot may live in S3 for replay during its configured retention.
 
 ## Delivery table
@@ -89,6 +91,8 @@ generation, creation time, and historical network-attempt count.
 For each feed response, the watcher must make candidate and delivery records durable before saving the response's new ETag or Last-Modified value. A response-run ID is the null-framed SHA-256 of `feed-response-run:v1`, feed name, body SHA-256, release ID, and application digest. Because cross-feed coalescing can give the same response body a different candidate set when another feed succeeds or fails, each immutable page set also has a null-framed SHA-256 identity over `feed-response-pages:v1`, the response-run ID, and every sorted candidate ID. Candidate IDs are sorted into pages of at most 25 within that set; page numbers start at zero, and a zero-candidate response has one empty completion page.
 
 A marker is written only after durable read-back. Its numeric `expires_at` is retention metadata rather than part of the immutable proof; legacy markers may omit it during migration. A new marker sets it to the current page observation time plus the exact release's `feed_state_ttl_days`, stored as whole Unix epoch seconds. Re-observing the exact proof may extend that value. The conditional write never shortens it, and any mismatch in feed name, page identity, candidate IDs, or completion state is a conflict that leaves the marker unchanged. An expired marker remains present until DynamoDB removes it.
+
+The one-time legacy migration gives every marker without expiry a fresh boundary at `migration_as_of + feed_state_ttl_days`. It conditions on the exact key, item type, run ID, page-set ID, feed name, page number, candidate IDs, completion flag, and absent expiry. The migration never derives marker age from its key or table position.
 
 The feed checkpoint advances only after every current page and final candidate, delivery, emission, and release reference is read back. Page read-back compares the immutable proof and also requires a stored expiry at least as late as the current observation requested.
 

@@ -153,6 +153,20 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
   exact history entry and reserved attempt or posted closure. Every other
   post-write result remains ambiguous.
 
+## Source-state retention migration acceptance
+
+- Given a complete projected inventory within its reviewed cap, preview records the exact account, Region, table, assumed role session, active pointer version and ETag, release ID, configuration reference, migration clock, retention values, item counts, update rows, and canonical plan SHA-256 without writing DynamoDB.
+- Given an announcement without expiry, its planned expiry equals `last_observed_at + announcement_state_ttl_days`; the write conditions on the observed state version and observation time, sets expiry, and increments the state version once.
+- Given a legacy response page, its planned expiry equals `migration_as_of + feed_state_ttl_days`; the write conditions on every immutable proof field and the absence of expiry.
+- Every announcement already at or past its derived TTL boundary is listed by exact key and target expiry before apply. TTL eligibility is reported separately from observed DynamoDB deletion.
+- A malformed, failed, repeated-page, incomplete, or over-limit inventory produces no applicable plan. Feed checkpoints are counted by the scan bound but excluded from migration rows and never receive expiry.
+- Apply accepts only the unchanged canonical plan bytes, unchanged inventory cap, unchanged active pointer, exact release, deployment inputs, Terraform outputs, role identity, and complete projected inventory.
+- A conditional conflict stops the apply. Earlier proved updates and every untouched remaining row are reported separately, and the old plan is never retried.
+- A lost or failed write response gets one strong reread. The item counts as completed only when that read proves the target; an unreadable result is ambiguous.
+- A final bounded inventory validates announcement and page retention separately. It reports expired items still present and already-eligible announcements no longer returned as distinct TTL states.
+- The temporary role policy permits only projected `Scan`, strong `GetItem`, and conditioned `UpdateItem` on the source-state table. The role defaults absent and is removed after the recorded migration.
+- Conflict-inversion tests first prove that each guarded update succeeds, then change one bound field and prove it writes nothing.
+
 ## Application package retirement acceptance
 
 - Given deployment retention below 400 days or a newest-retained floor below 10, the tool refuses even if an older schema accepts the document.
