@@ -107,6 +107,42 @@ data "aws_iam_policy_document" "release_publisher" {
   }
 
   statement {
+    sid       = "ListActiveManifestVersions"
+    actions   = ["s3:ListBucketVersions"]
+    resources = [aws_s3_bucket.config.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:prefix"
+      values   = [local.active_versions_key]
+    }
+
+    condition {
+      test     = "NumericLessThanEquals"
+      variable = "s3:max-keys"
+      values   = ["1000"]
+    }
+  }
+
+  statement {
+    sid       = "ListReleaseVersions"
+    actions   = ["s3:ListBucketVersions"]
+    resources = [aws_s3_bucket.config.arn]
+
+    condition {
+      test     = "StringLike"
+      variable = "s3:prefix"
+      values   = ["${local.release_prefix}/*"]
+    }
+
+    condition {
+      test     = "NumericLessThanEquals"
+      variable = "s3:max-keys"
+      values   = ["1000"]
+    }
+  }
+
+  statement {
     sid     = "ReadExactVersions"
     actions = ["s3:GetObjectVersion"]
     resources = [
@@ -122,6 +158,12 @@ data "aws_iam_policy_document" "release_publisher" {
       "${aws_s3_bucket.config.arn}/${local.active_versions_key}",
       "${aws_s3_bucket.config.arn}/${local.release_prefix}/*",
     ]
+  }
+
+  statement {
+    sid       = "RetireExactReleaseVersions"
+    actions   = ["s3:DeleteObjectVersion"]
+    resources = ["${aws_s3_bucket.config.arn}/${local.release_prefix}/*"]
   }
 
   statement {

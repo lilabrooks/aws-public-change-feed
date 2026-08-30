@@ -230,10 +230,10 @@ class SiteValidatorTests(unittest.TestCase):
         changed = ["docs/GOAL.md", "site/architecture.drawio", "site/architecture.svg", "site/index.html"]
         self.assertEqual(validator.validate_site_sync(changed), [])
 
-    def test_package_retirement_status_matches_the_implemented_tool(self):
+    def test_retirement_status_matches_the_implemented_tools(self):
         page = (ROOT / "site/index.html").read_text(encoding="utf-8")
         self.assertIn(
-            "operator controls for replay, DLQ movement, and package retirement",
+            "operator controls for replay, DLQ movement, package retirement, and configuration-release retirement",
             page,
         )
         self.assertNotIn("packages accumulate until it exists", page)

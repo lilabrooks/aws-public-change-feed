@@ -210,6 +210,44 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - Given a partial run, earlier proved deletions and untouched later candidates remain distinct. Only a final complete inventory proving all deleted and retained rows reports `applied`.
 - The retirement role can list and retire only the exact artifact prefix. Publisher and runtime roles have no version-delete permission.
 
+## Configuration release retirement acceptance
+
+- Given deployment retention below 400 days or a newest-retained floor below
+  10, the tool refuses even if an older schema accepts the document.
+- Given truncated, failed, over-limit, malformed, incomplete, multiply
+  versioned, noncurrent, hash-mismatched, or delete-marker release inventory,
+  preview writes no applicable plan and deletes nothing.
+- Given a malformed pointer version, a prefix sibling, a delete marker, no
+  single current data version, an absent release, or an object-reference
+  mismatch, preview refuses before deletion.
+- Every release named by retained active-manifest history is protected. Every
+  additional operator-supplied release ID must resolve to the exact inventory;
+  an empty additional protection set requires an explicit assertion.
+- Given fewer than 10, exactly 10, or timestamp ties at the newest-release
+  boundary, all releases covered by the floor remain retained.
+- Given an age exactly at the cutoff, an unprotected release can be eligible;
+  one second newer is retained.
+- Given preview, no S3 mutation occurs and canonical plan bytes have a stable
+  SHA-256.
+- Given changed deployment bytes, policy, explicit protection, pointer history,
+  release inventory, ETag, VersionId, body hash, or classification, apply is
+  stale before deletion.
+- Given apply, every delete names one exact VersionId and recorded ETag under
+  the release prefix. The active-manifest key is never deleted.
+- Given a delete response or exception, one exact-version read proves absence
+  or presence. An unreadable status is ambiguous and receives no automatic
+  retry.
+- Given a partial two-object release deletion, the same unchanged plan can
+  resume only when fresh inventory proves that every missing row is one of its
+  exact deletion candidates. A missing retained row or any new or changed row
+  makes the plan stale.
+- Only a final complete inventory matching the proved retained set reports
+  `applied`. Partial, refused, failed, ambiguous, and unverified results exit
+  nonzero.
+- The publisher can list versions only for the exact release prefix and
+  active-manifest key. Its version-delete permission covers only the release
+  prefix. Runtime roles have no version-delete permission.
+
 ## Security acceptance
 
 - Feed and dispatcher roles cannot read Slack secrets.
