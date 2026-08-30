@@ -29,7 +29,7 @@ MVP_VIDEO_NAME = "aws-public-change-alerting-mvp-evidence-v2.mp4"
 MVP_VIDEO_URL = (
     f"https://github.com/lilabrooks/aws-public-change-feed/releases/download/mvp-evidence-v2/{MVP_VIDEO_NAME}"
 )
-MVP_VIDEO_SHA256 = "24998362d0f0b77a3231c1e4b46c003b6ff4c71baafbdefa4cd67d082c375d43"
+MVP_VIDEO_SHA256 = "e921d655c238d64df7e8264f285897c31eca965f643f9d1472962ec9a345373b"
 EXPECTED_DIAGRAM_NODES = {
     "feeds",
     "release",
