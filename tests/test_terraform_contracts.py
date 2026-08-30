@@ -1146,7 +1146,7 @@ resource "aws_cloudwatch_metric_alarm" "undocumented_delivery_gate" {
         self.assertNotIn("reconciler.arn", watcher_statement)
         feed_policy = iam[iam.index('data "aws_iam_policy_document" "feed_watcher"') :]
         feed_policy = feed_policy[: feed_policy.index('data "aws_iam_policy_document" "outbox_dispatcher"')]
-        self.assertIn('"dynamodb:TransactWriteItems"', feed_policy)
+        self.assertNotIn('"dynamodb:TransactWriteItems"', feed_policy)
         self.assertNotIn('"dynamodb:DeleteItem"', feed_policy)
         heartbeat = alarms[alarms.index('resource "aws_cloudwatch_metric_alarm" "feed_watcher_heartbeat"') :]
         heartbeat = heartbeat[: heartbeat.index("\nresource ", 1)]
