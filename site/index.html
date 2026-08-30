@@ -547,34 +547,33 @@ Recommended review action: Review supported Kubernetes versions and plan require
         <div class="compact-section-head">
           <p class="compact-eyebrow">Status</p>
           <div>
-            <h2 class="compact-section-title">The dev MVP passed its Slack, recovery, load, and alarm checks.</h2>
-            <p class="compact-section-copy">M1 is closed. Production policy, rollback proof, recovery objectives, and the final production gate remain under M2 and M3.</p>
+            <h2 class="compact-section-title">The project moves from one live Slack post to a production decision.</h2>
+            <p class="compact-section-copy">D0 and M1 are closed. M2 is open. M3 starts after M2.</p>
           </div>
         </div>
         <table class="site-status-table">
           <tbody>
             <tr>
-              <th scope="row">Code</th>
-              <td>Python 3.12 runtime paths for release publication, feed watching, matching, outbox dispatch, Slack delivery, and recovery; Terraform roots for bootstrap, central, and isolated preflight infrastructure; operator controls for replay, DLQ movement, and package retirement.</td>
+              <th scope="row">D0 · Closed</th>
+              <td>D0 sent one real public AWS announcement through the deployed dev service to Slack. The watcher created the candidate and delivery record, the dispatcher queued it through SQS FIFO, the worker posted it, and DynamoDB recorded <code>posted</code>. The other 11 requests stayed queued for M1.</td>
             </tr>
             <tr>
-              <th scope="row">Automated checks</th>
-              <td>Invalid fixture mutations must fail. Service mocks cover S3, DynamoDB, SQS, and Lambda entry points. A labeled announcement corpus measures matcher precision and recall. Two Linux package builds must produce the same bytes.</td>
+              <th scope="row">M1 · Closed</th>
+              <td>M1 ran the whole dev service on schedule and exercised delivery, recovery, load, and alarms. All 4 triggers were enabled, all 12 public-feed posts reached Slack, both recovery cases passed, the fixed load run created 50 records at 5 per minute, and the owner confirmed alarm-email receipt.</td>
             </tr>
             <tr>
-              <th scope="row">Dev run</th>
-              <td>The 4 runtime triggers were enabled. A 12-message public-feed cohort reached Slack with 1 network attempt and an HTTP 200 response per post. DynamoDB recorded <code>posted</code> for the cohort.</td>
+              <th scope="row">M2 · Open</th>
+              <td>M2 sets rules for old feed data, removed feeds, saved responses, and known recovery failures. New writes now include 730-day expiry dates, and a one-time migration updated 164 older rows. Remaining work retires removed-feed checkpoints and old releases, replays exact saved feed bytes, removes the unused DynamoDB transaction permission, makes source-state reads choose feed or announcement records, keeps cache files out of Lambda packages, replaces an exception-text check, and keeps <code>IncompleteRuns</code> separate from <code>WatcherFaults</code>.</td>
             </tr>
             <tr>
-              <th scope="row">M1 operations</th>
-              <td>Both isolated recovery cases passed. The fixed load run created 50 messages at 5 per minute, and the owner confirmed alarm-email receipt.</td>
-            </tr>
-            <tr>
-              <th scope="row">Open work</th>
-              <td>M2 covers lifecycle, replay, and watcher or dispatcher correctness work. M3 covers production policy, rollback proof, recovery objectives, and the final production gate.</td>
+              <th scope="row">M3 · Open</th>
+              <td>M3 decides whether the current service and deployment are ready for production. It will choose the production feed and matching policy, set DynamoDB recovery limits, run read-only shadow evaluation, prove configuration and application rollback, rerun checks affected by M2, and update every completion claim after the gate.</td>
             </tr>
           </tbody>
         </table>
+        <div class="site-note">
+          <p>The repository already includes operator controls for replay, DLQ movement, and package retirement.</p>
+        </div>
       </div>
     </section>
 
