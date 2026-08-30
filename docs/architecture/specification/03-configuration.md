@@ -102,6 +102,12 @@ A profile is only a sorted set of service IDs. Environment policy assigns that p
 
 Changing service aliases, profile membership, or environment policy creates a new release. It does not change historical candidates.
 
+A feed name bound by a retired-feed tombstone cannot silently move to another
+URL. Publishing a release does not mutate source state. If that release restores
+the same name and URL, the separately reviewed source-state restoration plan may
+convert the tombstone into an active checkpoint. A different URL hash is refused
+by the restoration tool, and the watcher also refuses to claim a tombstone.
+
 ## Risk-rule DSL
 
 Each risk rule has a unique ID, unique risk type, priority, fields, and:

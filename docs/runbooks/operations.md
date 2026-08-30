@@ -559,6 +559,61 @@ readable after its expiry time.
 4. Any request to resend an existing candidate uses the manual delivery replay path and its audit fields.
 5. Keep feed validators unchanged during snapshot replay.
 
+## Removed-feed retirement, compaction, and restoration
+
+These commands affect one feed checkpoint. They never inventory announcement
+history or response page-set markers, and they never call `DeleteItem`. DynamoDB
+TTL handles eligible announcement and page-marker rows separately.
+
+1. Remove the feed from a reviewed configuration release and promote that
+   release. Confirm no watcher invocation still owns a lease or pending response
+   for the feed. Record one second-precision UTC retirement decision time and a
+   bounded decision identifier.
+2. Capture fresh central Terraform outputs. Confirm the permanent
+   `source_state_retirement` role ARN and active pointer identity, then preview:
+
+   ```bash
+   python3 scripts/retire_source_feed.py preview \
+     --operation retire \
+     --deployment infra/central/deployment.yaml \
+     --terraform-output <restricted-central-outputs.json> \
+     --expected-account <12-digit-account> \
+     --feed-name <removed-feed-name> \
+     --decision-id <reviewed-decision-id> \
+     --decision-at <YYYY-MM-DDTHH:MM:SSZ> \
+     --plan <removed-feed-retirement-plan.json>
+   ```
+
+   Preview assumes the role with the selected feed as its `FeedName` session
+   tag. Review the active release and configuration digest, feed absence proof,
+   state version, URL and content hashes, lease and pending fields,
+   `retire_after`, and printed plan SHA-256.
+3. Apply the unchanged bytes by replacing `preview` with `apply`, removing the
+   decision arguments, and adding
+   `--expected-plan-sha256 <preview-plan-sha256>`. Treat only `applied` or
+   `applied_after_reread` as success. A stale, conflicting, or ambiguous result
+   needs a fresh strong read and a new preview; never retry the old plan.
+4. Keep the full retired checkpoint until its stored `retire_after`. Removal
+   from configuration starts no clock by itself. Announcement and response-page
+   TTL deletion can happen during this period and remains independent.
+5. At or after `retire_after`, preview `--operation compact` with a new decision
+   identifier and exact compaction time. Apply its unchanged bytes through the
+   same digest-bound command. The result is a permanent tombstone containing
+   the feed name, URL hash, retirement decision, and compaction time. It is a
+   conditional update, not a DynamoDB deletion.
+6. A future feed at another URL uses a new name. To restore the tombstoned name,
+   first disable watcher acquisition through a reviewed trigger plan. Promote a
+   reviewed release containing the original name and exact URL while the watcher
+   remains disabled. Preview `--operation restore`; the tool refuses a different
+   URL hash. Apply only the unchanged plan under separate authority, then read
+   the valid active checkpoint before reenabling the watcher. The restored
+   checkpoint keeps bounded restoration evidence and begins with no validators,
+   lease, or pending response state.
+
+A live retirement, compaction, or restoration needs separate owner authority
+for the exact feed and plan. Repository tests use a simulated eligible boundary;
+they do not claim that 730 days elapsed in a deployment.
+
 ## Alarm delivery failure
 
 1. Verify that each Git-reviewed deployment descriptor contains only its stable alias and reviewed protocol, currently `email`.

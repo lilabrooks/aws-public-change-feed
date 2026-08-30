@@ -167,6 +167,35 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - The temporary role policy permits only projected `Scan`, strong `GetItem`, and conditioned `UpdateItem` on the source-state table. The role defaults absent and is removed after the recorded migration.
 - Conflict-inversion tests first prove that each guarded update succeeds, then change one bound field and prove it writes nothing.
 
+## Removed-feed retirement acceptance
+
+- Given one named feed absent from the exact active release, preview strongly
+  reads only its `FEED#<name>` checkpoint and records the release, configuration
+  digest, checkpoint state version, URL hash, exact content digest, lease and
+  pending-work state, decision time, retention boundary, and canonical plan
+  SHA-256 without writing DynamoDB.
+- Given a feed still configured, a live lease, pending response work, a changed
+  release, state version, URL, content field, decision input, or plan byte,
+  retirement apply writes nothing. Each refusal test first proves the unchanged
+  condition can proceed.
+- Given an unchanged retirement plan, one exact-content conditional update
+  records `retired_at`, `retire_after`, the decision identifier, and one higher
+  state version while preserving the full checkpoint.
+- Given a compaction time one second before `retire_after`, preview refuses.
+  Given the exact boundary and unchanged full checkpoint, conditional apply
+  replaces its content with the permanent feed-name and URL-hash tombstone.
+- Given a tombstoned name in a release with a different URL hash, restoration
+  refuses. Given the same name and URL plus a reviewed restoration decision,
+  apply creates a valid active checkpoint that retains bounded restoration
+  evidence and can be claimed by the watcher.
+- Given a lost update response, one strong reread reports success only when the
+  exact target is present. An unreadable or mismatched result is ambiguous and
+  receives no automatic retry.
+- The permanent operator role can get and conditionally update only the exact
+  session-tagged feed key. It has no scan, query, put, delete, delivery-table,
+  secret, queue, or deployment permission, and the watcher has no source-state
+  deletion permission.
+
 ## Application package retirement acceptance
 
 - Given deployment retention below 400 days or a newest-retained floor below 10, the tool refuses even if an older schema accepts the document.

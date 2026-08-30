@@ -48,6 +48,7 @@ __all__ = [
 ]
 
 _DIGEST = re.compile(r"[0-9a-f]{64}")
+_DECISION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}")
 _FEED_NAME = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?")
 _MAX_STATE_RETRIES = 8
 
@@ -117,6 +118,13 @@ class FeedCheckpoint:
     state_version: int = 1
     lease_owner: str | None = None
     lease_expires_at: int | None = None
+    retired_at: str | None = None
+    retire_after: int | None = None
+    retirement_decision_id: str | None = None
+    restored_at: str | None = None
+    restoration_decision_id: str | None = None
+    prior_retirement_decision_id: str | None = None
+    restored_feed_url_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if _FEED_NAME.fullmatch(_required_string("feed_name", self.feed_name)) is None:
@@ -144,6 +152,30 @@ class FeedCheckpoint:
             _digest("pending_run_id", self.pending_run_id)
             if self.lease_owner is None:
                 raise ValueError("pending response state requires an active lease")
+        retirement = (self.retired_at, self.retire_after, self.retirement_decision_id)
+        if any(value is not None for value in retirement) and not all(value is not None for value in retirement):
+            raise ValueError("removed-feed retirement metadata must be present together")
+        if self.retired_at is not None:
+            _timestamp("retired_at", self.retired_at)
+            _positive_integer("retire_after", self.retire_after)
+            if _DECISION_ID.fullmatch(str(self.retirement_decision_id)) is None:
+                raise ValueError("retirement_decision_id must be a bounded decision identifier")
+        restoration = (
+            self.restored_at,
+            self.restoration_decision_id,
+            self.prior_retirement_decision_id,
+            self.restored_feed_url_sha256,
+        )
+        if any(value is not None for value in restoration) and not all(value is not None for value in restoration):
+            raise ValueError("removed-feed restoration metadata must be present together")
+        if self.restored_at is not None:
+            _timestamp("restored_at", self.restored_at)
+            for name in ("restoration_decision_id", "prior_retirement_decision_id"):
+                if _DECISION_ID.fullmatch(str(getattr(self, name))) is None:
+                    raise ValueError(f"{name} must be a bounded decision identifier")
+            restored_hash = _digest("restored_feed_url_sha256", self.restored_feed_url_sha256)
+            if restored_hash != hashlib.sha256(self.feed_url.encode("utf-8")).hexdigest():
+                raise ValueError("restored_feed_url_sha256 does not match feed_url")
         for name in ("etag", "last_modified", "last_error_class", "pending_etag", "pending_last_modified"):
             value = getattr(self, name)
             if value is not None:

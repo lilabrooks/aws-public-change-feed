@@ -269,10 +269,13 @@ class DynamoDBSourceStateStore:
                     "REMOVE pending_etag, pending_last_modified, pending_newest_publication_at, pending_run_id"
                 ),
                 ConditionExpression=(
-                    "(attribute_not_exists(PK) "
-                    "OR (attribute_not_exists(lease_owner) AND attribute_not_exists(lease_expires_at)) "
-                    "OR lease_expires_at <= :now) "
-                    "AND (attribute_not_exists(feed_url) OR feed_url = :url)"
+                    "attribute_not_exists(PK) OR ("
+                    "item_type = :type AND feed_url = :url "
+                    "AND attribute_not_exists(retired_at) "
+                    "AND attribute_not_exists(retire_after) "
+                    "AND attribute_not_exists(retirement_decision_id) "
+                    "AND ((attribute_not_exists(lease_owner) AND attribute_not_exists(lease_expires_at)) "
+                    "OR lease_expires_at <= :now))"
                 ),
                 ExpressionAttributeValues=_wire(
                     {

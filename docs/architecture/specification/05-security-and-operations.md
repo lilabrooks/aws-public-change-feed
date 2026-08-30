@@ -124,6 +124,19 @@ exception attached for a chain walker to reach.
 - Receives no `DeleteItem`, `PutItem`, delivery-table, queue, secret, release-publication, deployment-mutation, or customer-account permission.
 - Is removed after the migration result and untouched remainder are recorded. A Terraform and AWS readback proves the role and inline policy are absent.
 
+### Source-state retirement operator
+
+- Exists permanently and remains separate from every runtime, publisher, and
+  migration role.
+- Assumption requires a `FeedName` session tag. Its DynamoDB leading-key
+  condition permits `GetItem` and `UpdateItem` only for
+  `FEED#${aws:PrincipalTag/FeedName}` on the source-state table.
+- Receives no table scan, query, `PutItem`, `DeleteItem`, delivery-table, queue,
+  secret, S3, deployment-mutation, or customer-account permission.
+- Uses exact-content preview/apply plans for retirement marking, tombstone
+  compaction, and same-URL restoration. Each mutation rereads the active release
+  and selected source-state item before writing.
+
 The watcher uses the same content-addressed package digest and exact S3 object
 version as the delivery worker. It runs every 15 minutes with a 300-second
 timeout, reserved concurrency one, a 360-second feed lease, and a 60-second
