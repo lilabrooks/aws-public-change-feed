@@ -391,8 +391,18 @@ class DynamoDBAnnouncementStateTests(unittest.TestCase):
         )
         self.assertEqual(self.store.load(result.record.announcement_id), result.record)
 
-    def test_explicit_item_type_disambiguates_a_hexadecimal_feed_name(self):
+    def test_explicit_item_type_disambiguates_a_store_valid_hexadecimal_feed_name(self):
+        """The shared store must not infer kind from an identifier's text.
+
+        The configuration contract currently caps feed IDs at 63 characters,
+        while the feed-checkpoint store accepts this 64-character key. This is
+        therefore a store-boundary collision rather than a release-produced
+        fixture. Keeping the explicit kind at the exported store API also
+        protects direct callers and any future configuration-bound expansion.
+        """
+
         result = observe(self.store, self.announcement())
+        self.assertEqual(len(result.record.announcement_id), 64)
         feed_store = DynamoDBFeedStateStore(self.client, TABLE)
         claimed = feed_store.claim(
             result.record.announcement_id,
