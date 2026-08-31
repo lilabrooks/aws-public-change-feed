@@ -245,6 +245,42 @@ not delivery requests. Never redrive it into the delivery FIFO queue.
 6. Confirm watcher, dispatcher, and worker can still load historical releases referenced by in-flight delivery records.
 7. Record the failed and restored release IDs.
 
+## Terraform output capture and recovery
+
+Every operator command that consumes Terraform outputs uses a fresh restricted
+capture. Give each capture a unique identifier, keep its temporary and reviewed
+paths outside Git, and require both paths to be absent before starting:
+
+```bash
+install -d -m 700 build/terraform-output-failures
+test ! -e build/.central-outputs.<capture-id>.json.tmp
+test ! -e build/central-outputs.<capture-id>.json
+umask 077
+terraform -chdir=infra/central output -json > build/.central-outputs.<capture-id>.json.tmp
+python3 -m json.tool build/.central-outputs.<capture-id>.json.tmp > /dev/null
+mv build/.central-outputs.<capture-id>.json.tmp build/central-outputs.<capture-id>.json
+```
+
+Confirm the parsed value is a JSON object before the move. The consuming preview
+performs its own shape and identity checks. Keep the reviewed capture unchanged
+until every plan that binds its path and SHA-256 is complete or abandoned.
+
+If the `terraform output` command exits nonzero, stop before JSON validation or
+the move. The temporary is failure evidence even when it is empty or malformed.
+Record the command exit status, path, permissions, byte count, and SHA-256, and
+keep the file restricted. Do not truncate, delete, overwrite, parse as trusted
+output, or retry into the same path.
+
+The repository owner reviews that record. When the owner releases the capture
+path for another attempt, move the temporary without changing its bytes to a
+new collision-free name under `build/terraform-output-failures/`. Recompute its
+SHA-256 after the move and require the digest to match the recorded value. A
+failed or ambiguous move leaves the capture blocked. Retry with a new capture
+identifier only after the preserved file and matching digest are proved.
+
+This manual gate is deliberate. Automatic cleanup cannot decide whether a
+partial provider response still matters to the failed operation.
+
 ## Configuration release publication
 
 Use the reviewed Terraform backend principal to initialize the remote backend
@@ -254,13 +290,14 @@ separately reviewed version-4 policy whose environment policies must cover the
 deployment environments exactly. Keep the generated inventory, canonical
 plan, plan digest, and bounded command output with the change record.
 
-1. From a clean checkout, capture the applied central outputs without editing
-   them:
+1. From a clean checkout, follow the Terraform output capture procedure above.
+   Use its unique reviewed path throughout preview and apply:
 
    ```bash
-   mkdir -p build
    terraform -chdir=infra/central init -input=false
-   terraform -chdir=infra/central output -json > build/central-outputs.json
+   terraform -chdir=infra/central output -json > build/.central-outputs.<capture-id>.json.tmp
+   python3 -m json.tool build/.central-outputs.<capture-id>.json.tmp > /dev/null
+   mv build/.central-outputs.<capture-id>.json.tmp build/central-outputs.<capture-id>.json
    ```
 
    `tests/fixtures/terraform-output.dev.json` is non-secret test data for the
@@ -277,7 +314,7 @@ plan, plan digest, and bounded command output with the change record.
    python3 scripts/publish_release.py preview \
      --deployment infra/central/deployment.yaml \
      --config config/dev.yaml \
-     --terraform-output build/central-outputs.json \
+     --terraform-output build/central-outputs.<capture-id>.json \
      --inventory build/inventory.json \
      --plan build/config-release-plan.json \
      --application-version sha256:<64-lowercase-hex> \

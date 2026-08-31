@@ -581,7 +581,7 @@ class PublishReleaseTests(unittest.TestCase):
         runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
         section = runbook.split("## Configuration release publication\n", 1)[1].split("\n## ", 1)[0]
         init_command = "terraform -chdir=infra/central init -input=false"
-        output_command = "terraform -chdir=infra/central output -json > build/central-outputs.json"
+        output_command = "terraform -chdir=infra/central output -json > build/.central-outputs.<capture-id>.json.tmp"
         preview_command = "python3 scripts/publish_release.py preview"
 
         self.assertIn("Terraform backend principal", section)
@@ -590,6 +590,32 @@ class PublishReleaseTests(unittest.TestCase):
         self.assertLess(section.index(output_command), section.index(preview_command))
         self.assertIn("--config config/dev.yaml", section)
         self.assertIn("tests/fixtures/terraform-output.dev.json", section)
+
+    def test_runbook_preserves_a_failed_terraform_output_before_retry(self) -> None:
+        runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
+        section = runbook.split("## Terraform output capture and recovery\n", 1)[1].split("\n## ", 1)[0]
+        section = " ".join(section.split())
+        capture = "terraform -chdir=infra/central output -json > build/.central-outputs.<capture-id>.json.tmp"
+        validate = "python3 -m json.tool build/.central-outputs.<capture-id>.json.tmp"
+        publish = "mv build/.central-outputs.<capture-id>.json.tmp build/central-outputs.<capture-id>.json"
+        failure = "If the `terraform output` command exits nonzero"
+        owner_gate = "The repository owner reviews that record."
+        preserve = "move the temporary without changing its bytes"
+        retry = "Retry with a new capture identifier"
+
+        for required in (
+            "require both paths to be absent before starting",
+            "The temporary is failure evidence even when it is empty or malformed.",
+            "Do not truncate, delete, overwrite",
+            "Recompute its SHA-256 after the move",
+            "A failed or ambiguous move leaves the capture blocked.",
+        ):
+            self.assertIn(required, section)
+        self.assertLess(section.index(capture), section.index(validate))
+        self.assertLess(section.index(validate), section.index(publish))
+        self.assertLess(section.index(failure), section.index(owner_gate))
+        self.assertLess(section.index(owner_gate), section.index(preserve))
+        self.assertLess(section.index(preserve), section.index(retry))
 
     def test_runbook_changes_allowed_feed_hosts_only_between_trigger_disable_and_enable(self) -> None:
         runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
