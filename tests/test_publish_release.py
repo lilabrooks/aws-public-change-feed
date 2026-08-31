@@ -591,6 +591,29 @@ class PublishReleaseTests(unittest.TestCase):
         self.assertIn("--config config/dev.yaml", section)
         self.assertIn("tests/fixtures/terraform-output.dev.json", section)
 
+    def test_runbook_changes_allowed_feed_hosts_only_between_trigger_disable_and_enable(self) -> None:
+        runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
+        section = runbook.split("### Allowed feed host changes\n", 1)[1].split("\n## ", 1)[0]
+        section = " ".join(section.split())
+        disabled = "changes only `delivery_triggers_enabled` to `false`"
+        target_allowlist = "apply the target deployment plan"
+        promotion = "python3 scripts/publish_release.py apply"
+        equality_readback = "compare it with the deployed watcher environment"
+        enabled = "changes only `delivery_triggers_enabled` to `true`"
+
+        for required in (
+            "`APPROVED_FEED_HOSTS_JSON`",
+            "An addition includes at least one reviewed feed on the new host.",
+            "A removal removes every configured feed on that host.",
+            "every delivery trigger disabled",
+            "Rollback uses the same sequence",
+        ):
+            self.assertIn(required, section)
+        self.assertLess(section.index(disabled), section.index(target_allowlist))
+        self.assertLess(section.index(target_allowlist), section.index(promotion))
+        self.assertLess(section.index(promotion), section.index(equality_readback))
+        self.assertLess(section.index(equality_readback), section.index(enabled))
+
 
 class PublishReleaseMotoTests(unittest.TestCase):
     @mock_aws

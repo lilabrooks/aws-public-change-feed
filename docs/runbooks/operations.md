@@ -314,6 +314,44 @@ plan, plan digest, and bounded command output with the change record.
    declaring the release usable. These results can leave matching immutable
    release objects in place; a later fresh plan adopts their exact versions.
 
+### Allowed feed host changes
+
+The deployment `allowed_feed_hosts` set must equal the host set derived from the
+configured feed URLs. Terraform supplies the former to the watcher as
+`APPROVED_FEED_HOSTS_JSON`; the active release supplies the latter. The watcher
+refuses a release when those sets differ.
+
+Use this order for a host addition or removal:
+
+1. Record the current active pointer, watcher package pair, Terraform state
+   VersionId, deployment bytes, configuration bytes, and equal host sets.
+2. Review and apply a Terraform plan with the current deployment and package
+   inputs that changes only `delivery_triggers_enabled` to `false`. Read back the
+   disabled watcher rule, dispatcher rule, and worker event-source mapping.
+3. Edit the target deployment allowlist and target configuration together. An
+   addition includes at least one reviewed feed on the new host. A removal
+   removes every configured feed on that host. Run the local bundle validation.
+4. With the triggers still disabled, review and apply the target deployment
+   plan. Read the watcher configuration back and confirm that
+   `APPROVED_FEED_HOSTS_JSON` contains the exact target set. The active release
+   still names the old set during this bounded pause, so keep the watcher rule
+   disabled.
+5. Capture fresh central outputs. Run `python3 scripts/publish_release.py
+   preview` with the target deployment and configuration, review its canonical
+   plan, then run `python3 scripts/publish_release.py apply` with the exact plan
+   digest. Preserve the promotion and compatibility-probe result.
+6. Read the active pointer and its exact configuration version, derive the feed
+   host set again, and compare it with the deployed watcher environment. A
+   mismatch, failed read, incomplete promotion, or changed package pair leaves
+   every delivery trigger disabled.
+7. Review and apply a final Terraform plan that changes only
+   `delivery_triggers_enabled` to `true`. Read back all three trigger states and
+   the runtime alarm set before treating the host change as active.
+
+Rollback uses the same sequence with the prior reviewed deployment and release
+inputs. Preserve the failed target release as immutable evidence; promotion of
+the prior policy writes a new active-pointer version.
+
 The command defines the operator path and has injected-store plus moto coverage.
 Running it against the dev bucket is a live AWS operation and requires separate
 deployment authority. Its local tests do not prove an applied release, Lambda
