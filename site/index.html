@@ -536,7 +536,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
             </div>
             <div class="site-spec-row">
               <dt>Slack answer is lost</dt>
-              <dd>Slack may accept a post just before the worker times out. The expired <code>sending</code> record becomes <code>delivery_unknown</code>, and automatic delivery stops until an operator checks the channel.</dd>
+              <dd>Slack may accept a post just before the worker times out. Post-MVP recovery evidence confirmed the state transition and zero additional calls for the controlled expired record; it did not prove that a naturally expired network attempt sent nothing. The record becomes <code>delivery_unknown</code>, and automatic delivery stops until an operator checks Slack and either records the found post or approves one audited replay.</dd>
             </div>
           </dl>
           <aside class="site-note" aria-label="Slack delivery guarantee">

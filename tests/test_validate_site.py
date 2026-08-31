@@ -244,6 +244,15 @@ class SiteValidatorTests(unittest.TestCase):
         self.assertIn("Active feed checkpoints do not expire", page)
         self.assertIn("docs/adr/025-source-state-and-response-page-retirement.md", page)
 
+    def test_delivery_unknown_reassessment_matches_the_accepted_decision(self):
+        decision = (ROOT / "docs/adr/007-central-slack-delivery-queue-and-worker.md").read_text(encoding="utf-8")
+        page = (ROOT / "site/index.html").read_text(encoding="utf-8")
+
+        self.assertIn("## Revision: expired sending remains an unknown outcome", decision)
+        self.assertIn("- Accepted: 2026-08-31", decision)
+        self.assertIn("never\nautomatically retries that record", decision)
+        self.assertIn("it did not prove that a naturally expired network attempt sent nothing", page)
+
     def test_unrelated_change_does_not_require_page_update(self):
         self.assertEqual(validator.validate_site_sync(["tests/test_validate_config.py"]), [])
 
