@@ -245,13 +245,20 @@ class SiteValidatorTests(unittest.TestCase):
         self.assertIn("docs/adr/025-source-state-and-response-page-retirement.md", page)
 
     def test_delivery_unknown_reassessment_matches_the_accepted_decision(self):
-        decision = (ROOT / "docs/adr/007-central-slack-delivery-queue-and-worker.md").read_text(encoding="utf-8")
-        page = (ROOT / "site/index.html").read_text(encoding="utf-8")
+        decision = " ".join(
+            (ROOT / "docs/adr/007-central-slack-delivery-queue-and-worker.md").read_text(encoding="utf-8").split()
+        )
+        goal = " ".join((ROOT / "docs/GOAL.md").read_text(encoding="utf-8").split())
+        page = " ".join((ROOT / "site/index.html").read_text(encoding="utf-8").split())
 
         self.assertIn("## Revision: expired sending remains an unknown outcome", decision)
         self.assertIn("- Accepted: 2026-08-31", decision)
-        self.assertIn("never\nautomatically retries that record", decision)
+        self.assertIn("never automatically retries that record", decision)
         self.assertIn("it did not prove that a naturally expired network attempt sent nothing", page)
+        self.assertIn("an inconclusive search leaves the record unchanged", page)
+        self.assertIn("The 12-message public-feed cohort reached durable `posted`", goal)
+        self.assertNotIn("The recovery reconciler remains undeployed", goal)
+        self.assertNotIn("ADR-016 still requires an operator-confirmed test-notification receipt", goal)
 
     def test_unrelated_change_does_not_require_page_update(self):
         self.assertEqual(validator.validate_site_sync(["tests/test_validate_config.py"]), [])
