@@ -70,6 +70,23 @@ class LambdaPackageTests(unittest.TestCase):
                 self.assertEqual(archive.namelist(), ["b.py", "package/a.py"])
                 self.assertTrue(all(member.date_time == FIXED_ZIP_TIME for member in archive.infolist()))
 
+    def test_archive_excludes_python_cache_artifacts(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            staging = root / "stage"
+            package = staging / "package"
+            cache = package / "__pycache__"
+            cache.mkdir(parents=True)
+            (package / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+            (cache / "generated.txt").write_text("cache data\n", encoding="utf-8")
+            (package / "loose.pyc").write_bytes(b"compiled bytecode")
+            output = root / "package.zip"
+
+            _archive_tree(staging, output)
+
+            with zipfile.ZipFile(output) as archive:
+                self.assertEqual(archive.namelist(), ["package/module.py"])
+
     def test_dependency_lock_rejects_a_range(self):
         with tempfile.TemporaryDirectory() as raw:
             lock = Path(raw) / "requirements.txt"
