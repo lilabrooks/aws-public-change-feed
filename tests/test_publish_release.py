@@ -2,6 +2,7 @@ import contextlib
 import hashlib
 import io
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -35,6 +36,12 @@ LATER_PROMOTION = "2026-08-15T16:02:00Z"
 
 def pointer_bytes(release: str, promoted_at: str = "2026-08-15T15:59:00Z") -> bytes:
     return publisher.canonical_json({"release_id": release, "promoted_at": promoted_at})
+
+
+def terraform_capture_block() -> str:
+    runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
+    section = runbook.split("## Terraform output capture and recovery\n", 1)[1].split("\n## ", 1)[0]
+    return section.split("```bash\n", 1)[1].split("\n```", 1)[0]
 
 
 class MemoryStore:
@@ -581,13 +588,16 @@ class PublishReleaseTests(unittest.TestCase):
         runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
         section = runbook.split("## Configuration release publication\n", 1)[1].split("\n## ", 1)[0]
         init_command = "terraform -chdir=infra/central init -input=false"
-        output_command = "terraform -chdir=infra/central output -json > build/.central-outputs.<capture-id>.json.tmp"
+        capture_procedure = "follow the Terraform output capture procedure above"
         preview_command = "python3 scripts/publish_release.py preview"
 
         self.assertIn("Terraform backend principal", section)
         self.assertIn("release-publisher role", section)
-        self.assertLess(section.index(init_command), section.index(output_command))
-        self.assertLess(section.index(output_command), section.index(preview_command))
+        self.assertIn("initialize the central root. Stop on a nonzero exit", section)
+        self.assertLess(section.index(init_command), section.index(preview_command))
+        self.assertLess(section.index(capture_procedure), section.index(preview_command))
+        self.assertNotIn(" output -json > ", section)
+        self.assertIn('--terraform-output "$CAPTURE_PATH"', section)
         self.assertIn("--config config/dev.yaml", section)
         self.assertIn("tests/fixtures/terraform-output.dev.json", section)
 
@@ -595,16 +605,20 @@ class PublishReleaseTests(unittest.TestCase):
         runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
         section = runbook.split("## Terraform output capture and recovery\n", 1)[1].split("\n## ", 1)[0]
         section = " ".join(section.split())
-        capture = "terraform -chdir=infra/central output -json > build/.central-outputs.<capture-id>.json.tmp"
-        validate = "python3 -m json.tool build/.central-outputs.<capture-id>.json.tmp"
-        publish = "mv build/.central-outputs.<capture-id>.json.tmp build/central-outputs.<capture-id>.json"
+        capture = 'terraform -chdir="$TF_ROOT" output -json > "$CAPTURE_TMP"'
+        validate = "isinstance(value, dict)"
+        publish = 'mv -n "$CAPTURE_TMP" "$CAPTURE_PATH"'
         failure = "If the `terraform output` command exits nonzero"
         owner_gate = "The repository owner reviews that record."
         preserve = "move the temporary without changing its bytes"
         retry = "Retry with a new capture identifier"
 
         for required in (
+            "set -euo pipefail",
             "require both paths to be absent before starting",
+            'test ! -e "$CAPTURE_TMP"',
+            'test ! -e "$CAPTURE_PATH"',
+            'test ! -e "$CAPTURE_TMP" test -f "$CAPTURE_PATH"',
             "The temporary is failure evidence even when it is empty or malformed.",
             "Do not truncate, delete, overwrite",
             "Recompute its SHA-256 after the move",
@@ -617,21 +631,113 @@ class PublishReleaseTests(unittest.TestCase):
         self.assertLess(section.index(owner_gate), section.index(preserve))
         self.assertLess(section.index(preserve), section.index(retry))
 
+        terraform_output_arguments = [
+            line.strip() for line in runbook.splitlines() if line.strip().startswith("--terraform-output")
+        ]
+        self.assertTrue(terraform_output_arguments)
+        self.assertEqual(set(terraform_output_arguments), {'--terraform-output "$CAPTURE_PATH" \\'})
+        self.assertNotIn("build/central-outputs.json", runbook)
+        self.assertNotIn("<restricted-central-outputs.json>", runbook)
+        self.assertNotIn("<same-restricted-central-outputs.json>", runbook)
+
+    def test_capture_block_fails_closed_and_preserves_the_temporary(self) -> None:
+        block = terraform_capture_block()
+
+        for label, body, exit_code in (
+            ("terraform failure", "{", 1),
+            ("malformed JSON", "{", 0),
+            ("non-object JSON", "[]", 0),
+        ):
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                binary = root / "bin"
+                binary.mkdir()
+                terraform = binary / "terraform"
+                terraform.write_text('#!/bin/sh\nprintf "%s" "$TF_STUB_BODY"\nexit "$TF_STUB_EXIT"\n', encoding="utf-8")
+                terraform.chmod(0o755)
+                environment = {
+                    **os.environ,
+                    "PATH": f"{binary}{os.pathsep}{os.environ['PATH']}",
+                    "TF_STUB_BODY": body,
+                    "TF_STUB_EXIT": str(exit_code),
+                }
+
+                result = subprocess.run(
+                    ["bash", "-c", block],
+                    cwd=root,
+                    env=environment,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+
+                temporary = root / "build/.central-outputs.replace-with-unique-lowercase-id.json.tmp"
+                reviewed = root / "build/central-outputs.replace-with-unique-lowercase-id.json"
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(temporary.read_text(encoding="utf-8"), body)
+                self.assertFalse(reviewed.exists())
+
+    def test_capture_block_refuses_overwrite_and_promotes_only_an_object(self) -> None:
+        block = terraform_capture_block()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            binary = root / "bin"
+            binary.mkdir()
+            terraform = binary / "terraform"
+            terraform.write_text('#!/bin/sh\nprintf "%s" "$TF_STUB_BODY"\n', encoding="utf-8")
+            terraform.chmod(0o755)
+            environment = {
+                **os.environ,
+                "PATH": f"{binary}{os.pathsep}{os.environ['PATH']}",
+                "TF_STUB_BODY": '{"value": {"value": "ok"}}',
+            }
+
+            result = subprocess.run(
+                ["bash", "-c", block],
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            temporary = root / "build/.central-outputs.replace-with-unique-lowercase-id.json.tmp"
+            reviewed = root / "build/central-outputs.replace-with-unique-lowercase-id.json"
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(temporary.exists())
+            self.assertEqual(reviewed.read_text(encoding="utf-8"), environment["TF_STUB_BODY"])
+            self.assertEqual(reviewed.stat().st_mode & 0o777, 0o600)
+
+            result = subprocess.run(
+                ["bash", "-c", block],
+                cwd=root,
+                env={**environment, "TF_STUB_BODY": '{"replacement": true}'},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertNotEqual(result.returncode, 0)
+            self.assertEqual(reviewed.read_text(encoding="utf-8"), environment["TF_STUB_BODY"])
+            self.assertFalse(temporary.exists())
+
     def test_runbook_changes_allowed_feed_hosts_only_between_trigger_disable_and_enable(self) -> None:
         runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
         section = runbook.split("### Allowed feed host changes\n", 1)[1].split("\n## ", 1)[0]
         section = " ".join(section.split())
-        disabled = "changes only `delivery_triggers_enabled` to `false`"
+        disabled = "sets both `delivery_triggers_enabled` and `reconciler_trigger_enabled` to `false`"
         target_allowlist = "apply the target deployment plan"
         promotion = "python3 scripts/publish_release.py apply"
         equality_readback = "compare it with the deployed watcher environment"
-        enabled = "changes only `delivery_triggers_enabled` to `true`"
+        enabled = "restores `delivery_triggers_enabled` and `reconciler_trigger_enabled`"
 
         for required in (
             "`APPROVED_FEED_HOSTS_JSON`",
             "An addition includes at least one reviewed feed on the new host.",
             "A removal removes every configured feed on that host.",
-            "every delivery trigger disabled",
+            "all four runtime triggers disabled",
+            "Existing queued or actionable work can therefore breach queue-age or outbox-age alarms",
             "Rollback uses the same sequence",
         ):
             self.assertIn(required, section)

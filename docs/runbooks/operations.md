@@ -248,22 +248,41 @@ not delivery requests. Never redrive it into the delivery FIFO queue.
 ## Terraform output capture and recovery
 
 Every operator command that consumes Terraform outputs uses a fresh restricted
-capture. Give each capture a unique identifier, keep its temporary and reviewed
-paths outside Git, and require both paths to be absent before starting:
+capture. Run this block in a fresh Bash shell after initializing the selected
+Terraform root. Replace the three quoted values before running it. Give each
+capture a unique identifier, keep its temporary and reviewed paths outside Git,
+and require both paths to be absent before starting. The shell exits on the
+first failed precondition, Terraform command, object check, or move:
 
 ```bash
-install -d -m 700 build/terraform-output-failures
-test ! -e build/.central-outputs.<capture-id>.json.tmp
-test ! -e build/central-outputs.<capture-id>.json
+set -euo pipefail
+TF_ROOT="infra/central"
+CAPTURE_NAME="central-outputs"
+CAPTURE_ID="replace-with-unique-lowercase-id"
+CAPTURE_DIR="build"
+FAILURE_DIR="${CAPTURE_DIR}/terraform-output-failures"
+CAPTURE_TMP="${CAPTURE_DIR}/.${CAPTURE_NAME}.${CAPTURE_ID}.json.tmp"
+CAPTURE_PATH="${CAPTURE_DIR}/${CAPTURE_NAME}.${CAPTURE_ID}.json"
+
+install -d -m 700 "$FAILURE_DIR"
+test ! -e "$CAPTURE_TMP"
+test ! -e "$CAPTURE_PATH"
 umask 077
-terraform -chdir=infra/central output -json > build/.central-outputs.<capture-id>.json.tmp
-python3 -m json.tool build/.central-outputs.<capture-id>.json.tmp > /dev/null
-mv build/.central-outputs.<capture-id>.json.tmp build/central-outputs.<capture-id>.json
+terraform -chdir="$TF_ROOT" output -json > "$CAPTURE_TMP"
+python3 -c 'import json, pathlib, sys; value = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")); raise SystemExit(0 if isinstance(value, dict) else "Terraform output must be a JSON object")' "$CAPTURE_TMP"
+mv -n "$CAPTURE_TMP" "$CAPTURE_PATH"
+test ! -e "$CAPTURE_TMP"
+test -f "$CAPTURE_PATH"
 ```
 
-Confirm the parsed value is a JSON object before the move. The consuming preview
-performs its own shape and identity checks. Keep the reviewed capture unchanged
-until every plan that binds its path and SHA-256 is complete or abandoned.
+The object check rejects valid non-object JSON as well as malformed or empty
+output. `mv -n` cannot overwrite a path that appears after the preconditions;
+the following tests turn its otherwise-successful no-op into a failure. The
+consuming preview performs its own shape and identity checks. Keep the reviewed
+capture unchanged until every plan that binds its path and SHA-256 is complete
+or abandoned. Use the resulting `CAPTURE_PATH` in every preview and apply that
+belongs to this capture. Run those consuming command blocks in this same Bash
+shell so `CAPTURE_PATH` remains set.
 
 If the `terraform output` command exits nonzero, stop before JSON validation or
 the move. The temporary is failure evidence even when it is empty or malformed.
@@ -274,9 +293,11 @@ output, or retry into the same path.
 The repository owner reviews that record. When the owner releases the capture
 path for another attempt, move the temporary without changing its bytes to a
 new collision-free name under `build/terraform-output-failures/`. Recompute its
-SHA-256 after the move and require the digest to match the recorded value. A
-failed or ambiguous move leaves the capture blocked. Retry with a new capture
-identifier only after the preserved file and matching digest are proved.
+SHA-256 after the move and require the digest to match the recorded value. This
+detects a change between the initial evidence record and preservation; it is not
+a claim that a same-filesystem rename can change bytes. A failed or ambiguous
+move leaves the capture blocked. Retry with a new capture identifier only after
+the preserved file and matching digest are proved.
 
 This manual gate is deliberate. Automatic cleanup cannot decide whether a
 partial provider response still matters to the failed operation.
@@ -290,14 +311,13 @@ separately reviewed version-4 policy whose environment policies must cover the
 deployment environments exactly. Keep the generated inventory, canonical
 plan, plan digest, and bounded command output with the change record.
 
-1. From a clean checkout, follow the Terraform output capture procedure above.
-   Use its unique reviewed path throughout preview and apply:
+1. From a clean checkout, initialize the central root. Stop on a nonzero exit.
+   Then follow the Terraform output capture procedure above with
+   `TF_ROOT="infra/central"` and `CAPTURE_NAME="central-outputs"`. Use its
+   resulting `CAPTURE_PATH` throughout preview and apply:
 
    ```bash
    terraform -chdir=infra/central init -input=false
-   terraform -chdir=infra/central output -json > build/.central-outputs.<capture-id>.json.tmp
-   python3 -m json.tool build/.central-outputs.<capture-id>.json.tmp > /dev/null
-   mv build/.central-outputs.<capture-id>.json.tmp build/central-outputs.<capture-id>.json
    ```
 
    `tests/fixtures/terraform-output.dev.json` is non-secret test data for the
@@ -314,7 +334,7 @@ plan, plan digest, and bounded command output with the change record.
    python3 scripts/publish_release.py preview \
      --deployment infra/central/deployment.yaml \
      --config config/dev.yaml \
-     --terraform-output build/central-outputs.<capture-id>.json \
+     --terraform-output "$CAPTURE_PATH" \
      --inventory build/inventory.json \
      --plan build/config-release-plan.json \
      --application-version sha256:<64-lowercase-hex> \
@@ -351,6 +371,11 @@ plan, plan digest, and bounded command output with the change record.
    declaring the release usable. These results can leave matching immutable
    release objects in place; a later fresh plan adopts their exact versions.
 
+The command defines the operator path and has injected-store plus moto coverage.
+Running it against the dev bucket is a live AWS operation and requires separate
+deployment authority. Its local tests do not prove an applied release, Lambda
+execution, public-feed processing, or Slack delivery.
+
 ### Allowed feed host changes
 
 The deployment `allowed_feed_hosts` set must equal the host set derived from the
@@ -360,11 +385,14 @@ refuses a release when those sets differ.
 
 Use this order for a host addition or removal:
 
-1. Record the current active pointer, watcher package pair, Terraform state
-   VersionId, deployment bytes, configuration bytes, and equal host sets.
+1. Record the current active pointer, all four runtime package pairs and trigger
+   states, Terraform state VersionId, deployment bytes, configuration bytes,
+   equal host sets, actionable delivery counts, and all three queue counts.
 2. Review and apply a Terraform plan with the current deployment and package
-   inputs that changes only `delivery_triggers_enabled` to `false`. Read back the
-   disabled watcher rule, dispatcher rule, and worker event-source mapping.
+   inputs that sets both `delivery_triggers_enabled` and
+   `reconciler_trigger_enabled` to `false` while changing no other input. Read
+   back the disabled watcher rule, dispatcher rule, worker event-source mapping,
+   and reconciler rule.
 3. Edit the target deployment allowlist and target configuration together. An
    addition includes at least one reviewed feed on the new host. A removal
    removes every configured feed on that host. Run the local bundle validation.
@@ -373,26 +401,35 @@ Use this order for a host addition or removal:
    `APPROVED_FEED_HOSTS_JSON` contains the exact target set. The active release
    still names the old set during this bounded pause, so keep the watcher rule
    disabled.
-5. Capture fresh central outputs. Run `python3 scripts/publish_release.py
-   preview` with the target deployment and configuration, review its canonical
-   plan, then run `python3 scripts/publish_release.py apply` with the exact plan
-   digest. Preserve the promotion and compatibility-probe result.
+5. Follow the Terraform output capture procedure with a new `CAPTURE_ID`. Run
+   `python3 scripts/publish_release.py preview` with `--terraform-output
+   "$CAPTURE_PATH"`, the target deployment, and the target configuration.
+   Review its canonical plan, then run `python3 scripts/publish_release.py apply`
+   with the exact plan digest. Preserve the promotion and compatibility-probe
+   result.
 6. Read the active pointer and its exact configuration version, derive the feed
    host set again, and compare it with the deployed watcher environment. A
    mismatch, failed read, incomplete promotion, or changed package pair leaves
-   every delivery trigger disabled.
-7. Review and apply a final Terraform plan that changes only
-   `delivery_triggers_enabled` to `true`. Read back all three trigger states and
-   the runtime alarm set before treating the host change as active.
+   all four runtime triggers disabled.
+7. Review and apply a final Terraform plan that restores
+   `delivery_triggers_enabled` and `reconciler_trigger_enabled` to their recorded
+   states while changing no other input. Read back the watcher rule, dispatcher
+   rule, worker event-source mapping, reconciler rule, and runtime alarm set. The
+   host change is active only when the delivery triggers are enabled; otherwise
+   it remains staged.
+
+While both trigger inputs are false, Terraform removes the conditional watcher
+error, incomplete-run, fault, and heartbeat alarms, the dispatcher error and
+heartbeat alarms, and the reconciler heartbeat alarm. Queue, outbox-backlog,
+DLQ, runtime-failure, worker-error, reconciler-error, and delivery-outcome alarms
+remain. Existing queued or actionable work can therefore breach queue-age or
+outbox-age alarms during the pause even though no runtime adds work. Drain that
+work before step 2 when the change window permits; otherwise record the expected
+alarm exposure and do not describe it as a quiet pause.
 
 Rollback uses the same sequence with the prior reviewed deployment and release
 inputs. Preserve the failed target release as immutable evidence; promotion of
 the prior policy writes a new active-pointer version.
-
-The command defines the operator path and has injected-store plus moto coverage.
-Running it against the dev bucket is a live AWS operation and requires separate
-deployment authority. Its local tests do not prove an applied release, Lambda
-execution, public-feed processing, or Slack delivery.
 
 ## Configuration release retirement
 
@@ -458,13 +495,13 @@ retirement and does not claim that 400 days have elapsed in a deployment.
 3. Run `python3 scripts/build_lambda_package.py --output build/slack-worker.zip`. Keep the reported `sha256:<digest>` with the change record. Build twice with the same Python and pip toolchain when runtime source, production dependencies or their lock, packaged schemas or assets, or package-builder inputs changed. Compare the exact bytes or SHA-256 digests. Documentation, site, test-only, and Terraform-only changes do not trigger this double build by themselves. A mismatch is a packaging change and must be reviewed as such.
 4. Publish with `python3 scripts/publish_lambda_artifact.py --bucket <config-bucket> --prefix <top-prefix>/application-artifacts --package build/slack-worker.zip`. Publication uses `If-None-Match: *`; an existing matching digest is adopted, and existing bytes are never replaced.
 5. Apply `infra/central` with the worker, watcher, and dispatcher digest and VersionId pairs from the publisher and `delivery_triggers_enabled=false`. Terraform refuses the watcher or dispatcher unless each pair exactly equals the worker pair, derives one digest key, deploys that exact S3 version to all three functions, and injects `APPLICATION_VERSION=sha256:<digest>` where the runtime consumes it. This apply creates the watcher and dispatcher rules and the worker event-source mapping in a disabled state.
-6. Read all three Lambda configurations before activation. Confirm their identical digest and code S3 version; the watcher's 300-second timeout, concurrency one, 360-second lease, and disabled 15-minute rule; the dispatcher's 60-second timeout, concurrency one, disabled one-minute rule, two retries, 300-second event age, and exact failure-queue source policy; and the worker's 300-second timeout, disabled FIFO event-source mapping, batch size 10, `ReportBatchItemFailures`, and 1,800-second queue visibility. Create the exact disabled-runtime plan, record the printed digest, review its bounded identities, and then apply only those plan bytes:
+6. Read all three Lambda configurations before activation. Confirm their identical digest and code S3 version; the watcher's 300-second timeout, concurrency one, 360-second lease, and disabled 15-minute rule; the dispatcher's 60-second timeout, concurrency one, disabled one-minute rule, two retries, 300-second event age, and exact failure-queue source policy; and the worker's 300-second timeout, disabled FIFO event-source mapping, batch size 10, `ReportBatchItemFailures`, and 1,800-second queue visibility. Follow the Terraform output capture procedure with `TF_ROOT="infra/central"`, `CAPTURE_NAME="central-outputs"`, and a new `CAPTURE_ID`. Create the exact disabled-runtime plan, record the printed digest, review its bounded identities, and then apply only those plan bytes:
 
    ```bash
    python3 scripts/preflight_delivery.py preview \
      --deployment infra/central/deployment.yaml \
      --config config/dev.yaml \
-     --terraform-output build/central-outputs.json \
+     --terraform-output "$CAPTURE_PATH" \
      --expected-account <12-digit-account> \
      --application-digest <64-hex-package-digest> \
      --candidate-cap 10 \
@@ -508,8 +545,10 @@ Git and shell history.
    `apcf/preflight/terraform.tfstate`, deployment ID `preflight`, and config
    bucket `apcf-config-preflight-667653114001` before planning.
 2. Apply an unchanged saved plan with all artifact inputs null and every
-   trigger disabled. Capture `terraform output -json` after apply. This creates
-   only isolated mutable resources and the private credential container.
+   trigger disabled. Follow the Terraform output capture procedure with
+   `TF_ROOT="infra/preflight"`, `CAPTURE_NAME="preflight-outputs"`, and a fresh
+   `CAPTURE_ID` after apply. This creates only isolated mutable resources and the
+   private credential container.
 3. Publish the exact dev package bytes to the preflight config bucket at
    `apcf/application-artifacts/<digest>.zip`. Verify its digest metadata and
    content length and bytes against the persistent object. This copy is the
@@ -522,13 +561,13 @@ Git and shell history.
 5. Create and review a saved Terraform plan that supplies the persistent dev
    package digest and its exact persistent VersionId while
    `exercise_load_triggers_enabled=false`. Apply those unchanged bytes and
-   capture fresh outputs.
+   repeat the Terraform output capture procedure with a new `CAPTURE_ID`.
 6. Preview the recovery protocol without invoking a runtime:
 
    ```bash
    python3 scripts/preflight_runtime_exercise.py preview \
      --protocol recovery \
-     --terraform-output build/preflight-recovery-outputs.json \
+     --terraform-output "$CAPTURE_PATH" \
      --terraform-plan build/preflight-recovery.tfplan \
      --expected-account 667653114001 \
      --application-digest <64-lowercase-hex> \
@@ -628,7 +667,8 @@ readable after its expiry time.
    bounded source-state scan and can strongly read and conditionally update
    `ANNOUNCEMENT#*` and `RUN#*` keys. Confirm it has no `DeleteItem`, `PutItem`,
    delivery-table, queue, secret, S3 write, or deployment permission.
-4. Capture fresh Terraform outputs to a restricted temporary file. Pick one
+4. Follow the Terraform output capture procedure with `TF_ROOT="infra/central"`,
+   `CAPTURE_NAME="central-outputs"`, and a fresh `CAPTURE_ID`. Pick one
    second-precision UTC `migration_as_of`; it starts the fresh page-marker
    retention period and classifies announcements whose derived expiry is
    already eligible. It does not invent an announcement age.
@@ -637,7 +677,7 @@ readable after its expiry time.
    ```bash
    python3 scripts/migrate_source_state_retention.py preview \
      --deployment infra/central/deployment.yaml \
-     --terraform-output <restricted-central-outputs.json> \
+     --terraform-output "$CAPTURE_PATH" \
      --expected-account <12-digit-account> \
      --inventory-limit <reviewed-positive-bound-at-most-1000> \
      --migration-as-of <YYYY-MM-DDTHH:MM:SSZ> \
@@ -657,7 +697,7 @@ readable after its expiry time.
    ```bash
    python3 scripts/migrate_source_state_retention.py apply \
      --deployment infra/central/deployment.yaml \
-     --terraform-output <same-restricted-central-outputs.json> \
+     --terraform-output "$CAPTURE_PATH" \
      --expected-account <12-digit-account> \
      --inventory-limit <same-reviewed-bound> \
      --plan <source-state-retention-plan.json> \
@@ -685,13 +725,13 @@ readable after its expiry time.
 
 ## Manual source replay
 
-1. Name one retained raw-snapshot key, the retained active-pointer VersionId for the target release, purpose, operator, plan time, and exact expected route IDs. Capture fresh central Terraform outputs in a restricted file.
+1. Name one retained raw-snapshot key, the retained active-pointer VersionId for the target release, purpose, operator, plan time, and exact expected route IDs. Follow the Terraform output capture procedure with `TF_ROOT="infra/central"`, `CAPTURE_NAME="central-outputs"`, and a fresh `CAPTURE_ID`.
 2. Confirm the `source_replay` role ARN, configuration bucket, snapshot prefix, source-state table, delivery table, watcher application digest, and deployment parser limits. Preview first:
 
    ```bash
    python3 scripts/replay_source_snapshot.py preview \
      --deployment infra/central/deployment.yaml \
-     --terraform-output <restricted-central-outputs.json> \
+     --terraform-output "$CAPTURE_PATH" \
      --expected-account <12-digit-account> \
      --snapshot-key <exact-raw-snapshot-key> \
      --release-version-id <retained-active-pointer-version-id> \
@@ -717,14 +757,16 @@ TTL handles eligible announcement and page-marker rows separately.
    release. Confirm no watcher invocation still owns a lease or pending response
    for the feed. Record one second-precision UTC retirement decision time and a
    bounded decision identifier.
-2. Capture fresh central Terraform outputs. Confirm the permanent
-   `source_state_retirement` role ARN and active pointer identity, then preview:
+2. Follow the Terraform output capture procedure with `TF_ROOT="infra/central"`,
+   `CAPTURE_NAME="central-outputs"`, and a fresh `CAPTURE_ID`. Confirm the
+   permanent `source_state_retirement` role ARN and active pointer identity,
+   then preview:
 
    ```bash
    python3 scripts/retire_source_feed.py preview \
      --operation retire \
      --deployment infra/central/deployment.yaml \
-     --terraform-output <restricted-central-outputs.json> \
+     --terraform-output "$CAPTURE_PATH" \
      --expected-account <12-digit-account> \
      --feed-name <removed-feed-name> \
      --decision-id <reviewed-decision-id> \
