@@ -165,7 +165,6 @@ class MetricsTests(unittest.TestCase):
         )
         metrics.heartbeat()
         metrics.release_verification_failure()
-        metrics.watcher_fault()
         metrics.feed_attempt("aws-whats-new")
         metrics.feed_success("aws-whats-new", not_modified=True)
         metrics.feed_failure("aws-whats-new", "dns")
@@ -185,6 +184,14 @@ class MetricsTests(unittest.TestCase):
         metrics.incomplete_run()
         metrics.incomplete_run()
         metrics.flush()
+        fault_metrics = EmbeddedWatcherMetrics(
+            "AWSPublicChangeFeed/dev",
+            "watcher",
+            clock=lambda: NOW,
+            emit=output.append,
+        )
+        fault_metrics.watcher_fault()
+        fault_metrics.flush()
 
         expected = {
             "CandidateSizeFailures": "Count",
@@ -396,6 +403,12 @@ class HandlerTests(unittest.TestCase):
             del invocation_id, remaining_time_ms, metrics
             raise ValueError("https://evil.example/private-source")
 
+    class ReserveThenFaultRunner:
+        def run(self, *, invocation_id, remaining_time_ms, metrics):
+            del invocation_id, remaining_time_ms
+            metrics.incomplete_run()
+            raise ValueError("claimed work failed after the remaining-time stop")
+
     class IncompleteRunner:
         def run(self, *, invocation_id, remaining_time_ms, metrics):
             del invocation_id, remaining_time_ms, metrics
@@ -524,6 +537,16 @@ class HandlerTests(unittest.TestCase):
         self.assertNotIn("IncompleteRuns", rendered)
         self.assertNotIn("evil.example", rendered)
         self.assertNotIn("evil.example", str(caught.exception))
+
+    def test_claimed_work_fault_replaces_the_provisional_incomplete_classification(self):
+        runtime_module._runtime = self.ReserveThenFaultRunner()
+        output = io.StringIO()
+        with patch.dict(os.environ, self.environment(), clear=True), contextlib.redirect_stdout(output):
+            with self.assertRaisesRegex(RuntimeError, "watcher invocation failed"):
+                lambda_handler(self.event(), self.Context())
+        rendered = output.getvalue()
+        self.assertIn("WatcherFaults", rendered)
+        self.assertNotIn("IncompleteRuns", rendered)
 
     def test_remaining_time_incompletion_fails_for_retry_without_a_fault_metric(self):
         runtime_module._runtime = self.IncompleteRunner()

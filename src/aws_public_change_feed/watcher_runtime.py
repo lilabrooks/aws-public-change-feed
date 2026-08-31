@@ -124,7 +124,9 @@ class EmbeddedWatcherMetrics:
         self._increment("ReleaseVerificationFailures")
 
     def watcher_fault(self) -> None:
-        self._function_increment("WatcherFaults")
+        with self._lock:
+            self._function.pop("IncompleteRuns", None)
+            self._function["WatcherFaults"] = 1
 
     def feed_attempt(self, feed_name: str) -> None:
         self._feed_increment(feed_name, "FeedAttempts")
@@ -204,11 +206,8 @@ class EmbeddedWatcherMetrics:
             self._dimensionless["MaxFeedStalenessSeconds"] = seconds
 
     def incomplete_run(self) -> None:
-        # One metrics object represents one invocation. The orchestrator records
-        # the remaining-time stop where it occurs, and the handler records the
-        # resulting classification at its boundary; both observations still
-        # describe one incomplete run.
         with self._lock:
+            self._function.pop("WatcherFaults", None)
             self._function["IncompleteRuns"] = 1
 
     def flush(self) -> None:
