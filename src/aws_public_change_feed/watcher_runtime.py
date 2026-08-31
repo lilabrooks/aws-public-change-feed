@@ -207,6 +207,9 @@ class EmbeddedWatcherMetrics:
 
     def incomplete_run(self) -> None:
         with self._lock:
+            # Keep terminal classification exclusive in either call order. The
+            # handler currently records a fault last, but the invariant belongs
+            # in the metric sink rather than in one caller's control flow.
             self._function.pop("WatcherFaults", None)
             self._function["IncompleteRuns"] = 1
 

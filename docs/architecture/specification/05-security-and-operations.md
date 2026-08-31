@@ -239,15 +239,19 @@ and Lambda context and before loading a release. It emits dimensionless
 `ReleaseVerificationFailures`, `RawSnapshotFailures`, and
 `MaxFeedStalenessSeconds`; per-feed metrics use only the bounded `FeedName`
 dimension. A remaining-time stop and exhausted bounded conditional-state retry
-emit `IncompleteRuns` with the bounded `Function` dimension and fail the
-invocation so the scheduled target can retry. They do not emit `WatcherFaults`.
-Every other exception emits function-scoped `WatcherFaults` and fails with the
-same bounded outward error. Every custom watcher alarm metric has a runtime
-producer, and the watcher heartbeat alarm exists only when the watcher runtime
-is enabled. The AWS/Lambda watcher `Errors` alarm also exists only when the
-watcher runtime is enabled. `ReleaseVerificationFailures` remains a diagnostic
-metric with no alarm notification actions; `WatcherFaults` owns paging for the
-same failing invocation.
+provisionally classify the invocation as `IncompleteRuns` with the bounded
+`Function` dimension and fail it so the scheduled target can retry. When no
+later fault occurs, they do not emit `WatcherFaults`. An unexpected exception
+after a provisional incomplete marker replaces it with function-scoped
+`WatcherFaults`, so one failed invocation emits exactly one terminal
+classification. Every other exception also emits function-scoped
+`WatcherFaults` and fails with the same bounded outward error. Every custom
+watcher alarm metric has a runtime producer, and the watcher heartbeat alarm
+exists only when the watcher runtime is enabled. The AWS/Lambda watcher
+`Errors` alarm also exists only when the watcher runtime is enabled.
+`ReleaseVerificationFailures` remains a diagnostic metric with no alarm
+notification actions; `WatcherFaults` owns paging for the same failing
+invocation.
 
 ### Delivery
 
