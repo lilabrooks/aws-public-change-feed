@@ -591,7 +591,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <p class="compact-eyebrow">Status</p>
           <div>
             <h2 class="compact-section-title">The project moves from one live Slack post to a production decision.</h2>
-            <p class="compact-section-copy">D0 and M1 are closed. M2 is open. M3 starts after M2.</p>
+            <p class="compact-section-copy">D0, M1, and M2 are closed. M3 is open.</p>
           </div>
         </div>
         <table class="site-status-table">
@@ -605,8 +605,8 @@ Recommended review action: Review supported Kubernetes versions and plan require
               <td>M1 ran the whole dev service on schedule and exercised delivery, recovery, load, and alarms. All 4 triggers were enabled, all 12 public-feed posts reached Slack, both recovery cases passed, the fixed load run created 50 records at 5 per minute, and the owner confirmed alarm-email receipt.</td>
             </tr>
             <tr>
-              <th scope="row">M2 · Open</th>
-              <td>M2 sets rules for old feed data, removed feeds, saved responses, and known recovery failures. New writes now include 730-day expiry dates, and a one-time migration updated 164 older rows. Exact-feed plans now cover retirement, post-retention tombstone compaction, and reviewed same-URL restoration; no live feed has been retired. Immutable configuration releases now have a bounded preview/apply retirement command that protects retained manifest references and operator-declared evidence, keeps at least 400 days and the newest 10 releases, rechecks state, and deletes exact versions only; no live release retirement has run. Retained-source replay now binds one saved response, one retained pointer version, explicit routes, and inspected durable state into a reviewed plan. It fills missing records, suppresses existing candidates, and cannot access feed checkpoints; no live source replay has run. Watcher failures now have one terminal classification: a bounded stop emits <code>IncompleteRuns</code>, while a later unexpected fault supersedes that provisional marker with <code>WatcherFaults</code>.</td>
+              <th scope="row">M2 · Closed</th>
+              <td>M2 set rules for old feed data, removed feeds, saved responses, and known recovery failures. New writes now include 730-day expiry dates, and a one-time migration updated 164 older rows. Exact-feed plans now cover retirement, post-retention tombstone compaction, and reviewed same-URL restoration; no live feed has been retired. Immutable configuration releases now have a bounded preview/apply retirement command that protects retained manifest references and operator-declared evidence, keeps at least 400 days and the newest 10 releases, rechecks state, and deletes exact versions only; no live release retirement has run. Retained-source replay now binds one saved response, one retained pointer version, explicit routes, and inspected durable state into a reviewed plan. It fills missing records, suppresses existing candidates, and cannot access feed checkpoints; no live source replay has run. Combined source-state reads now require an explicit feed or announcement type. Host-set promotion pauses and verifies all 4 triggers, while Terraform-output capture fails closed and preserves a failed temporary for review. Watcher failures now have one terminal classification: a bounded stop emits <code>IncompleteRuns</code>, while a later unexpected fault supersedes that provisional marker with <code>WatcherFaults</code>. The post-MVP recovery review retained <code>delivery_unknown</code> for expired Slack send leases. The controlled exercise proved the transition without another call, while the byte-send outcome of a natural timeout remains unknown.</td>
             </tr>
             <tr>
               <th scope="row">M3 · Open</th>

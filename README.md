@@ -21,7 +21,7 @@ GitHub Issues and milestones hold the current backlog state.
 | --- | --- | --- |
 | [D0: first live Slack delivery](https://github.com/lilabrooks/aws-public-change-feed/milestone/1) | Closed | Send one real public AWS announcement through the deployed dev service and record the Slack result. |
 | [M1: dev MVP](https://github.com/lilabrooks/aws-public-change-feed/milestone/2) | Closed | Run the dev service on schedule and exercise delivery, recovery, the fixed load case, and alarm notification. |
-| [M2: lifecycle and replay](https://github.com/lilabrooks/aws-public-change-feed/milestone/3) | Open | Set expiry and retirement rules for feed state and releases, add saved-response replay, and fix named recovery failures. |
+| [M2: lifecycle and replay](https://github.com/lilabrooks/aws-public-change-feed/milestone/3) | Closed | Set expiry and retirement rules for feed state and releases, add saved-response replay, and fix named recovery failures. |
 | [M3: production-readiness proof](https://github.com/lilabrooks/aws-public-change-feed/milestone/4) | Open | Choose production policy and recovery targets, prove rollback, then run the production-readiness gate. |
 
 ### D0: first live Slack delivery
@@ -45,7 +45,7 @@ M1 ran the whole dev service on schedule and exercised delivery, recovery, load,
 
 ### M2: lifecycle and replay
 
-M2 sets rules for old feed data, removed feeds, saved responses, and known recovery failures.
+M2 set rules for old feed data, removed feeds, saved responses, and known recovery failures.
 
 - The post-MVP policy review kept the current 4 feeds, matching rules, message limits, and retention periods.
 - Announcement history now expires 730 days after its latest observation. Response-page completion records get the same 730-day window. Active feed checkpoints stay until a reviewed feed-retirement operation.
@@ -53,8 +53,10 @@ M2 sets rules for old feed data, removed feeds, saved responses, and known recov
 - [L-48](https://github.com/lilabrooks/aws-public-change-feed/issues/159) adds exact-feed preview/apply plans for retirement, post-retention tombstone compaction, and reviewed same-URL restoration. The permanent operator role can read and conditionally update only the session-tagged feed key. Repository tests simulate the 730-day boundary; no live feed has been retired or restored.
 - [L-14](https://github.com/lilabrooks/aws-public-change-feed/issues/92) adds reviewed deletion of old configuration and inventory releases. It preserves the active release, at least the newest 10, and every release still needed for delivery review, replay, investigation, or rollback. Eligible releases are at least 400 days old, and deletion accepts only an unchanged reviewed plan. The command has local simulated coverage; no live release retirement has run.
 - [L-35](https://github.com/lilabrooks/aws-public-change-feed/issues/122) adds a preview-first command that replays one exact retained feed response through the runtime parser, normalizer, matcher, and candidate builder during the 30-day raw-snapshot window. Its saved plan binds the response digest, retained pointer version, durable-state fingerprint, operator, purpose, and expected routes. Apply fills missing state, suppresses existing candidates, and has no permission to read or write feed checkpoints.
-- State and package cleanup removed the unused `dynamodb:TransactWriteItems` IAM action and now tests that `__pycache__` directories and loose `.pyc` files stay out of Lambda packages. Remaining work will make each source-state load name whether it wants a feed or announcement record and document the order for changing the deployment host allowlist and configuration feed-host set.
-- Recovery fixes will replace a check against exception text with a dedicated error type, prove `IncompleteRuns` and `WatcherFaults` cannot both fire for one watcher failure, decide whether an expired Slack send lease should still become `delivery_unknown`, and define recovery after a failed Terraform-output capture leaves its temporary file behind.
+- State and package cleanup removed the unused `dynamodb:TransactWriteItems` IAM action, tests that `__pycache__` directories and loose `.pyc` files stay out of Lambda packages, and requires every combined source-state read to name either a feed or announcement record explicitly.
+- The deployment runbook now changes the infrastructure host allowlist and configuration feed-host set in one paused sequence. It reads back all 4 trigger states, records the alarm exposure that survives the pause, and restores the recorded states after the release and deployed host sets agree.
+- Terraform-output capture now stops on command, shape, or move failure; refuses to overwrite either capture path; and preserves a failed temporary as evidence until an owner-reviewed move releases the path for a new capture ID.
+- Watcher failures now receive one terminal classification: a bounded stop emits `IncompleteRuns`, while a later unexpected fault replaces that provisional marker with `WatcherFaults`. The post-MVP recovery review retained `delivery_unknown` for expired Slack send leases. The controlled exercise proved the transition without another call, while the byte-send outcome of a natural timeout remains unknown.
 
 ### M3: production-readiness proof
 

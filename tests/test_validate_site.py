@@ -238,6 +238,28 @@ class SiteValidatorTests(unittest.TestCase):
         )
         self.assertNotIn("packages accumulate until it exists", page)
 
+    def test_m2_status_matches_the_completed_milestone(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        goal = (ROOT / "docs/GOAL.md").read_text(encoding="utf-8")
+        walkthrough = (ROOT / "docs/evidence/mvp-walkthrough.md").read_text(encoding="utf-8")
+        page = (ROOT / "site/index.html").read_text(encoding="utf-8")
+
+        self.assertIn("milestone/3) | Closed |", readme)
+        self.assertIn("D0, M1, and M2 are closed. M3 is open.", page)
+        self.assertIn("M2 · Closed", page)
+        self.assertIn("76 announcement rows and 88 response-page rows", goal)
+        self.assertIn("Production readiness remains open under M3.", walkthrough)
+        for stale_claim in (
+            "Remaining work will make each source-state load",
+            "Recovery fixes will replace",
+            "M2 is open",
+            "M2 · Open",
+            "under M2 and M3",
+            "built locally but have not yet run against the table",
+        ):
+            with self.subTest(stale_claim=stale_claim):
+                self.assertNotIn(stale_claim, "\n".join((readme, goal, walkthrough, page)))
+
     def test_source_state_lifecycle_matches_the_accepted_decision(self):
         page = (ROOT / "site/index.html").read_text(encoding="utf-8")
         self.assertIn("Twenty-one accepted ADRs", page)
