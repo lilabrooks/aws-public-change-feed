@@ -172,6 +172,43 @@ seconds old, then enter a separate encrypted standard runtime-failure queue.
 That queue is distinct from the delivery FIFO DLQ and permits sends only from
 the exact schedule rule.
 
+## Revision: expired sending remains an unknown outcome
+
+- Status: Accepted
+- Date: 2026-08-31
+- Accepted: 2026-08-31
+
+The post-MVP reassessment trigger is satisfied. The isolated recovery exercise
+moved one source-built expired `sending` record to `delivery_unknown` with zero
+Slack network attempts. The found-post and unknown-replay actions now provide
+preview-first, conditional, audited operator paths for both conclusive review
+outcomes.
+
+The controlled record was created with an expired lease and no Slack attempt. It
+proves that recovery makes the conditional state transition without another
+network call. It is not a sample of a real worker failure after a write may have
+started, so it does not establish the false-unknown base rate or prove that a
+naturally expired Slack attempt sent no bytes.
+
+Three courses were considered. Automatically retrying every expired lease could
+repeat a post that Slack already accepted. Inferring safety from an absent
+response or a stored zero network-attempt count would trust evidence that a hard
+worker stop may not have persisted. Retaining `delivery_unknown` keeps the
+uncertainty explicit while using the audited operator paths to resolve it.
+
+The service therefore continues to convert an expired `sending` lease to
+`delivery_unknown` through the existing exact conditional write and never
+automatically retries that record. An operator who finds the original Slack post
+uses found-post closure. An operator who completes a conclusive search without a
+match may reserve one audited replay. An inconclusive search leaves the record
+unchanged. No stored-data migration, runtime change, or configuration release is
+required.
+
+Reopen this decision only when checked field evidence distinguishes material
+false unknowns that are safe to retry, a durable pre-network phase closes the
+crash gap without creating another one, or Slack supplies a reviewed idempotency
+or outcome-query mechanism.
+
 ## Consequences
 
 - Feed checkpoints cannot pass undurable delivery work.
