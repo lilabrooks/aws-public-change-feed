@@ -17,6 +17,7 @@ from aws_public_change_feed.announcements import NormalizedAnnouncement, Provena
 from aws_public_change_feed.source_store import (  # noqa: E402
     DynamoDBAnnouncementStateStore,
     DynamoDBFeedStateStore,
+    DynamoDBSourceStateStore,
     S3SnapshotStore,
 )
 from aws_public_change_feed.state import (  # noqa: E402
@@ -389,6 +390,35 @@ class DynamoDBAnnouncementStateTests(unittest.TestCase):
             {"N": str(int((NOW + timedelta(days=RETENTION_DAYS)).timestamp()))},
         )
         self.assertEqual(self.store.load(result.record.announcement_id), result.record)
+
+    def test_explicit_item_type_disambiguates_a_store_valid_hexadecimal_feed_name(self):
+        """The shared store must not infer kind from an identifier's text.
+
+        The configuration contract currently caps feed IDs at 63 characters,
+        while the feed-checkpoint store accepts this 64-character key. This is
+        therefore a store-boundary collision rather than a release-produced
+        fixture. Keeping the explicit kind at the exported store API also
+        protects direct callers and any future configuration-bound expansion.
+        """
+
+        result = observe(self.store, self.announcement())
+        self.assertEqual(len(result.record.announcement_id), 64)
+        feed_store = DynamoDBFeedStateStore(self.client, TABLE)
+        claimed = feed_store.claim(
+            result.record.announcement_id,
+            FEED_URL,
+            owner="invocation-a",
+            attempted_at=NOW,
+            lease_expires_at=460,
+            now=100,
+        )
+        assert claimed is not None
+        source = DynamoDBSourceStateStore(self.client, TABLE)
+
+        self.assertEqual(source.load(result.record.announcement_id, item_type="feed"), claimed)
+        self.assertEqual(source.load(result.record.announcement_id, item_type="announcement"), result.record)
+        with self.assertRaisesRegex(ValueError, "item_type must be feed or announcement"):
+            source.load(result.record.announcement_id, item_type="response_page")  # type: ignore[arg-type]
 
     def test_legacy_announcement_without_expiry_remains_readable(self):
         record = replace(observe(self.store, self.announcement()).record, expires_at=None)
