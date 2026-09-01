@@ -23,6 +23,11 @@ Delivery records use these states:
 
 Automatic retry is allowed for `failed_retryable`, and for transport failures only when the client proves that no request bytes were sent. A stale `sending` lease becomes `delivery_unknown`. Unknown outcomes require operator review. Manual replay records the operator, reason, prior attempt, and new attempt.
 
+The post-MVP reassessment recorded in ADR-007 retains this boundary. The
+controlled recovery exercise proved the expired-lease transition without a new
+Slack call, and the audited operator actions made unknown work recoverable.
+Neither result proves that a naturally expired network attempt sent no bytes.
+
 The SQS receive count and the Slack network-attempt counter are separate. Queue redelivery before a network call cannot exhaust Slack attempts. The worker stores Slack response metadata needed for diagnosis and, in bot mode, the returned message identifier when available.
 
 ## Consequences

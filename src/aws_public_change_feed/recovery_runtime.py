@@ -196,6 +196,10 @@ class _RecoveryRunner(Protocol):
     def run(self, now: datetime, metrics: RecoveryMetrics) -> RecoveryResult: ...
 
 
+class _RecoveryIncomplete(Exception):
+    """One bounded recovery pass stopped with durable work remaining."""
+
+
 def _required_environment(name: str) -> str:
     value = os.environ.get(name)
     if value is None or not value:
@@ -275,17 +279,14 @@ def lambda_handler(event: Mapping[str, Any], context: object) -> dict[str, objec
     try:
         result = _runtime.run(datetime.now(UTC), metrics)
         if result.incomplete:
-            raise RuntimeError("recovery invocation incomplete")
+            raise _RecoveryIncomplete
         return {
             "repaired": result.dispatch.accepted + result.expired_leases,
             "stale_queued": result.stale_queued,
             "conditional_races": result.conditional_races,
         }
-    except RuntimeError as error:
-        if str(error) != "recovery invocation incomplete":
-            metrics.reconciler_fault()
-            raise RuntimeError("recovery invocation failed") from None
-        raise
+    except _RecoveryIncomplete:
+        raise RuntimeError("recovery invocation incomplete") from None
     except Exception:  # noqa: BLE001 - scheduled retry is safer than hiding a recovery fault
         metrics.reconciler_fault()
         raise RuntimeError("recovery invocation failed") from None
