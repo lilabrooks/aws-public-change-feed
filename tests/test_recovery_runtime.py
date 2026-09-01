@@ -160,6 +160,7 @@ class LambdaHandlerTests(unittest.TestCase):
                 lambda_handler(EVENT, object())
 
         self.assertIn("Heartbeat", output.getvalue())
+        self.assertNotIn("ReconcilerFault", output.getvalue())
 
     def test_a_conditional_race_is_a_complete_run_not_a_retry_loop(self):
         runtime = FakeRuntime(complete_result(conditional_races=1))
@@ -187,6 +188,17 @@ class LambdaHandlerTests(unittest.TestCase):
 
         self.assertNotIn(secret_detail, str(caught.exception))
         self.assertNotIn(secret_detail, output.getvalue())
+        self.assertIn("ReconcilerFault", output.getvalue())
+
+    def test_an_adapter_cannot_claim_incompletion_by_reusing_the_old_error_text(self):
+        runtime = FakeRuntime(error=RuntimeError("recovery invocation incomplete"))
+        output = io.StringIO()
+
+        with patch.dict(os.environ, ENVIRONMENT, clear=False), redirect_stdout(output):
+            runtime_module._runtime = runtime
+            with self.assertRaisesRegex(RuntimeError, "^recovery invocation failed$"):
+                lambda_handler(EVENT, object())
+
         self.assertIn("ReconcilerFault", output.getvalue())
 
 

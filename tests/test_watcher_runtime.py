@@ -1,6 +1,7 @@
 """Watcher Lambda boundary, EMF, and moto-backed AWS composition."""
 
 import contextlib
+import copy
 import hashlib
 import io
 import json
@@ -22,14 +23,20 @@ sys.path.insert(0, str(ROOT / "src"))
 import aws_public_change_feed.watcher_runtime as runtime_module  # noqa: E402
 from aws_public_change_feed.fetching import FetchOutcome  # noqa: E402
 from aws_public_change_feed.identity import release_id  # noqa: E402
-from aws_public_change_feed.outbox import DynamoDBDeliveryStore  # noqa: E402
+from aws_public_change_feed.loading import LoadedRelease  # noqa: E402
+from aws_public_change_feed.outbox import DynamoDBDeliveryStore, InMemoryOutboxStore  # noqa: E402
 from aws_public_change_feed.releases import S3ObjectStore  # noqa: E402
 from aws_public_change_feed.source_store import (  # noqa: E402
     DynamoDBAnnouncementStateStore,
     DynamoDBFeedStateStore,
     S3SnapshotStore,
 )
-from aws_public_change_feed.state import ConditionalStateConflict  # noqa: E402
+from aws_public_change_feed.state import (  # noqa: E402
+    ConditionalStateConflict,
+    InMemoryAnnouncementStateStore,
+    InMemoryFeedStateStore,
+    InMemorySnapshotStore,
+)
 from aws_public_change_feed.watcher import (  # noqa: E402
     FeedRunOutcome,
     NullWatcherMetrics,
@@ -104,6 +111,12 @@ class FixedClock:
         return NOW if self.calls == 1 else NOW.replace(hour=17, minute=0)
 
 
+class MissingDeliveryStore(InMemoryOutboxStore):
+    def get_delivery(self, candidate):
+        del candidate
+        return None
+
+
 class CountingMetrics(NullWatcherMetrics):
     def __init__(self):
         self.release_failures = 0
@@ -126,6 +139,22 @@ class MetricsTests(unittest.TestCase):
         rendered = json.dumps([json.loads(line) for line in output], sort_keys=True)
         self.assertIn("ReleaseVerificationFailures", rendered)
         self.assertNotIn("MaxFeedStalenessSeconds", rendered)
+
+    def test_later_incomplete_classification_replaces_a_watcher_fault(self):
+        output: list[str] = []
+        metrics = EmbeddedWatcherMetrics(
+            "AWSPublicChangeFeed/dev",
+            "watcher",
+            clock=lambda: NOW,
+            emit=output.append,
+        )
+        metrics.watcher_fault()
+        metrics.incomplete_run()
+        metrics.flush()
+
+        rendered = json.dumps([json.loads(line) for line in output], sort_keys=True)
+        self.assertIn("IncompleteRuns", rendered)
+        self.assertNotIn("WatcherFaults", rendered)
 
     def test_alarm_inputs_and_bounded_dimensions_are_emitted(self):
         output: list[str] = []
@@ -165,7 +194,6 @@ class MetricsTests(unittest.TestCase):
         )
         metrics.heartbeat()
         metrics.release_verification_failure()
-        metrics.watcher_fault()
         metrics.feed_attempt("aws-whats-new")
         metrics.feed_success("aws-whats-new", not_modified=True)
         metrics.feed_failure("aws-whats-new", "dns")
@@ -185,6 +213,14 @@ class MetricsTests(unittest.TestCase):
         metrics.incomplete_run()
         metrics.incomplete_run()
         metrics.flush()
+        fault_metrics = EmbeddedWatcherMetrics(
+            "AWSPublicChangeFeed/dev",
+            "watcher",
+            clock=lambda: NOW,
+            emit=output.append,
+        )
+        fault_metrics.watcher_fault()
+        fault_metrics.flush()
 
         expected = {
             "CandidateSizeFailures": "Count",
@@ -396,6 +432,52 @@ class HandlerTests(unittest.TestCase):
             del invocation_id, remaining_time_ms, metrics
             raise ValueError("https://evil.example/private-source")
 
+    class RealReserveThenFaultRunner:
+        def __init__(self):
+            expected = load_json("alert-candidate.json")
+            config = load_config()
+            first_feed = copy.deepcopy(config["feeds"][0])
+            second_feed = {**copy.deepcopy(first_feed), "name": "second-feed"}
+            config["feeds"] = [first_feed, second_feed]
+            self.release = LoadedRelease(
+                release_id=expected["release"]["release_id"],
+                config=config,
+                inventory=load_json("inventory.json"),
+                reference=expected["release"],
+            )
+            self.feed_state = InMemoryFeedStateStore()
+            self.orchestrator = WatcherOrchestrator(
+                feed_state=self.feed_state,
+                announcement_state=InMemoryAnnouncementStateStore(),
+                snapshots=InMemorySnapshotStore(),
+                outbox=MissingDeliveryStore(),
+                fetcher=StubFetcher(),
+                approved_hosts=("aws.amazon.com",),
+                application_version=expected["release"]["application_version"],
+                max_items=200,
+                max_item_characters=50_000,
+                max_concurrent_fetches=5,
+                clock=FixedClock(),
+            )
+
+        def run(self, *, invocation_id, remaining_time_ms, metrics):
+            return self.orchestrator.run(
+                self.release,
+                invocation_id=invocation_id,
+                remaining_time_ms=remaining_time_ms,
+                metrics=metrics,
+            )
+
+    class ReserveContext:
+        aws_request_id = "request-1"
+
+        def __init__(self):
+            self.calls = 0
+
+        def get_remaining_time_in_millis(self):
+            self.calls += 1
+            return 300_000 if self.calls == 1 else 0
+
     class IncompleteRunner:
         def run(self, *, invocation_id, remaining_time_ms, metrics):
             del invocation_id, remaining_time_ms, metrics
@@ -524,6 +606,21 @@ class HandlerTests(unittest.TestCase):
         self.assertNotIn("IncompleteRuns", rendered)
         self.assertNotIn("evil.example", rendered)
         self.assertNotIn("evil.example", str(caught.exception))
+
+    def test_claimed_work_fault_replaces_the_provisional_incomplete_classification(self):
+        runner = self.RealReserveThenFaultRunner()
+        context = self.ReserveContext()
+        runtime_module._runtime = runner
+        output = io.StringIO()
+        with patch.dict(os.environ, self.environment(), clear=True), contextlib.redirect_stdout(output):
+            with self.assertRaisesRegex(RuntimeError, "watcher invocation failed"):
+                lambda_handler(self.event(), context)
+        rendered = output.getvalue()
+        self.assertEqual(context.calls, 2)
+        self.assertIsNotNone(runner.feed_state.load(runner.release.config["feeds"][0]["name"]))
+        self.assertIsNone(runner.feed_state.load("second-feed"))
+        self.assertIn("WatcherFaults", rendered)
+        self.assertNotIn("IncompleteRuns", rendered)
 
     def test_remaining_time_incompletion_fails_for_retry_without_a_fault_metric(self):
         runtime_module._runtime = self.IncompleteRunner()

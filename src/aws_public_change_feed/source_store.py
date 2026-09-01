@@ -8,7 +8,7 @@ from collections.abc import Iterable, Mapping
 from dataclasses import asdict, fields, replace
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Any
+from typing import Any, Literal
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 
@@ -217,12 +217,17 @@ class DynamoDBSourceStateStore:
         item = response.get("Item")
         return item if isinstance(item, Mapping) else None
 
-    def load(self, key: str) -> FeedCheckpoint | AnnouncementRecord | None:
-        if re.fullmatch(r"[0-9a-f]{64}", key):
-            item = self._get(f"ANNOUNCEMENT#{key}", _ANNOUNCEMENT_SK)
-            return None if item is None else _announcement_from_item(item)
-        item = self._get(f"FEED#{key}", _FEED_SK)
-        return None if item is None else _feed_from_item(item)
+    def load(
+        self,
+        key: str,
+        *,
+        item_type: Literal["feed", "announcement"],
+    ) -> FeedCheckpoint | AnnouncementRecord | None:
+        if item_type == "feed":
+            return self.load_feed(key)
+        if item_type == "announcement":
+            return self.load_announcement(key)
+        raise ValueError("item_type must be feed or announcement")
 
     def load_feed(self, feed_name: str) -> FeedCheckpoint | None:
         item = self._get(f"FEED#{feed_name}", _FEED_SK)
