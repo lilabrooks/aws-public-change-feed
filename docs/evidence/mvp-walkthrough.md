@@ -19,7 +19,7 @@ The site plays a 720p web copy and the GitHub Release carries the 1080p source. 
 
 The walkthrough summarizes results already recorded by the repository. It does not replace the contracts, accepted ADRs, tests, or production-readiness gate.
 
-The [README project status](../../README.md#project-status) records the M1 result: 4 enabled runtime triggers, 12 public-feed Slack posts, 2 passed recovery cases, a fixed 50-message run at 5 messages per minute, and confirmed alarm-email receipt. [ADR-024](../adr/024-isolated-live-runtime-exercises.md) defines the isolated recovery and load boundary. Production readiness remains open under M2 and M3.
+The [README project status](../../README.md#project-status) records the M1 result: 4 enabled runtime triggers, 12 public-feed Slack posts, 2 passed recovery cases, a fixed 50-message run at 5 messages per minute, and confirmed alarm-email receipt. [ADR-024](../adr/024-isolated-live-runtime-exercises.md) defines the isolated recovery and load boundary. Production readiness remains open under M3.
 
 The corpus slide records the committed 47-item evaluation set: 32 historical announcements, 15 synthetic cases, and 29 expected positive service and risk pairs. The recorded evaluation produced 1.000 precision and 1.000 recall against global promotion floors of 0.950 and 0.800. Four of the 10 reported service and risk pairs still have only 1 or 2 positive examples, so those pairs need more labeled examples before their measured precision and recall are well supported.
 
