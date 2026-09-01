@@ -2,8 +2,8 @@
 # installs with --no-deps, so an unpinned transitive release cannot change the
 # deployable bytes while this file stays unchanged.
 attrs==26.1.0
-boto3==1.43.65
-botocore==1.43.67
+boto3==1.43.83
+botocore==1.43.83
 jmespath==1.1.0
 jsonschema==4.26.0
 jsonschema-specifications==2025.9.1

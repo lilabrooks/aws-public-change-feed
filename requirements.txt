@@ -12,7 +12,7 @@
 # `boto3.client` on its own. `boto3` is pinned rather than `botocore` because
 # every caller constructing that client needs it and boto3 pins a compatible
 # botocore in turn.
-boto3==1.43.65
+boto3==1.43.83
 #
 # The release loader parses `config.yaml` at runtime, so PyYAML joins it. The
 # audit that added the boto3 pin found that entry missing because the adapter
