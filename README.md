@@ -62,7 +62,7 @@ M2 set rules for old feed data, removed feeds, saved responses, and known recove
 
 M3 decides whether the current service and deployment are ready for production.
 
-- [L-40](https://github.com/lilabrooks/aws-public-change-feed/issues/145) will choose the production feed and matching policy, review evidence for every enabled service and risk-type pair, and record thin sample sizes without inventing unsupported thresholds.
+- [L-40](https://github.com/lilabrooks/aws-public-change-feed/issues/145) selected the current 4-feed, 3-service, 4-risk-rule policy unchanged for production preflight. Its [evidence record](docs/evidence/production-policy.md) retains all 12 service and risk-type pairs, including 6 with no historical positive, and keeps the global thresholds without inventing pair-specific floors.
 - [L-41](https://github.com/lilabrooks/aws-public-change-feed/issues/146) will set recovery time and data-loss limits for both DynamoDB tables. It will either prove a restore into new tables or record the accepted loss boundary and rebuild procedure.
 - [L-42](https://github.com/lilabrooks/aws-public-change-feed/issues/147) will run a read-only shadow evaluation, roll configuration back and forward, roll the application package back and forward, and prove that historical replay references still resolve.
 - [L-43](https://github.com/lilabrooks/aws-public-change-feed/issues/148) will map every M2 change to the M1 evidence it could affect. It will reuse evidence only for unchanged mechanisms, rerun affected or missing checks, and record the result as passed, failed, or incomplete.
@@ -159,6 +159,7 @@ The corpus evaluator and feed screener accept `--root` and `--config`. Relative 
 - [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
 - [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
 - [Dev MVP walkthrough](docs/evidence/mvp-walkthrough.md): narrated video, slides, captions, transcript, recorded results, and artifact hashes.
+- [Production policy evidence](docs/evidence/production-policy.md): exact policy inputs, corpus results, pair-level sample limits, and revisit conditions.
 
 Changes to product scope, trust boundaries, identity, state ownership, delivery guarantees, or version policy require an ADR. Run `make check` before opening a pull request.
 

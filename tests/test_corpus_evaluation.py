@@ -41,6 +41,7 @@ from aws_public_change_feed.normalize import normalize_text  # noqa: E402
 
 CORPUS_PATH = ROOT / "corpus/announcements.json"
 THRESHOLDS_PATH = ROOT / "corpus/thresholds.json"
+PRODUCTION_POLICY_EVIDENCE_PATH = ROOT / "docs/evidence/production-policy.md"
 
 
 BASE_ITEM = CorpusItem(
@@ -172,6 +173,51 @@ class CommittedCorpusTests(unittest.TestCase):
         thresholds = load_thresholds(THRESHOLDS_PATH)
         self.assertEqual(thresholds.global_threshold.min_precision, 0.95)
         self.assertEqual(thresholds.global_threshold.min_recall, 0.80)
+
+    def test_production_policy_record_matches_its_exact_inputs_and_pair_evidence(self):
+        evidence = PRODUCTION_POLICY_EVIDENCE_PATH.read_text(encoding="utf-8")
+        input_paths = (harness.DEFAULT_CONFIG_PATH, harness.CORPUS_PATH, harness.THRESHOLDS_PATH)
+        for relative_path in input_paths:
+            digest = hashlib.sha256((ROOT / relative_path).read_bytes()).hexdigest()
+            self.assertIn(f"| `{relative_path}` | `{digest}` |", evidence)
+
+        with (ROOT / harness.DEFAULT_CONFIG_PATH).open(encoding="utf-8") as handle:
+            configuration = yaml.safe_load(handle)
+        items = load_corpus(CORPUS_PATH)
+        services = load_services(configuration)
+        rules = load_risk_rules(configuration)
+        report = evaluate_corpus(items, services, rules, load_thresholds(THRESHOLDS_PATH))
+        scores = {outcome.pair: outcome.score for outcome in report.pairs}
+        configured_pairs = sorted((service.id, rule.risk_type) for service in services for rule in rules)
+
+        historical_counts = {pair: 0 for pair in configured_pairs}
+        synthetic_counts = {pair: 0 for pair in configured_pairs}
+        for entry in items:
+            counts = historical_counts if entry.provenance == "historical" else synthetic_counts
+            for pair in entry.expected_pairs:
+                counts[pair] += 1
+
+        def rate(value):
+            return "undefined" if value is None else f"{value:.3f}"
+
+        lines = [
+            "<!-- production-policy-pairs:start -->",
+            "| Service and risk type | Historical positives | Synthetic positives | Precision | Recall |",
+            "| --- | ---: | ---: | ---: | ---: |",
+        ]
+        for pair in configured_pairs:
+            score = scores.get(pair, Score())
+            lines.append(
+                f"| `{pair[0]}/{pair[1]}` | {historical_counts[pair]} | {synthetic_counts[pair]} | "
+                f"{rate(score.precision)} | {rate(score.recall)} |"
+            )
+        lines.append("<!-- production-policy-pairs:end -->")
+
+        self.assertEqual(len(configured_pairs), 12)
+        self.assertIn("\n".join(lines), evidence)
+        self.assertIn(
+            "The selected disposition for every configured service and risk-type pair is\n**retain**.", evidence
+        )
 
     def test_item_ids_are_unique(self):
         self.assertEqual(harness.duplicate_ids(CORPUS_PATH), [])
