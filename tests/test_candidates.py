@@ -23,8 +23,10 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from aws_public_change_feed.announcements import (  # noqa: E402
+    MAX_SUMMARY_CHARACTERS,
     NormalizedAnnouncement,
     Provenance,
+    sanitize,
 )
 from aws_public_change_feed.candidates import (  # noqa: E402
     build_candidate,
@@ -32,6 +34,7 @@ from aws_public_change_feed.candidates import (  # noqa: E402
     explainability_reason,
     utc_timestamp,
 )
+from aws_public_change_feed.dispatch import validate_alert_candidate  # noqa: E402
 from aws_public_change_feed.matching import (  # noqa: E402
     Announcement,
     load_risk_rules,
@@ -39,6 +42,7 @@ from aws_public_change_feed.matching import (  # noqa: E402
     match_announcement,
 )
 from aws_public_change_feed.profiles import route_audiences  # noqa: E402
+from aws_public_change_feed.semantics import validate_candidate_against_release  # noqa: E402
 
 
 def load_json(name):
@@ -149,11 +153,11 @@ class RouteAudienceTests(FixtureBase):
 class BuildCandidateTests(FixtureBase):
     """The committed candidate, rebuilt from the release that determines it."""
 
-    def build(self):
+    def build(self, *, summary=None):
         announcement = NormalizedAnnouncement(
             canonical_url=self.source["url"],
             title=self.source["title"],
-            summary=self.source["summary"],
+            summary=self.source["summary"] if summary is None else summary,
             observed_at=parse_timestamp(self.source["observed_at"]),
             published_at=parse_timestamp(self.source["published_at"]),
             provenance=tuple(
@@ -200,6 +204,14 @@ class BuildCandidateTests(FixtureBase):
 
         self.assertEqual(self.candidate["release"]["application_version"], original)
         self.assertEqual(built["release"]["application_version"], replacement)
+
+    def test_truncated_summary_satisfies_candidate_contract(self):
+        summary = sanitize("x" * (MAX_SUMMARY_CHARACTERS + 1), MAX_SUMMARY_CHARACTERS)
+        built = self.build(summary=summary)
+
+        self.assertEqual(len(built["announcement"]["summary"]), MAX_SUMMARY_CHARACTERS)
+        validate_alert_candidate(built)
+        validate_candidate_against_release(self.config, self.inventory, built)
 
     def test_absent_publication_time_omits_the_key(self):
         announcement = NormalizedAnnouncement(
