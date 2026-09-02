@@ -85,7 +85,7 @@ def sanitize(raw: str, limit: int) -> str:
     # rather than returning tags that arrived as &lt;script&gt;.
     text = normalize_text(_TAG.sub(" ", text))
     if len(text) > limit:
-        head = text[:limit].rstrip()
+        head = text[: limit - len(TRUNCATION_MARKER)].rstrip()
         text = f"{head}{TRUNCATION_MARKER}"
     return text
 

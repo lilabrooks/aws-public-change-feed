@@ -410,7 +410,7 @@ class NormalizationTests(unittest.TestCase):
     def test_truncation_carries_an_explicit_marker(self):
         text = sanitize("x" * (MAX_SUMMARY_CHARACTERS + 50), MAX_SUMMARY_CHARACTERS)
         self.assertTrue(text.endswith("…"))
-        self.assertLessEqual(len(text), MAX_SUMMARY_CHARACTERS + 1)
+        self.assertEqual(len(text), MAX_SUMMARY_CHARACTERS)
 
     def test_publication_time_formats(self):
         self.assertIsNotNone(parse_published("Tue, 01 Jul 2026 10:00:00 GMT"))
