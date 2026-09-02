@@ -260,6 +260,19 @@ class SiteValidatorTests(unittest.TestCase):
             with self.subTest(stale_claim=stale_claim):
                 self.assertNotIn(stale_claim, "\n".join((readme, goal, walkthrough, page)))
 
+    def test_m3_policy_decision_matches_the_evidence_record(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        goal = (ROOT / "docs/GOAL.md").read_text(encoding="utf-8")
+        evidence = (ROOT / "docs/evidence/production-policy.md").read_text(encoding="utf-8")
+        page = (ROOT / "site/index.html").read_text(encoding="utf-8")
+
+        self.assertIn("selected the current 4-feed, 3-service, 4-risk-rule policy unchanged", readme)
+        self.assertIn("selected the current 4-feed, 3-service, 4-risk-rule policy unchanged", goal)
+        self.assertIn("Owner decision: Accepted on 2026-09-01.", evidence)
+        self.assertIn("6 of 12 service and risk-type pairs carrying no historical positive", page)
+        self.assertNotIn("will choose the production feed and matching policy", readme)
+        self.assertNotIn("It will choose the production feed and matching policy", page)
+
     def test_source_state_lifecycle_matches_the_accepted_decision(self):
         page = (ROOT / "site/index.html").read_text(encoding="utf-8")
         self.assertIn("Twenty-one accepted ADRs", page)
