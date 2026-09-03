@@ -18,6 +18,13 @@ resource "aws_s3_bucket" "config" {
       condition     = !var.preflight_mode || local.deployment_id == "preflight"
       error_message = "preflight_mode requires deployment_id preflight."
     }
+
+    precondition {
+      condition = !var.watcher_execution_paused || (
+        local.watcher_runtime_enabled && !local.watcher_trigger_enabled
+      )
+      error_message = "watcher_execution_paused requires a deployed watcher with its trigger disabled."
+    }
   }
 }
 

@@ -113,6 +113,8 @@ class LambdaPackageTests(unittest.TestCase):
             self.assertIn("aws_public_change_feed/worker.py", names)
             self.assertIn("aws_public_change_feed/watcher.py", names)
             self.assertIn("aws_public_change_feed/watcher_runtime.py", names)
+            self.assertIn("aws_public_change_feed/shadow_runtime.py", names)
+            self.assertIn("aws_public_change_feed/runtime_environment.py", names)
             self.assertIn("aws_public_change_feed/source_store.py", names)
             for schema in (
                 "active-versions.schema.json",

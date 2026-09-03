@@ -4,6 +4,12 @@ resource "aws_cloudwatch_log_group" "watcher" {
   tags              = local.tags
 }
 
+resource "aws_cloudwatch_log_group" "shadow" {
+  name              = "/aws/lambda/${local.function_names.shadow}"
+  retention_in_days = local.log_retention_days
+  tags              = local.tags
+}
+
 resource "aws_cloudwatch_log_group" "dispatcher" {
   name              = "/aws/lambda/${local.function_names.dispatcher}"
   retention_in_days = local.log_retention_days

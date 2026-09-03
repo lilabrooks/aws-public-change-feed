@@ -239,7 +239,7 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn("credential_secret_id: preflight/slack/private-test-webhook", deployment)
         self.assertIn('output "release_prefix"', outputs)
         self.assertIn("value = module.runtime.release_prefix", outputs)
-        self.assertEqual(central_lambda.count("s3_bucket         = local.runtime_artifact_bucket_name"), 4)
+        self.assertEqual(central_lambda.count("s3_bucket         = local.runtime_artifact_bucket_name"), 5)
         self.assertIn("CONFIG_BUCKET_NAME                 = aws_s3_bucket.config.id", central_lambda)
         self.assertIn("external runtime artifacts and individual trigger overrides are restricted", central_s3)
         self.assertIn('condition     = !var.preflight_mode || local.deployment_id == "preflight"', central_s3)
@@ -488,7 +488,7 @@ class TerraformContractTests(unittest.TestCase):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
 
         self.assertIn("watcher_timeout_seconds        = 300", locals_source)
-        self.assertIn("watcher_reserved_concurrency   = 1", locals_source)
+        self.assertIn("watcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
         self.assertIn("watcher_lease_seconds          = 360", locals_source)
         self.assertIn('watcher_schedule_expression    = "rate(15 minutes)"', locals_source)
         self.assertIn("watcher_maximum_retry_attempts = 2", locals_source)
@@ -509,6 +509,52 @@ class TerraformContractTests(unittest.TestCase):
         watcher_rule = watcher_rule[: watcher_rule.index("\nresource ", 1)]
         self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", watcher_rule)
         self.assertIn('state               = local.watcher_trigger_enabled ? "ENABLED" : "DISABLED"', watcher_rule)
+
+    def test_shadow_evaluator_reuses_the_watcher_package_without_durable_state_authority(self):
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        logs = (ROOT / "infra/central/log_groups.tf").read_text(encoding="utf-8")
+        outputs = (ROOT / "infra/central/outputs.tf").read_text(encoding="utf-8")
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
+        s3 = (ROOT / "infra/central/s3.tf").read_text(encoding="utf-8")
+        function = self.resource_block(lambda_source, "aws_lambda_function", "shadow_evaluator")
+        invoke_config = self.resource_block(
+            lambda_source, "aws_lambda_function_event_invoke_config", "shadow_evaluator"
+        )
+        policy = iam[iam.index('data "aws_iam_policy_document" "shadow_evaluator"') :]
+        policy = policy[: policy.index('\ndata "aws_iam_policy_document"', 1)]
+        invoker = iam[iam.index('data "aws_iam_policy_document" "shadow_invoker"') :]
+        invoker = invoker[: invoker.index('\ndata "aws_iam_policy_document"', 1)]
+
+        self.assertIn("count = local.watcher_runtime_enabled ? 1 : 0", function)
+        self.assertIn('handler       = "aws_public_change_feed.shadow_runtime.lambda_handler"', function)
+        self.assertIn("s3_key            = local.watcher_artifact_key", function)
+        self.assertIn("s3_object_version = var.watcher_artifact_version_id", function)
+        self.assertNotIn("SOURCE_STATE_TABLE_NAME", function)
+        self.assertNotIn("DELIVERY_TABLE_NAME", function)
+        self.assertNotIn("RAW_SNAPSHOT_PREFIX", function)
+        self.assertIn('actions   = ["s3:GetObject"]', policy)
+        self.assertIn('actions   = ["s3:GetObjectVersion"]', policy)
+        for forbidden in ("dynamodb:", "s3:PutObject", "s3:DeleteObject", "secretsmanager:", "ssm:", "sqs:"):
+            with self.subTest(forbidden=forbidden):
+                self.assertNotIn(forbidden, policy)
+        self.assertNotIn('aws_cloudwatch_event_rule" "shadow', lambda_source)
+        self.assertNotIn('aws_lambda_event_source_mapping" "shadow', lambda_source)
+        self.assertIn("maximum_retry_attempts = 0", invoke_config)
+        self.assertIn('resource "aws_cloudwatch_log_group" "shadow"', logs)
+        self.assertEqual(iam.count("aws_iam_role.shadow_evaluator.id"), 2)
+        self.assertIn('actions   = ["lambda:InvokeFunction"]', invoker)
+        self.assertIn("function:${local.function_names.shadow}", invoker)
+        self.assertNotIn("function:${local.function_names.shadow}:*", invoker)
+        self.assertIn('variable "watcher_execution_paused"', variables)
+        self.assertIn("watcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
+        self.assertIn("shadow_reserved_concurrency    = 1", locals_source)
+        self.assertIn("reserved_concurrent_executions = local.shadow_reserved_concurrency", function)
+        self.assertIn("!var.watcher_execution_paused || (", s3)
+        self.assertIn("local.watcher_runtime_enabled && !local.watcher_trigger_enabled", s3)
+        self.assertRegex(outputs, r"shadow_evaluator\s+= aws_iam_role\.shadow_evaluator\.arn")
+        self.assertRegex(outputs, r"shadow_invoker\s+= aws_iam_role\.shadow_invoker\.arn")
 
     def test_watcher_schedule_transport_uses_exact_runtime_enablement_condition(self):
         lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")

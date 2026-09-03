@@ -610,7 +610,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
             </tr>
             <tr>
               <th scope="row">M3 · Open</th>
-              <td>M3 decides whether the current service and deployment are ready for production. The current 4-feed, 3-service, 4-risk-rule policy is selected unchanged for production preflight, with 6 of 12 service and risk-type pairs carrying no historical positive. M3 still needs DynamoDB recovery limits, read-only shadow evaluation, configuration and application rollback proof, the post-M2 gate, and final status reconciliation.</td>
+              <td>M3 decides whether the current service and deployment are ready for production. The current 4-feed, 3-service, 4-risk-rule policy is selected unchanged for production preflight, with 6 of 12 service and risk-type pairs carrying no historical positive. Source now includes a scoped direct-invocation shadow evaluator, fixed refusal codes, preview-bound configuration rollback, and a proposed decision that stops durable runtimes during both rollback paths. Owner acceptance and the live exercise remain outstanding. M3 still needs DynamoDB recovery limits, live shadow and rollback proof, the post-M2 gate, and final status reconciliation.</td>
             </tr>
           </tbody>
         </table>

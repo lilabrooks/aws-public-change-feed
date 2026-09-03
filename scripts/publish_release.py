@@ -22,7 +22,10 @@ import validate_config as validator  # noqa: E402
 
 from aws_public_change_feed.identity import application_artifact_id, release_id  # noqa: E402
 from aws_public_change_feed.loading import (  # noqa: E402
+    IncompatibleRelease,
     LoadedRelease,
+    ReleaseIntegrityError,
+    load_release_version,
     probe_release,
 )
 from aws_public_change_feed.parsing import load_unique_json  # noqa: E402
@@ -73,6 +76,16 @@ class LocalReleaseInputs:
     terraform_output_body: bytes
     inventory_body: bytes
     generated_at: str
+
+
+@dataclass(frozen=True, slots=True)
+class LocalRollbackInputs:
+    deployment_path: Path
+    terraform_output_path: Path
+    deployment: Mapping[str, Any]
+    terraform_outputs: Mapping[str, Any]
+    deployment_body: bytes
+    terraform_output_body: bytes
 
 
 class OutcomeRecordingStore:
@@ -253,6 +266,31 @@ def load_local_inputs(
     )
 
 
+def load_rollback_inputs(deployment_path: Path, terraform_output_path: Path) -> LocalRollbackInputs:
+    """Load only the reviewed deployment identities a rollback is allowed to use."""
+
+    try:
+        deployment_body = deployment_path.read_bytes()
+        deployment = validator.load_yaml(deployment_path)
+    except (OSError, UnicodeError, ValueError, json.JSONDecodeError) as error:
+        raise ReleaseCommandError("invalid_input", "deployment document is malformed") from error
+    if not isinstance(deployment, Mapping):
+        raise ReleaseCommandError("invalid_input", "deployment document must be an object")
+    try:
+        validator.validate_schema(ROOT / "schemas/deployment.schema.json", deployment_path, deployment)
+    except Exception as error:
+        raise ReleaseCommandError("invalid_input", "deployment document failed validation") from error
+    terraform_outputs, terraform_output_body = _load_terraform_outputs(terraform_output_path, deployment)
+    return LocalRollbackInputs(
+        deployment_path=deployment_path.resolve(),
+        terraform_output_path=terraform_output_path.resolve(),
+        deployment=deployment,
+        terraform_outputs=terraform_outputs,
+        deployment_body=deployment_body,
+        terraform_output_body=terraform_output_body,
+    )
+
+
 def _pointer_document(body: bytes) -> Mapping[str, Any] | None:
     try:
         document = load_unique_json(body)
@@ -280,6 +318,86 @@ def observe_pointer(store: ObjectStore, pointer_key: str) -> StoredObject | None
         return store.read(pointer_key)
     except ObjectMissing:
         return None
+
+
+def create_rollback_preview(
+    store: ObjectStore,
+    *,
+    deployment_path: Path,
+    terraform_output_path: Path,
+    historical_pointer_version_id: str,
+    application_version: str,
+    promoted_at: str,
+    error_status: str = "invalid_input",
+) -> dict[str, Any]:
+    """Bind one retained pointer and the exact active pointer it may replace."""
+
+    local = load_rollback_inputs(deployment_path, terraform_output_path)
+    try:
+        application_version = application_artifact_id(application_version)
+    except ValueError as error:
+        raise ReleaseCommandError(error_status, "selected application digest is malformed") from error
+    if (
+        not isinstance(historical_pointer_version_id, str)
+        or not historical_pointer_version_id
+        or any(character in historical_pointer_version_id for character in "\r\n\x00")
+    ):
+        raise ReleaseCommandError(error_status, "historical pointer VersionId is malformed")
+    promoted_at = _utc_timestamp(promoted_at, "promoted_at", status=error_status)
+    pointer_key = str(local.deployment["active_versions_object_key"])
+    observed = observe_pointer(store, pointer_key)
+    if observed is None:
+        raise ReleaseCommandError(error_status, "the active pointer is missing")
+    _require_forward_time(promoted_at, observed, status=error_status)
+    try:
+        current = load_release_version(
+            store,
+            pointer_key=pointer_key,
+            version_id=observed.version_id,
+            application_version=application_version,
+        )
+        historical_object = store.read(pointer_key, historical_pointer_version_id)
+        historical = load_release_version(
+            store,
+            pointer_key=pointer_key,
+            version_id=historical_pointer_version_id,
+            application_version=application_version,
+        )
+    except (IncompatibleRelease, ReleaseIntegrityError, ObjectMissing, ValueError) as error:
+        raise ReleaseCommandError(error_status, "current or historical release failed exact-version loading") from error
+    if current.release_id == historical.release_id:
+        raise ReleaseCommandError(error_status, "historical pointer does not select a different release")
+    target_document = historical.forward_document(datetime.fromisoformat(promoted_at.replace("Z", "+00:00")))
+    return {
+        "plan_version": PLAN_VERSION,
+        "action": "rollback",
+        "inputs": {
+            "deployment": {"path": str(local.deployment_path), "sha256": sha256_bytes(local.deployment_body)},
+            "terraform_output": {
+                "path": str(local.terraform_output_path),
+                "sha256": sha256_bytes(local.terraform_output_body),
+            },
+        },
+        "target": {
+            "bucket": str(local.deployment["config_bucket_name"]),
+            "region": str(local.deployment["deployment_region"]),
+            "pointer_key": pointer_key,
+        },
+        "application_version": application_version,
+        "promoted_at": promoted_at,
+        "current_pointer": pointer_identity(observed),
+        "historical_pointer": pointer_identity(historical_object),
+        "historical_pointer_version_id": historical_pointer_version_id,
+        "current_release_id": current.release_id,
+        "restored_release_id": historical.release_id,
+        "forward_document": target_document,
+    }
+
+
+def write_rollback_preview(plan_path: Path, plan: Mapping[str, Any]) -> str:
+    body = canonical_json(plan) + b"\n"
+    _atomic_write(plan_path, body)
+    return sha256_bytes(body)
 
 
 def _require_forward_time(promoted_at: str, observed: StoredObject | None, *, status: str = "invalid_input") -> None:
@@ -406,6 +524,151 @@ def load_plan(path: Path, expected_sha256: str) -> dict[str, Any]:
     if not isinstance(plan, dict) or canonical_json(plan) + b"\n" != body:
         raise ReleaseCommandError("stale_plan", "saved plan is not canonical JSON")
     return plan
+
+
+def _require_rollback_plan_shape(plan: Mapping[str, Any]) -> None:
+    required = {
+        "plan_version",
+        "action",
+        "inputs",
+        "target",
+        "application_version",
+        "promoted_at",
+        "current_pointer",
+        "historical_pointer",
+        "historical_pointer_version_id",
+        "current_release_id",
+        "restored_release_id",
+        "forward_document",
+    }
+    if set(plan) != required or plan.get("plan_version") != PLAN_VERSION or plan.get("action") != "rollback":
+        raise ReleaseCommandError("stale_plan", "saved rollback plan shape is not supported")
+    inputs = plan.get("inputs")
+    target = plan.get("target")
+    if not isinstance(inputs, Mapping) or set(inputs) != {"deployment", "terraform_output"}:
+        raise ReleaseCommandError("stale_plan", "saved rollback inputs are malformed")
+    if not isinstance(target, Mapping) or set(target) != {"bucket", "region", "pointer_key"}:
+        raise ReleaseCommandError("stale_plan", "saved rollback target is malformed")
+    for name in ("deployment", "terraform_output"):
+        value = inputs.get(name)
+        if not isinstance(value, Mapping) or set(value) != {"path", "sha256"}:
+            raise ReleaseCommandError("stale_plan", f"saved {name} input is malformed")
+
+
+def load_rollback_plan_local_inputs(plan: Mapping[str, Any]) -> LocalRollbackInputs:
+    """Verify saved rollback paths and targets before constructing an AWS client."""
+
+    _require_rollback_plan_shape(plan)
+    inputs = plan["inputs"]
+    try:
+        local = load_rollback_inputs(
+            _path(inputs["deployment"]["path"], "deployment"),
+            _path(inputs["terraform_output"]["path"], "Terraform output"),
+        )
+    except ReleaseCommandError as error:
+        raise ReleaseCommandError("stale_plan", "saved rollback local inputs are no longer valid") from error
+    actual_inputs = {
+        "deployment": {"path": str(local.deployment_path), "sha256": sha256_bytes(local.deployment_body)},
+        "terraform_output": {
+            "path": str(local.terraform_output_path),
+            "sha256": sha256_bytes(local.terraform_output_body),
+        },
+    }
+    actual_target = {
+        "bucket": str(local.deployment["config_bucket_name"]),
+        "region": str(local.deployment["deployment_region"]),
+        "pointer_key": str(local.deployment["active_versions_object_key"]),
+    }
+    if canonical_json(actual_inputs) != canonical_json(inputs) or canonical_json(actual_target) != canonical_json(
+        plan["target"]
+    ):
+        raise ReleaseCommandError("stale_plan", "saved rollback local identities differ from the preview")
+    return local
+
+
+def rebuild_rollback_preview(store: ObjectStore, plan: Mapping[str, Any]) -> tuple[dict[str, Any], StoredObject]:
+    load_rollback_plan_local_inputs(plan)
+    inputs = plan["inputs"]
+    rebuilt = create_rollback_preview(
+        store,
+        deployment_path=_path(inputs["deployment"]["path"], "deployment"),
+        terraform_output_path=_path(inputs["terraform_output"]["path"], "Terraform output"),
+        historical_pointer_version_id=str(plan.get("historical_pointer_version_id")),
+        application_version=str(plan.get("application_version")),
+        promoted_at=_utc_timestamp(plan.get("promoted_at"), "promoted_at", status="stale_plan"),
+        error_status="stale_plan",
+    )
+    if canonical_json(rebuilt) != canonical_json(plan):
+        raise ReleaseCommandError("stale_plan", "rollback inputs or pointer decision differ from the preview")
+    pointer_key = str(rebuilt["target"]["pointer_key"])
+    observed = store.read(pointer_key)
+    if pointer_identity(observed) != plan["current_pointer"]:
+        raise ReleaseCommandError("stale_plan", "active pointer differs from the rollback preview")
+    return rebuilt, observed
+
+
+def apply_rollback(
+    store: ObjectStore,
+    plan: Mapping[str, Any],
+    *,
+    probe: Callable[..., LoadedRelease] = probe_release,
+) -> dict[str, Any]:
+    rebuilt, observed = rebuild_rollback_preview(store, plan)
+    pointer_body = canonical_json(rebuilt["forward_document"])
+    recorder = OutcomeRecordingStore(store)
+    try:
+        promotion = promote_pointer(
+            recorder,
+            pointer_key=str(rebuilt["target"]["pointer_key"]),
+            document=pointer_body,
+            observed=observed,
+        )
+    except PromotionSuperseded as error:
+        conflict = recorder.last_replace_outcome == "write_conflict"
+        return {
+            "status": "promotion_conflict" if conflict else "promotion_superseded",
+            "detail": (
+                "rollback conflict resolved to another active release"
+                if conflict
+                else "pointer changed before the planned rollback"
+            ),
+            "active_release_id": error.observed,
+        }
+    except PointerVanished:
+        return {
+            "status": "pointer_vanished",
+            "detail": "the planned current pointer vanished before rollback",
+        }
+    except (ValueError, ObjectMissing, PreconditionFailed, WriteConflict):
+        return {
+            "status": "promotion_refused",
+            "detail": "the planned rollback did not produce a bounded active result",
+        }
+
+    promotion_result = _promotion_result(promotion)
+    try:
+        loaded = probe(
+            recorder,
+            pointer_key=str(rebuilt["target"]["pointer_key"]),
+            application_version=str(rebuilt["application_version"]),
+            expected_release_id=str(rebuilt["restored_release_id"]),
+        )
+        active_pointer = recorder.read(str(rebuilt["target"]["pointer_key"]))
+    except Exception:  # noqa: BLE001 - preserve the bounded promoted-but-unproved result
+        return {
+            "status": "probe_failed",
+            "detail": "the rolled-back pointer failed its compatibility probe or exact read-back",
+            "promotion": promotion_result,
+        }
+    return {
+        "status": "completed",
+        "detail": "the rolled-back release passed the compatibility probe",
+        "promotion": promotion_result,
+        "probed_release_id": loaded.release_id,
+        "application_version": rebuilt["application_version"],
+        "restored_from_pointer_version_id": rebuilt["historical_pointer_version_id"],
+        "active_pointer": pointer_identity(active_pointer),
+    }
 
 
 def _require_plan_shape(plan: Mapping[str, Any]) -> None:
@@ -639,6 +902,20 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     apply = subparsers.add_parser("apply", help="apply an unchanged preview plan and probe the active release")
     apply.add_argument("--plan", type=Path, required=True)
     apply.add_argument("--expected-plan-sha256", required=True)
+    rollback_preview = subparsers.add_parser(
+        "rollback-preview", help="verify a retained pointer version and write a read-only rollback plan"
+    )
+    rollback_preview.add_argument("--deployment", type=Path, required=True)
+    rollback_preview.add_argument("--terraform-output", type=Path, required=True)
+    rollback_preview.add_argument("--historical-pointer-version-id", required=True)
+    rollback_preview.add_argument("--application-version", required=True)
+    rollback_preview.add_argument("--promoted-at", required=True)
+    rollback_preview.add_argument("--plan", type=Path, required=True)
+    rollback_apply = subparsers.add_parser(
+        "rollback-apply", help="apply an unchanged rollback plan and probe the restored release"
+    )
+    rollback_apply.add_argument("--plan", type=Path, required=True)
+    rollback_apply.add_argument("--expected-plan-sha256", required=True)
     return parser.parse_args(argv)
 
 
@@ -658,8 +935,44 @@ def _store(bucket: str, region: str) -> S3ObjectStore:
 def main(argv: list[str] | None = None, *, store: ObjectStore | None = None) -> int:
     arguments = parse_args(argv)
     try:
+        if arguments.action == "rollback-preview":
+            rollback_local = load_rollback_inputs(arguments.deployment, arguments.terraform_output)
+            active_store = store or _store(
+                str(rollback_local.deployment["config_bucket_name"]),
+                str(rollback_local.deployment["deployment_region"]),
+            )
+            plan = create_rollback_preview(
+                active_store,
+                deployment_path=arguments.deployment,
+                terraform_output_path=arguments.terraform_output,
+                historical_pointer_version_id=arguments.historical_pointer_version_id,
+                application_version=arguments.application_version,
+                promoted_at=arguments.promoted_at,
+            )
+            digest = write_rollback_preview(arguments.plan, plan)
+            _write(
+                {
+                    "status": "previewed",
+                    "plan_sha256": digest,
+                    "current_pointer_version_id": plan["current_pointer"]["version_id"],
+                    "current_release_id": plan["current_release_id"],
+                    "restored_release_id": plan["restored_release_id"],
+                    "historical_pointer_version_id": plan["historical_pointer_version_id"],
+                }
+            )
+            return 0
+        if arguments.action == "rollback-apply":
+            plan = load_plan(arguments.plan, arguments.expected_plan_sha256)
+            rollback_local = load_rollback_plan_local_inputs(plan)
+            active_store = store or _store(
+                str(rollback_local.deployment["config_bucket_name"]),
+                str(rollback_local.deployment["deployment_region"]),
+            )
+            result = apply_rollback(active_store, plan)
+            _write(result)
+            return 0 if result["status"] == "completed" else EXIT_REFUSED
         if arguments.action == "preview":
-            local = load_local_inputs(
+            release_local = load_local_inputs(
                 deployment_path=arguments.deployment,
                 config_path=arguments.config,
                 terraform_output_path=arguments.terraform_output,
@@ -667,16 +980,17 @@ def main(argv: list[str] | None = None, *, store: ObjectStore | None = None) -> 
                 generated_at=arguments.generated_at,
             )
             active_store = store or _store(
-                str(local.deployment["config_bucket_name"]), str(local.deployment["deployment_region"])
+                str(release_local.deployment["config_bucket_name"]),
+                str(release_local.deployment["deployment_region"]),
             )
-            observed = observe_pointer(active_store, str(local.deployment["active_versions_object_key"]))
+            observed = observe_pointer(active_store, str(release_local.deployment["active_versions_object_key"]))
             plan = _build_plan(
-                local,
+                release_local,
                 application_version=arguments.application_version,
                 promoted_at=arguments.promoted_at,
                 observed=observed,
             )
-            digest = write_preview(arguments.plan, arguments.inventory, plan, local.inventory_body)
+            digest = write_preview(arguments.plan, arguments.inventory, plan, release_local.inventory_body)
             _write(
                 {
                     "status": "previewed",
@@ -689,9 +1003,10 @@ def main(argv: list[str] | None = None, *, store: ObjectStore | None = None) -> 
             )
             return 0
         plan = load_plan(arguments.plan, arguments.expected_plan_sha256)
-        local = load_plan_local_inputs(plan)
+        release_local = load_plan_local_inputs(plan)
         active_store = store or _store(
-            str(local.deployment["config_bucket_name"]), str(local.deployment["deployment_region"])
+            str(release_local.deployment["config_bucket_name"]),
+            str(release_local.deployment["deployment_region"]),
         )
         result = apply_release(active_store, plan)
         _write(result)

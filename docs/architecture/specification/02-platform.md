@@ -6,6 +6,7 @@ The `infra/central` root creates:
 
 - A versioned S3 configuration bucket with immutable release, active-manifest, and short-lived raw-feed snapshot prefixes.
 - A conditional feed watcher Lambda and schedule when its exact package pair is supplied.
+- A direct-invocation shadow evaluator using the watcher's exact package and feed policy, with release-read and log permissions only and no durable-state, snapshot-write, queue, or secret authority. A separate operator role can invoke only this function.
 - A DynamoDB source-state table for feed checkpoints and announcement records.
 - A DynamoDB delivery table for candidates, outbox work, destination pacing, and delivery outcomes.
 - An encrypted SQS FIFO queue and FIFO DLQ.

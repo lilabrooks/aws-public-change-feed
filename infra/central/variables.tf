@@ -68,6 +68,13 @@ variable "watcher_trigger_enabled_override" {
   nullable    = true
 }
 
+variable "watcher_execution_paused" {
+  description = "Whether reserved concurrency is zero so no watcher invocation can run during an exact reviewed state exercise."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "dispatcher_trigger_enabled_override" {
   description = "Preflight-only dispatcher trigger override. Null follows delivery_triggers_enabled."
   type        = bool

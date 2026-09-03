@@ -102,6 +102,8 @@ output "roles" {
     source_state_retirement          = aws_iam_role.source_state_retirement.arn
     source_replay                    = aws_iam_role.source_replay.arn
     feed_watcher                     = aws_iam_role.feed_watcher.arn
+    shadow_evaluator                 = aws_iam_role.shadow_evaluator.arn
+    shadow_invoker                   = aws_iam_role.shadow_invoker.arn
     outbox_dispatcher                = aws_iam_role.outbox_dispatcher.arn
     slack_worker                     = aws_iam_role.slack_worker.arn
     recovery_reconciler              = aws_iam_role.recovery_reconciler.arn
@@ -109,7 +111,7 @@ output "roles" {
 }
 
 output "function_names" {
-  description = "Lambda names; the watcher, dispatcher, Slack worker, and reconciler exist when their exact artifact inputs are supplied."
+  description = "Lambda names; the watcher, shadow evaluator, dispatcher, Slack worker, and reconciler exist when their exact artifact inputs are supplied."
   value       = local.function_names
 }
 
