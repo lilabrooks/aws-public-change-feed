@@ -69,6 +69,18 @@ resource "aws_iam_role" "feed_watcher" {
   tags               = local.tags
 }
 
+resource "aws_iam_role" "shadow_evaluator" {
+  name               = local.role_names.shadow
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+  tags               = local.tags
+}
+
+resource "aws_iam_role" "shadow_invoker" {
+  name               = local.role_names.shadow_invoker
+  assume_role_policy = data.aws_iam_policy_document.publisher_assume_role.json
+  tags               = local.tags
+}
+
 resource "aws_iam_role" "outbox_dispatcher" {
   name               = local.role_names.dispatcher
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
@@ -378,6 +390,46 @@ data "aws_iam_policy_document" "feed_watcher" {
   }
 }
 
+data "aws_iam_policy_document" "shadow_evaluator" {
+  statement {
+    sid       = "ListActiveManifestKey"
+    actions   = ["s3:ListBucket"]
+    resources = [aws_s3_bucket.config.arn]
+
+    condition {
+      test     = "StringEquals"
+      variable = "s3:prefix"
+      values   = [local.active_versions_key]
+    }
+
+    condition {
+      test     = "NumericLessThanEquals"
+      variable = "s3:max-keys"
+      values   = ["1"]
+    }
+  }
+
+  statement {
+    sid       = "ReadActiveManifest"
+    actions   = ["s3:GetObject"]
+    resources = ["${aws_s3_bucket.config.arn}/${local.active_versions_key}"]
+  }
+
+  statement {
+    sid       = "ReadReleaseVersions"
+    actions   = ["s3:GetObjectVersion"]
+    resources = ["${aws_s3_bucket.config.arn}/${local.release_prefix}/*"]
+  }
+}
+
+data "aws_iam_policy_document" "shadow_invoker" {
+  statement {
+    sid       = "InvokeShadowEvaluator"
+    actions   = ["lambda:InvokeFunction"]
+    resources = ["arn:aws:lambda:${local.region}:${data.aws_caller_identity.current.account_id}:function:${local.function_names.shadow}"]
+  }
+}
+
 data "aws_iam_policy_document" "outbox_dispatcher" {
   # A global secondary index is a distinct IAM resource. Querying
   # status-next-action-index needs the index ARN; the table ARN alone denies it.
@@ -520,6 +572,18 @@ resource "aws_iam_role_policy" "feed_watcher" {
   policy = data.aws_iam_policy_document.feed_watcher.json
 }
 
+resource "aws_iam_role_policy" "shadow_evaluator" {
+  name   = "shadow-evaluator"
+  role   = aws_iam_role.shadow_evaluator.id
+  policy = data.aws_iam_policy_document.shadow_evaluator.json
+}
+
+resource "aws_iam_role_policy" "shadow_invoker" {
+  name   = "shadow-invoker"
+  role   = aws_iam_role.shadow_invoker.id
+  policy = data.aws_iam_policy_document.shadow_invoker.json
+}
+
 resource "aws_iam_role_policy" "outbox_dispatcher" {
   name   = "outbox-dispatcher"
   role   = aws_iam_role.outbox_dispatcher.id
@@ -548,6 +612,20 @@ resource "aws_iam_role_policy" "watcher_logs" {
       Effect   = "Allow"
       Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
       Resource = ["${aws_cloudwatch_log_group.watcher.arn}:*"]
+    }]
+  })
+}
+
+resource "aws_iam_role_policy" "shadow_logs" {
+  name = "cloudwatch-logs"
+  role = aws_iam_role.shadow_evaluator.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "WriteLogs"
+      Effect   = "Allow"
+      Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+      Resource = ["${aws_cloudwatch_log_group.shadow.arn}:*"]
     }]
   })
 }

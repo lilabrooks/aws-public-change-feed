@@ -57,17 +57,20 @@ locals {
 
   function_names = {
     watcher    = "apcf-${local.deployment_id}-feed-watcher"
+    shadow     = "apcf-${local.deployment_id}-shadow-evaluator"
     dispatcher = "apcf-${local.deployment_id}-outbox-dispatcher"
     worker     = "apcf-${local.deployment_id}-slack-worker"
     reconciler = "apcf-${local.deployment_id}-recovery-reconciler"
   }
 
   role_names = {
-    publisher  = "apcf-${local.deployment_id}-release-publisher"
-    watcher    = "apcf-${local.deployment_id}-feed-watcher"
-    dispatcher = "apcf-${local.deployment_id}-outbox-dispatcher"
-    worker     = "apcf-${local.deployment_id}-slack-worker"
-    reconciler = "apcf-${local.deployment_id}-recovery-reconciler"
+    publisher      = "apcf-${local.deployment_id}-release-publisher"
+    watcher        = "apcf-${local.deployment_id}-feed-watcher"
+    shadow         = "apcf-${local.deployment_id}-shadow-evaluator"
+    shadow_invoker = "apcf-${local.deployment_id}-shadow-invoker"
+    dispatcher     = "apcf-${local.deployment_id}-outbox-dispatcher"
+    worker         = "apcf-${local.deployment_id}-slack-worker"
+    reconciler     = "apcf-${local.deployment_id}-recovery-reconciler"
   }
 
   worker_timeout_seconds             = 300
@@ -86,7 +89,8 @@ locals {
   application_version    = var.worker_artifact_sha256 == null ? null : "sha256:${var.worker_artifact_sha256}"
 
   watcher_timeout_seconds        = 300
-  watcher_reserved_concurrency   = 1
+  watcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1
+  shadow_reserved_concurrency    = 1
   watcher_lease_seconds          = 360
   watcher_schedule_expression    = "rate(15 minutes)"
   watcher_maximum_retry_attempts = 2

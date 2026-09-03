@@ -46,6 +46,56 @@ resource "aws_lambda_function" "watcher" {
   tags = local.tags
 }
 
+resource "aws_lambda_function" "shadow_evaluator" {
+  count = local.watcher_runtime_enabled ? 1 : 0
+
+  function_name = local.function_names.shadow
+  role          = aws_iam_role.shadow_evaluator.arn
+  runtime       = "python3.12"
+  architectures = ["x86_64"]
+  handler       = "aws_public_change_feed.shadow_runtime.lambda_handler"
+
+  s3_bucket         = local.runtime_artifact_bucket_name
+  s3_key            = local.watcher_artifact_key
+  s3_object_version = var.watcher_artifact_version_id
+
+  timeout                        = local.watcher_timeout_seconds
+  reserved_concurrent_executions = local.shadow_reserved_concurrency
+  memory_size                    = 256
+
+  environment {
+    variables = {
+      ACTIVE_VERSIONS_OBJECT_KEY    = local.active_versions_key
+      APPLICATION_VERSION           = local.watcher_application_version
+      APPROVED_FEED_HOSTS_JSON      = jsonencode(local.feed_fetch_policy.allowed_feed_hosts)
+      CONFIG_BUCKET                 = aws_s3_bucket.config.id
+      FEED_CONNECT_TIMEOUT_SECONDS  = tostring(local.feed_fetch_policy.connect_timeout_seconds)
+      FEED_LEASE_SECONDS            = tostring(local.watcher_lease_seconds)
+      FEED_RESPONSE_TIMEOUT_SECONDS = tostring(local.feed_fetch_policy.response_timeout_seconds)
+      MAX_CONCURRENT_FETCHES        = tostring(local.feed_fetch_policy.max_concurrent_fetches)
+      MAX_FEED_ITEM_CHARACTERS      = tostring(local.feed_fetch_policy.max_item_characters)
+      MAX_FEED_ITEMS                = tostring(local.feed_fetch_policy.max_items_per_feed)
+      MAX_FEED_REDIRECTS            = tostring(local.feed_fetch_policy.max_redirects)
+      MAX_FEED_RESPONSE_BYTES       = tostring(local.feed_fetch_policy.max_response_bytes)
+    }
+  }
+
+  depends_on = [
+    aws_cloudwatch_log_group.shadow,
+    aws_iam_role_policy.shadow_evaluator,
+    aws_iam_role_policy.shadow_logs,
+  ]
+
+  tags = local.tags
+}
+
+resource "aws_lambda_function_event_invoke_config" "shadow_evaluator" {
+  count = local.watcher_runtime_enabled ? 1 : 0
+
+  function_name          = aws_lambda_function.shadow_evaluator[0].function_name
+  maximum_retry_attempts = 0
+}
+
 resource "aws_cloudwatch_event_rule" "watcher" {
   count = local.watcher_runtime_enabled ? 1 : 0
 

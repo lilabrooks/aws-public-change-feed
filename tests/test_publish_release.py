@@ -32,6 +32,8 @@ DEV_GENERATED_AT = "2026-08-15T12:00:00Z"
 GENERATED_AT = "2026-08-15T16:00:00Z"
 PROMOTED_AT = "2026-08-15T16:01:00Z"
 LATER_PROMOTION = "2026-08-15T16:02:00Z"
+ROLLBACK_PROMOTION = "2026-08-15T16:03:00Z"
+FORWARD_RESTORE_PROMOTION = "2026-08-15T16:04:00Z"
 
 
 def pointer_bytes(release: str, promoted_at: str = "2026-08-15T15:59:00Z") -> bytes:
@@ -98,6 +100,8 @@ class MemoryStore:
         if outcome == "missing":
             self.current.pop(key, None)
             raise ObjectMissing(key)
+        if outcome == "invalid":
+            raise ValueError("injected invalid promotion")
         current = self.current.get(key)
         if current is None:
             raise ObjectMissing(key)
@@ -418,6 +422,158 @@ class PublishReleaseTests(unittest.TestCase):
         plan, _ = self.preview(store)
         return store, plan
 
+    def _two_published_releases(self) -> tuple[MemoryStore, StoredObject, StoredObject]:
+        store = MemoryStore()
+        first, _ = self.preview(store)
+        self.assertEqual(publisher.apply_release(store, first)["status"], "completed")
+        first_pointer = store.read(store.pointer_key)
+
+        self.config["message_policy"]["max_title_characters"] += 1
+        self._write_inputs()
+        second, _ = self.preview(store, promoted_at=LATER_PROMOTION)
+        self.assertEqual(publisher.apply_release(store, second)["status"], "completed")
+        second_pointer = store.read(store.pointer_key)
+        return store, first_pointer, second_pointer
+
+    def rollback_preview(
+        self,
+        store: MemoryStore,
+        historical: StoredObject,
+        *,
+        promoted_at: str = ROLLBACK_PROMOTION,
+    ) -> tuple[dict, str]:
+        plan = publisher.create_rollback_preview(
+            store,
+            deployment_path=self.deployment_path,
+            terraform_output_path=self.terraform_output_path,
+            historical_pointer_version_id=historical.version_id,
+            application_version=APPLICATION_VERSION,
+            promoted_at=promoted_at,
+        )
+        digest = publisher.write_rollback_preview(self.plan_path, plan)
+        return plan, digest
+
+    def test_rollback_preview_is_read_only_and_binds_both_pointer_versions(self) -> None:
+        store, first_pointer, second_pointer = self._two_published_releases()
+        store.calls.clear()
+
+        plan, digest = self.rollback_preview(store, first_pointer)
+
+        self.assertEqual(store.mutation_calls(), [])
+        self.assertEqual(plan["action"], "rollback")
+        self.assertEqual(plan["historical_pointer_version_id"], first_pointer.version_id)
+        self.assertEqual(plan["current_pointer"]["version_id"], second_pointer.version_id)
+        self.assertNotEqual(plan["current_release_id"], plan["restored_release_id"])
+        self.assertEqual(plan["forward_document"]["promoted_at"], ROLLBACK_PROMOTION)
+        self.assertEqual(digest, hashlib.sha256(self.plan_path.read_bytes()).hexdigest())
+
+    def test_rollback_and_forward_restore_use_new_pointer_versions_and_exact_probes(self) -> None:
+        store, first_pointer, second_pointer = self._two_published_releases()
+        rollback, _ = self.rollback_preview(store, first_pointer)
+
+        rolled_back = publisher.apply_rollback(store, rollback)
+
+        self.assertEqual(rolled_back["status"], "completed")
+        rollback_pointer = store.read(store.pointer_key)
+        self.assertNotIn(rollback_pointer.version_id, {first_pointer.version_id, second_pointer.version_id})
+        self.assertEqual(rolled_back["probed_release_id"], rollback["restored_release_id"])
+        self.assertEqual(rolled_back["active_pointer"]["version_id"], rollback_pointer.version_id)
+
+        restore, _ = self.rollback_preview(
+            store,
+            second_pointer,
+            promoted_at=FORWARD_RESTORE_PROMOTION,
+        )
+        restored_forward = publisher.apply_rollback(store, restore)
+        self.assertEqual(restored_forward["status"], "completed")
+        self.assertEqual(restored_forward["probed_release_id"], rollback["current_release_id"])
+        self.assertNotEqual(store.read(store.pointer_key).version_id, second_pointer.version_id)
+
+    def test_rollback_reports_each_conditional_promotion_outcome(self) -> None:
+        cases = (
+            ("precondition", "promotion_superseded"),
+            ("conflict_other", "promotion_conflict"),
+            ("missing", "pointer_vanished"),
+            ("invalid", "promotion_refused"),
+        )
+        for replace_outcome, expected_status in cases:
+            with self.subTest(replace_outcome=replace_outcome):
+                store, first_pointer, _ = self._two_published_releases()
+                plan, _ = self.rollback_preview(store, first_pointer)
+                store.replace_outcome = replace_outcome
+                store.calls.clear()
+
+                result = publisher.apply_rollback(store, plan)
+
+                self.assertEqual(result["status"], expected_status)
+                pointer_creates = [call for call in store.calls if call == f"create:{store.pointer_key}"]
+                self.assertEqual(pointer_creates, [])
+
+    def test_rollback_409_convergence_completes_with_exact_unattributed_readback(self) -> None:
+        store, first_pointer, _ = self._two_published_releases()
+        plan, _ = self.rollback_preview(store, first_pointer)
+        store.replace_outcome = "conflict_converged"
+
+        result = publisher.apply_rollback(store, plan)
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["promotion"]["status"], "converged")
+        self.assertIsNone(result["promotion"]["new_version_id"])
+        self.assertEqual(result["active_pointer"]["version_id"], store.read(store.pointer_key).version_id)
+
+    def test_rollback_probe_failure_retains_the_pointer_result_without_completion(self) -> None:
+        store, first_pointer, _ = self._two_published_releases()
+        plan, _ = self.rollback_preview(store, first_pointer)
+
+        def fail_probe(*args, **kwargs):
+            raise RuntimeError("provider detail must stay bounded")
+
+        result = publisher.apply_rollback(store, plan, probe=fail_probe)
+
+        self.assertEqual(result["status"], "probe_failed")
+        self.assertEqual(result["promotion"]["status"], "promoted")
+        self.assertNotIn("active_pointer", result)
+
+    def test_changed_pointer_refuses_rollback_before_any_write(self) -> None:
+        store, first_pointer, _ = self._two_published_releases()
+        plan, _ = self.rollback_preview(store, first_pointer)
+        store.put_current(store.pointer_key, pointer_bytes("competing", "2026-08-15T16:02:30Z"))
+        store.calls.clear()
+
+        with self.assertRaises(publisher.ReleaseCommandError):
+            publisher.apply_rollback(store, plan)
+
+        self.assertEqual(store.mutation_calls(), [])
+
+    def test_changed_local_rollback_input_is_stale_before_any_aws_read(self) -> None:
+        store, first_pointer, _ = self._two_published_releases()
+        plan, _ = self.rollback_preview(store, first_pointer)
+        self.deployment["deployment_id"] = "changed"
+        self._write_inputs()
+        store.calls.clear()
+
+        with self.assertRaisesRegex(publisher.ReleaseCommandError, "local") as raised:
+            publisher.apply_rollback(store, plan)
+
+        self.assertEqual(raised.exception.status, "stale_plan")
+        self.assertEqual(store.calls, [])
+
+    def test_missing_or_current_pointer_version_cannot_be_a_rollback_target(self) -> None:
+        store, _, second_pointer = self._two_published_releases()
+        store.calls.clear()
+        for version_id in ("missing", second_pointer.version_id):
+            with self.subTest(version_id=version_id):
+                with self.assertRaises(publisher.ReleaseCommandError):
+                    publisher.create_rollback_preview(
+                        store,
+                        deployment_path=self.deployment_path,
+                        terraform_output_path=self.terraform_output_path,
+                        historical_pointer_version_id=version_id,
+                        application_version=APPLICATION_VERSION,
+                        promoted_at=ROLLBACK_PROMOTION,
+                    )
+                self.assertEqual(store.mutation_calls(), [])
+
     def test_promotion_412_reports_supersession_and_keeps_release_objects(self) -> None:
         store, plan = self._preview_against_existing_pointer()
         store.replace_outcome = "precondition"
@@ -557,6 +713,50 @@ class PublishReleaseTests(unittest.TestCase):
         self.assertEqual(preview_result["release_id"], apply_result["probed_release_id"])
         self.assertEqual(apply_result["status"], "completed")
 
+    def test_cli_rollback_preview_and_apply_complete_against_one_exact_plan(self) -> None:
+        store, first_pointer, _ = self._two_published_releases()
+        preview_stdout = io.StringIO()
+        with contextlib.redirect_stdout(preview_stdout):
+            self.assertEqual(
+                publisher.main(
+                    [
+                        "rollback-preview",
+                        "--deployment",
+                        str(self.deployment_path),
+                        "--terraform-output",
+                        str(self.terraform_output_path),
+                        "--historical-pointer-version-id",
+                        first_pointer.version_id,
+                        "--application-version",
+                        APPLICATION_VERSION,
+                        "--promoted-at",
+                        ROLLBACK_PROMOTION,
+                        "--plan",
+                        str(self.plan_path),
+                    ],
+                    store=store,
+                ),
+                0,
+            )
+        preview_result = json.loads(preview_stdout.getvalue())
+
+        apply_stdout = io.StringIO()
+        with contextlib.redirect_stdout(apply_stdout):
+            self.assertEqual(
+                publisher.main(
+                    [
+                        "rollback-apply",
+                        "--plan",
+                        str(self.plan_path),
+                        "--expected-plan-sha256",
+                        preview_result["plan_sha256"],
+                    ],
+                    store=store,
+                ),
+                0,
+            )
+        self.assertEqual(json.loads(apply_stdout.getvalue())["status"], "completed")
+
     def test_command_help_names_the_clean_checkout_preview_and_apply_inputs(self) -> None:
         preview = subprocess.run(
             [sys.executable, str(ROOT / "scripts/publish_release.py"), "preview", "--help"],
@@ -566,6 +766,18 @@ class PublishReleaseTests(unittest.TestCase):
         ).stdout
         apply = subprocess.run(
             [sys.executable, str(ROOT / "scripts/publish_release.py"), "apply", "--help"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        rollback_preview = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/publish_release.py"), "rollback-preview", "--help"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout
+        rollback_apply = subprocess.run(
+            [sys.executable, str(ROOT / "scripts/publish_release.py"), "rollback-apply", "--help"],
             check=True,
             capture_output=True,
             text=True,
@@ -583,6 +795,17 @@ class PublishReleaseTests(unittest.TestCase):
             self.assertIn(option, preview)
         self.assertIn("--plan", apply)
         self.assertIn("--expected-plan-sha256", apply)
+        for option in (
+            "--deployment",
+            "--terraform-output",
+            "--historical-pointer-version-id",
+            "--application-version",
+            "--promoted-at",
+            "--plan",
+        ):
+            self.assertIn(option, rollback_preview)
+        self.assertIn("--plan", rollback_apply)
+        self.assertIn("--expected-plan-sha256", rollback_apply)
 
     def test_runbook_initializes_the_backend_before_release_preview(self) -> None:
         runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
@@ -600,6 +823,23 @@ class PublishReleaseTests(unittest.TestCase):
         self.assertIn('--terraform-output "$CAPTURE_PATH"', section)
         self.assertIn("--config config/dev.yaml", section)
         self.assertIn("tests/fixtures/terraform-output.dev.json", section)
+
+    def test_runbook_m3_rollback_uses_both_preview_bound_promotions(self) -> None:
+        runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
+        section = runbook.split("## M3 shadow and rollback proof\n", 1)[1].split("\n## ", 1)[0]
+
+        self.assertIn("python3 scripts/publish_release.py rollback-preview", section)
+        self.assertIn("python3 scripts/publish_release.py rollback-apply", section)
+        self.assertIn("separate live-mutation authorization", section)
+        self.assertIn("second rollback preview", section)
+        self.assertIn("original current pointer", section)
+        self.assertIn("do not apply source replay", section)
+        self.assertIn("do not invoke the shadow evaluator repeatedly", section)
+        self.assertIn("watcher_execution_paused=true", section)
+        self.assertIn("watcher reserved concurrency zero", section)
+        self.assertIn("--invocation-type RequestResponse", section)
+        self.assertIn("five Lambda configurations", section)
+        self.assertIn("converged `409` is unattributed", section)
 
     def test_runbook_preserves_a_failed_terraform_output_before_retry(self) -> None:
         runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")

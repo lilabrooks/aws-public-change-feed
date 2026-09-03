@@ -245,6 +245,40 @@ not delivery requests. Never redrive it into the delivery FIFO queue.
 6. Confirm watcher, dispatcher, and worker can still load historical releases referenced by in-flight delivery records.
 7. Record the failed and restored release IDs.
 
+## M3 shadow and rollback proof
+
+Use this fixed evidence exercise for M3. Incident response keeps its existing path. Run the exercise from a clean checkout after capturing fresh central Terraform outputs. Record the Git SHA, deployment ID, AWS account and Region, Terraform state VersionId, saved-plan hashes, active release and pointer VersionId, application digest and VersionId, and every trigger state before the first action. A quiet public-feed result is evidence of that sample; do not invoke the shadow evaluator repeatedly to obtain a match.
+
+1. Obtain owner acceptance of proposed ADR-026 before the live exercise. Deploy the source-defined shadow evaluator through a separately reviewed central Terraform plan. It uses the watcher's exact package pair and fetch policy, has no event source, and its execution role has release-read and dedicated-log permissions only. Read back its handler, role, timeout, reserved concurrency, environment, zero asynchronous retries, and absence of DynamoDB, S3 write or delete, queue, and secret actions. Read every policy attached to the execution role. Assume the separate `apcf-<deployment>-shadow-invoker` role and verify that it grants only `lambda:InvokeFunction` on this function.
+2. Invoke `apcf-<deployment>-shadow-evaluator` synchronously with `--invocation-type RequestResponse` and a strict event containing only `operation: shadow_evaluate`, the exact expected release ID, the exact `sha256:<digest>` application version, and the complete lexically sorted feed-name list. Preserve the CLI response, payload, and invocation ID returned inside the bounded JSON result. Fixed refusal codes distinguish expected-identity mismatch, incompatible or damaged release data, a missing release, and an incomplete run. Treat `failed`, a fixed refusal, or a generic invocation error as that fixed attempt's result. The no-write claim rests on the in-memory composition, attached-role read-back, and unchanged durable-state read-back.
+3. Create and review one central Terraform plan with `delivery_triggers_enabled=false`, `reconciler_trigger_enabled=false`, and `watcher_execution_paused=true`. Record its hash and authorize only those plan bytes. After apply, read back all four disabled triggers and watcher reserved concurrency zero, then wait the full 300-second watcher timeout. Keep this stopped state through step 7. Select one retained historical `active-versions.json` VersionId and verify its exact configuration and inventory objects. Keep the current pointer VersionId reported by rollback preview; it is the forward-restoration target.
+4. Build the configuration rollback plan without writing S3:
+
+   ```bash
+   python3 scripts/publish_release.py rollback-preview \
+     --deployment infra/central/deployment.yaml \
+     --terraform-output "$CAPTURE_PATH" \
+     --historical-pointer-version-id <retained-pointer-VersionId> \
+     --application-version sha256:<deployed-package-digest> \
+     --promoted-at <future-UTC-instant> \
+     --plan build/config-rollback-plan.json
+   ```
+
+   Review the current pointer ETag and VersionId, current and restored release IDs, exact historical VersionId, forward document, and printed plan SHA-256. Applying that exact plan is a separate live-mutation authorization:
+
+   ```bash
+   python3 scripts/publish_release.py rollback-apply \
+     --plan build/config-rollback-plan.json \
+     --expected-plan-sha256 <printed-plan-sha256>
+   ```
+
+   Apply rebuilds the plan, writes the retained references forward through the normal ETag compare-and-swap path, runs the compatibility probe, and returns the exact current pointer identity. `completed` is the only successful result. Read that VersionId back independently and compare its body hash with the command result. A converged `409` is unattributed even when the selected release is active, so retain its independently read pointer VersionId and hash. A stale plan, `412`, `409` to another release, `404`, provider ambiguity, or failed probe is retained as non-passing evidence and is not retried from the old plan.
+5. Invoke the shadow evaluator once against the restored release. Fresh in-memory feed state makes this an unconditional fetch, and fresh announcement state sets `is_update=false`; compare candidate identities and counts rather than that payload field. Preview one retained-source replay against a snapshot and pointer VersionId that predate the exercise, and verify its exact release and application references still resolve; do not apply source replay or create delivery work for this proof.
+6. Create a second rollback preview whose historical pointer VersionId is the original current pointer from step 3 and whose promotion time follows the rollback. Review and separately authorize its exact apply. Independently read back the forward-restored pointer identity, probe the release, invoke shadow once more, and verify the retained historical references again. Keep all four triggers disabled and watcher reserved concurrency at zero.
+7. For application rollback, follow the package rollout procedure below with the stopped runtime state from step 3. Produce a saved Terraform plan that selects one retained package digest and VersionId for watcher, shadow evaluator, dispatcher, and worker and the same retained package bytes through the reconciler's independent pair. The plan changes five Lambda configurations and resumes none of the four triggers. Review and separately authorize only those unchanged plan bytes. Read all five Lambda configurations and four trigger states back, verify the selected artifact and historical release references, then produce and separately authorize a second saved plan restoring the original package pairs while the stopped state remains. The shadow evaluator runs the package selected by the watcher pair and has no trigger to resume.
+8. Create and review a final Terraform plan that restores `watcher_execution_paused=false` and the four trigger states recorded before step 3. Apply only those plan bytes after the forward package, release, configuration, inventory, and credential composition pass their existing preflights. Read back watcher reserved concurrency and all four trigger states.
+9. Record a terminal `passed`, `failed`, or `incomplete` disposition. A pass requires all three shadow invocations, both configuration promotions, both application deployments, both forward restorations, exact historical-reference checks before/during/after, and unchanged durable state from shadow evaluation. Missing operator authorization or credentials makes the exercise incomplete, not passed. A failed restoration leaves all four triggers disabled and watcher reserved concurrency at zero.
+
 ## Terraform output capture and recovery
 
 Every operator command that consumes Terraform outputs uses a fresh restricted

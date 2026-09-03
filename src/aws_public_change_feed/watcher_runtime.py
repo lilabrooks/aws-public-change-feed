@@ -3,19 +3,25 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from threading import Lock
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 
 from .fetching import FeedFetcher
 from .identity import application_artifact_id
 from .loading import IncompatibleRelease, ReleaseIntegrityError, load_active_release
 from .outbox import DynamoDBDeliveryStore
 from .releases import ObjectStore, S3ObjectStore
+from .runtime_environment import (
+    approved_hosts_from_environment,
+    positive_environment_integer,
+    required_environment,
+    valid_invocation_id,
+    zero_redirect_policy,
+)
 from .source_store import DynamoDBAnnouncementStateStore, DynamoDBFeedStateStore, S3SnapshotStore
 from .state import ConditionalStateConflict
 from .watcher import WatcherMetrics, WatcherOrchestrator, WatcherReleaseMismatch, WatcherResult
@@ -23,7 +29,6 @@ from .watcher import WatcherMetrics, WatcherOrchestrator, WatcherReleaseMismatch
 __all__ = ["EmbeddedWatcherMetrics", "WatcherRuntime", "lambda_handler"]
 
 _SAFE_METRIC_VALUE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,127}")
-_INVOCATION_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]{0,127}")
 _SAFE_NAMESPACE_CHARACTERS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./#:-")
 _ERROR_CLASSES = frozenset(
     {
@@ -350,78 +355,33 @@ class _RuntimeConfiguration:
     function_name: str
 
 
-def _required_environment(name: str) -> str:
-    value = os.environ.get(name)
-    if value is None or not value:
-        raise ValueError(f"missing required environment variable {name}")
-    return value
-
-
 def _snapshot_prefix_from_environment() -> str:
-    value = _required_environment("RAW_SNAPSHOT_PREFIX")
+    value = required_environment("RAW_SNAPSHOT_PREFIX")
     if value.startswith("/"):
         raise ValueError("RAW_SNAPSHOT_PREFIX must be a relative S3 prefix")
     return value
 
 
-def _positive_environment_integer(name: str) -> int:
-    raw = _required_environment(name)
-    try:
-        value = int(raw)
-    except ValueError:
-        raise ValueError(f"{name} must be a positive integer") from None
-    if value < 1:
-        raise ValueError(f"{name} must be a positive integer")
-    return value
-
-
-def _zero_redirect_policy() -> int:
-    raw = _required_environment("MAX_FEED_REDIRECTS")
-    try:
-        value = int(raw)
-    except ValueError:
-        raise ValueError("MAX_FEED_REDIRECTS must be zero") from None
-    if value != 0:
-        raise ValueError("MAX_FEED_REDIRECTS must be zero")
-    return value
-
-
-def _approved_hosts_from_environment() -> tuple[str, ...]:
-    raw = _required_environment("APPROVED_FEED_HOSTS_JSON")
-    try:
-        parsed = json.loads(raw)
-    except json.JSONDecodeError:
-        raise ValueError("APPROVED_FEED_HOSTS_JSON must be a JSON array") from None
-    if not isinstance(parsed, list) or not parsed:
-        raise ValueError("APPROVED_FEED_HOSTS_JSON must be a non-empty JSON array")
-    hosts = tuple(value.casefold() for value in parsed if isinstance(value, str))
-    if len(hosts) != len(parsed) or len(set(hosts)) != len(hosts):
-        raise ValueError("APPROVED_FEED_HOSTS_JSON must contain unique strings")
-    for host in hosts:
-        _safe_dimension("approved feed host", host)
-    return hosts
-
-
 def _configuration_from_environment() -> _RuntimeConfiguration:
     return _RuntimeConfiguration(
-        config_bucket=_required_environment("CONFIG_BUCKET"),
-        pointer_key=_required_environment("ACTIVE_VERSIONS_OBJECT_KEY"),
-        source_state_table=_required_environment("SOURCE_STATE_TABLE_NAME"),
-        delivery_table=_required_environment("DELIVERY_TABLE_NAME"),
-        delivery_index=_required_environment("DELIVERY_INDEX_NAME"),
+        config_bucket=required_environment("CONFIG_BUCKET"),
+        pointer_key=required_environment("ACTIVE_VERSIONS_OBJECT_KEY"),
+        source_state_table=required_environment("SOURCE_STATE_TABLE_NAME"),
+        delivery_table=required_environment("DELIVERY_TABLE_NAME"),
+        delivery_index=required_environment("DELIVERY_INDEX_NAME"),
         raw_snapshot_prefix=_snapshot_prefix_from_environment(),
-        application_version=application_artifact_id(_required_environment("APPLICATION_VERSION")),
-        approved_hosts=_approved_hosts_from_environment(),
-        connect_timeout_seconds=_positive_environment_integer("FEED_CONNECT_TIMEOUT_SECONDS"),
-        response_timeout_seconds=_positive_environment_integer("FEED_RESPONSE_TIMEOUT_SECONDS"),
-        max_response_bytes=_positive_environment_integer("MAX_FEED_RESPONSE_BYTES"),
-        max_redirects=_zero_redirect_policy(),
-        max_items=_positive_environment_integer("MAX_FEED_ITEMS"),
-        max_item_characters=_positive_environment_integer("MAX_FEED_ITEM_CHARACTERS"),
-        max_concurrent_fetches=_positive_environment_integer("MAX_CONCURRENT_FETCHES"),
-        lease_seconds=_positive_environment_integer("FEED_LEASE_SECONDS"),
-        metrics_namespace=_required_environment("METRICS_NAMESPACE"),
-        function_name=_required_environment("AWS_LAMBDA_FUNCTION_NAME"),
+        application_version=application_artifact_id(required_environment("APPLICATION_VERSION")),
+        approved_hosts=approved_hosts_from_environment(),
+        connect_timeout_seconds=positive_environment_integer("FEED_CONNECT_TIMEOUT_SECONDS"),
+        response_timeout_seconds=positive_environment_integer("FEED_RESPONSE_TIMEOUT_SECONDS"),
+        max_response_bytes=positive_environment_integer("MAX_FEED_RESPONSE_BYTES"),
+        max_redirects=zero_redirect_policy(),
+        max_items=positive_environment_integer("MAX_FEED_ITEMS"),
+        max_item_characters=positive_environment_integer("MAX_FEED_ITEM_CHARACTERS"),
+        max_concurrent_fetches=positive_environment_integer("MAX_CONCURRENT_FETCHES"),
+        lease_seconds=positive_environment_integer("FEED_LEASE_SECONDS"),
+        metrics_namespace=required_environment("METRICS_NAMESPACE"),
+        function_name=required_environment("AWS_LAMBDA_FUNCTION_NAME"),
     )
 
 
@@ -447,9 +407,9 @@ def _validate_schedule_event(event: Mapping[str, Any]) -> None:
 def _context_values(context: object) -> tuple[str, Callable[[], int]]:
     request_id = getattr(context, "aws_request_id", None)
     remaining = getattr(context, "get_remaining_time_in_millis", None)
-    if not isinstance(request_id, str) or _INVOCATION_ID.fullmatch(request_id) is None or not callable(remaining):
+    if not valid_invocation_id(request_id) or not callable(remaining):
         raise ValueError("invalid Lambda watcher context")
-    return request_id, remaining
+    return cast(str, request_id), cast(Callable[[], int], remaining)
 
 
 def _build_runtime(configuration: _RuntimeConfiguration) -> WatcherRuntime:

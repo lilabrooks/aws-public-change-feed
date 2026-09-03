@@ -111,6 +111,14 @@ exception attached for a chain walker to reach.
 - Write bounded raw snapshots under the designated prefix.
 - No Slack secrets, queue consumption, customer-account calls, or role assumption.
 
+### Shadow evaluator
+
+- Uses the feed watcher's exact package digest, S3 VersionId, timeout, normal concurrency, network policy, and active-release inputs. Its reserved concurrency stays at one while an L-42 plan pauses watcher execution at zero.
+- Reads the active manifest and exact release object versions, including the same exact-key bounded absence probe.
+- Writes only its dedicated CloudWatch log stream and has no event source.
+- Receives no DynamoDB, S3 write or delete, queue, secret, customer-account, or role-assumption permission.
+- Accepts invocation from a separate operator role scoped to this function. Asynchronous invocation has zero automatic retries, and the L-42 exercise uses a synchronous request.
+
 ### Application artifact retirement operator
 
 - Assume a role separate from release publication and every runtime role.
@@ -333,7 +341,7 @@ These are deployment acceptance values, not universal claims in the codebase.
 
 ## Release and rollback
 
-Promote policy releases separately from application deployments. Shadow evaluation can compare a candidate release against a historical corpus and live feed snapshot without creating outbox work. Rollback promotes an earlier immutable manifest or application version. Candidate history records which combination produced each result.
+Promote policy releases separately from application deployments. Shadow evaluation can compare a candidate release against a historical corpus and live feed snapshot without creating outbox work. The source-defined shadow Lambda is invoked directly with the expected release, application digest, and complete sorted feed-name set. It uses the production release loader, pinned feed fetcher, parser, normalizer, matcher, route mapping, candidate builder, and durability orchestration against fresh in-memory stores. Its role can read the active manifest and exact release objects and write its own logs; it has no DynamoDB, S3 write, queue, or secret permission and has no event source. Its bounded result records the invocation ID, feed outcomes, counts, route IDs, and a digest of the sorted candidate IDs rather than source text or candidate payloads. Fixed refusal codes distinguish identity, compatibility, integrity, missing-release, and incomplete outcomes. Rollback promotes an earlier immutable manifest or application version. Candidate history records which combination produced each result.
 
 Application packages are content-addressed by the SHA-256 digest of the exact
 deployable bytes. Retain them for at least 400 days and keep at least the newest
