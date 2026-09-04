@@ -218,6 +218,86 @@ class TerraformContractTests(unittest.TestCase):
                 ],
             )
 
+    def test_terraform_clean_removes_only_root_working_directories(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            terraform_roots = (
+                temporary_root / "infra/bootstrap",
+                temporary_root / "infra/central",
+                temporary_root / "infra/preflight",
+            )
+            preserved_files = []
+            for terraform_root in terraform_roots:
+                working_directory = terraform_root / ".terraform"
+                working_directory.mkdir(parents=True)
+                (working_directory / "cache.bin").write_bytes(b"provider cache")
+                for relative_path, body in (
+                    (".terraform.lock.hcl", "provider lock\n"),
+                    ("terraform.tfstate", "local state\n"),
+                    ("terraform.tfstate.backup", "local state backup\n"),
+                    ("main.tf", "terraform {}\n"),
+                ):
+                    path = terraform_root / relative_path
+                    path.write_text(body, encoding="utf-8")
+                    preserved_files.append(path)
+
+            nested_working_directory = temporary_root / "infra/central/modules/example/.terraform"
+            nested_working_directory.mkdir(parents=True)
+            nested_cache = nested_working_directory / "cache.bin"
+            nested_cache.write_bytes(b"nested cache")
+            outside_working_directory = temporary_root / "sandbox/.terraform"
+            outside_working_directory.mkdir(parents=True)
+            outside_cache = outside_working_directory / "cache.bin"
+            outside_cache.write_bytes(b"outside cache")
+            root_state = temporary_root / "terraform.tfstate"
+            root_state.write_text("repository root state\n", encoding="utf-8")
+            preserved_files.extend((nested_cache, outside_cache, root_state))
+
+            cleaned = subprocess.run(
+                (
+                    "make",
+                    "-f",
+                    str(ROOT / "Makefile"),
+                    "terraform-clean",
+                    "TERRAFORM_ROOTS=sandbox",
+                ),
+                cwd=temporary_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(cleaned.returncode, 0, msg=f"{cleaned.stdout}\n{cleaned.stderr}")
+            for terraform_root in terraform_roots:
+                with self.subTest(terraform_root=terraform_root):
+                    self.assertFalse((terraform_root / ".terraform").exists())
+            for path in preserved_files:
+                with self.subTest(preserved_path=path):
+                    self.assertTrue(path.is_file())
+
+    def test_clean_preserves_terraform_working_directories(self):
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            temporary_root = Path(temporary_directory)
+            (temporary_root / "scripts").mkdir()
+            terraform_cache = temporary_root / "infra/central/.terraform/cache.bin"
+            terraform_cache.parent.mkdir(parents=True)
+            terraform_cache.write_bytes(b"provider cache")
+            python_cache = temporary_root / "tests/__pycache__/test_cache.pyc"
+            python_cache.parent.mkdir(parents=True)
+            python_cache.write_bytes(b"python cache")
+
+            cleaned = subprocess.run(
+                ("make", "-f", str(ROOT / "Makefile"), "clean"),
+                cwd=temporary_root,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            self.assertEqual(cleaned.returncode, 0, msg=f"{cleaned.stdout}\n{cleaned.stderr}")
+            self.assertTrue(terraform_cache.is_file())
+            self.assertFalse(python_cache.exists())
+
     def test_preflight_root_has_exact_state_resource_and_trigger_boundaries(self):
         main = (ROOT / "infra/preflight/main.tf").read_text(encoding="utf-8")
         variables = (ROOT / "infra/preflight/variables.tf").read_text(encoding="utf-8")
