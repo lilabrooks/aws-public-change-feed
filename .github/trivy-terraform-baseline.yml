@@ -1,23 +1,28 @@
 scanner:
   version: "0.74.0"
-  observed_at: "2026-08-26"
-  observed_commit: 26ad4ae518311c80b5d540d71fb064bda5ed1ac5
+  observed_at: "2026-09-03"
+  observed_commit: 1d2c3f685b193b1ecd14d2a34ac99c0155d1be01
   check_bundle_digest: sha256:1583562f8b90ed2a071b99f0e5ffff6b57e4ceb6ca3e4796577b4e6a339eb74c
 
-totals:
-  findings: 19
-  severity:
-    HIGH: 6
-    MEDIUM: 2
-    LOW: 11
+scan_roots:
+  bootstrap: infra/bootstrap
+  central: infra/central
+  preflight: infra/preflight
 
-# This inventory classifies the report-only source findings. It is not an
-# ignore list: all findings remain visible in every scheduled, main, and pull
-# request run.
+totals:
+  findings: 33
+  severity:
+    HIGH: 10
+    MEDIUM: 2
+    LOW: 21
+
+# This inventory classifies every root-scoped source finding. It is not an
+# ignore list: the workflow prints each finding and fails on any changed count,
+# rule, severity, path, or scan-root context.
 classifications:
   - class: accepted_managed_encryption
     status: accepted_by_architecture
-    finding_count: 12
+    finding_count: 24
     rationale: >-
       Chapter 05 permits or requires the managed encryption represented by
       these resources: S3 AES256, DynamoDB AWS-owned encryption, the account
@@ -26,40 +31,72 @@ classifications:
       choice, not the repository baseline.
     findings:
       - id: AWS-0132
-        count: 3
-        paths:
-          - infra/bootstrap/concurrency.tf
-          - infra/bootstrap/main.tf
-          - infra/central/s3.tf
+        severity: HIGH
+        occurrences:
+          - scan_root: bootstrap
+            path: infra/bootstrap/concurrency.tf
+            count: 1
+          - scan_root: bootstrap
+            path: infra/bootstrap/main.tf
+            count: 1
+          - scan_root: central
+            path: infra/central/s3.tf
+            count: 1
+          - scan_root: preflight
+            path: infra/central/s3.tf
+            count: 1
       - id: AWS-0025
-        count: 2
-        paths:
-          - infra/central/dynamodb.tf
+        severity: LOW
+        occurrences:
+          - scan_root: central
+            path: infra/central/dynamodb.tf
+            count: 2
+          - scan_root: preflight
+            path: infra/central/dynamodb.tf
+            count: 2
       - id: AWS-0017
-        count: 4
-        paths:
-          - infra/central/log_groups.tf
+        severity: LOW
+        occurrences:
+          - scan_root: central
+            path: infra/central/log_groups.tf
+            count: 5
+          - scan_root: preflight
+            path: infra/central/log_groups.tf
+            count: 5
       - id: AWS-0098
-        count: 1
-        paths:
-          - infra/central/secrets.tf
+        severity: LOW
+        occurrences:
+          - scan_root: central
+            path: infra/central/secrets.tf
+            count: 1
+          - scan_root: preflight
+            path: infra/central/secrets.tf
+            count: 1
       - id: AWS-0096
-        count: 2
-        paths:
-          - infra/central/sqs.tf
+        severity: HIGH
+        occurrences:
+          - scan_root: central
+            path: infra/central/sqs.tf
+            count: 2
+          - scan_root: preflight
+            path: infra/central/sqs.tf
+            count: 2
 
-  - class: preproduction_backup_decision
-    status: deferred_by_architecture
+  - class: isolated_preflight_pitr_default
+    status: accepted_by_architecture
     finding_count: 2
     rationale: >-
-      Chapter 05 defers the DynamoDB point-in-time recovery decision until the
-      production candidate-history recovery objective is set. The deployment
-      input keeps the setting explicit and testable.
+      ADR-027 and chapter 06 require 35-day PITR for both production tables and
+      keep the isolated preflight root default-off. The central root scan has no
+      AWS-0024 finding; these occurrences come only from the preflight module
+      instantiation with its explicit false default.
     findings:
       - id: AWS-0024
-        count: 2
-        paths:
-          - infra/central/dynamodb.tf
+        severity: MEDIUM
+        occurrences:
+          - scan_root: preflight
+            path: infra/central/dynamodb.tf
+            count: 2
 
   - class: scoped_test_identity
     status: accepted_test_boundary
@@ -70,30 +107,51 @@ classifications:
       operator-run suite and deleted afterward.
     findings:
       - id: AWS-0143
-        count: 1
-        paths:
-          - infra/bootstrap/concurrency.tf
+        severity: LOW
+        occurrences:
+          - scan_root: bootstrap
+            path: infra/bootstrap/concurrency.tf
+            count: 1
 
   - class: unresolved_hardening
     status: open
-    finding_count: 4
+    finding_count: 6
     rationale: >-
       S3 access logging and SNS topic encryption are not established by the
       current architecture. This CI reports them without silently accepting,
       suppressing, or expanding issue 129 into an infrastructure decision.
     findings:
       - id: AWS-0089
-        count: 3
-        paths:
-          - infra/bootstrap/concurrency.tf
-          - infra/bootstrap/main.tf
-          - infra/central/s3.tf
+        severity: LOW
+        occurrences:
+          - scan_root: bootstrap
+            path: infra/bootstrap/concurrency.tf
+            count: 1
+          - scan_root: bootstrap
+            path: infra/bootstrap/main.tf
+            count: 1
+          - scan_root: central
+            path: infra/central/s3.tf
+            count: 1
+          - scan_root: preflight
+            path: infra/central/s3.tf
+            count: 1
       - id: AWS-0095
-        count: 1
-        paths:
-          - infra/central/sns.tf
+        severity: HIGH
+        occurrences:
+          - scan_root: central
+            path: infra/central/sns.tf
+            count: 1
+          - scan_root: preflight
+            path: infra/central/sns.tf
+            count: 1
 
 limitations:
+  - >-
+    The preflight scan evaluates infra/central as a module, so central source
+    findings appear once under the production defaults and once under the
+    isolated preflight inputs. Counts are scan-root occurrences rather than
+    unique source locations.
   - >-
     Trivy evaluates Terraform source. It does not replace the runbook's
     aws iam simulate-principal-policy check against every applied runtime role
