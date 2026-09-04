@@ -133,10 +133,13 @@ Useful focused commands:
 | `make evaluate-corpus` | Scores matching with the reviewed [`config/dev.yaml`](config/dev.yaml) policy. |
 | `make screen-feeds` | Fetches the configured public feeds through the runtime acquisition path and reports current matches. |
 | `make references-online` | Checks external links with Lychee. |
+| `make terraform-clean` | Removes the root `.terraform` working directories under `infra/bootstrap`, `infra/central`, and `infra/preflight`. |
 
 The corpus evaluator and feed screener accept `--root` and `--config`. Relative paths resolve from `--root`; absolute paths are accepted. The Make targets select [`config/dev.yaml`](config/dev.yaml) explicitly.
 
 `make screen-feeds` and `make references-online` use the network. Feed screening reads public sources and does not require AWS credentials. Online reference checks require the `lychee` executable.
+
+Terraform cleanup is event-driven. Use `make terraform-clean` after a backend or account change, when stale initialization causes failures, or to reclaim local disk. The target preserves every `.terraform.lock.hcl`, local and remote state, Terraform configuration, and other files. Rerun `terraform init` in each affected root with the intended backend settings before planning or applying.
 
 ## Repository map
 

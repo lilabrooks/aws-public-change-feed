@@ -14,7 +14,7 @@ CHECK_DIFF_HEAD ?= HEAD
 
 .PHONY: help install format format-check lint lint-python lint-yaml typecheck validate validate-config \
 	validate-references validate-site generate-slack-sample evaluate-corpus references-online screen-feeds terraform-check \
-	tflint-check test whitespace check clean
+	tflint-check terraform-clean test whitespace check clean
 
 help:
 	@echo "Available targets:"
@@ -30,6 +30,7 @@ help:
 	@echo "  screen-feeds       Screen live feeds against the rules (requires network)"
 	@echo "  terraform-check    Format-check and validate Terraform roots (REQUIRE_TERRAFORM=1 fails if absent)"
 	@echo "  tflint-check       Run TFLint and its AWS ruleset (REQUIRE_TFLINT=1 fails if absent)"
+	@echo "  terraform-clean    Remove Terraform working directories from the three repository roots"
 	@echo "  test          Run the unittest suite"
 	@echo "  whitespace    Check the working tree and configured commit range for Git whitespace errors"
 	@echo "  check         Run every non-mutating repository check"
@@ -114,6 +115,9 @@ tflint-check:
 			$(TFLINT) --config="$(TFLINT_CONFIG)" --chdir="$$root" || exit 1; \
 		done; \
 	fi
+
+terraform-clean:
+	rm -rf infra/bootstrap/.terraform infra/central/.terraform infra/preflight/.terraform
 
 test:
 	$(PYTHON) -m unittest discover -s tests
