@@ -1,9 +1,6 @@
 name: Repository security
 
 "on":
-  push:
-    branches:
-      - main
   pull_request:
   schedule:
     - cron: "17 8 * * 1"
@@ -46,17 +43,37 @@ jobs:
         with:
           persist-credentials: false
 
-      # Source scanning is report-only because the classified baseline mixes
-      # accepted managed-encryption choices, deferred decisions, and hardening
-      # gaps. Scanner execution errors still fail this job.
-      - name: Report Terraform misconfiguration evidence
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+      # Findings remain visible and classified. Scanner errors or any change
+      # from the reviewed root-scoped baseline fail this job.
+      - name: Set up Trivy
+        uses: aquasecurity/setup-trivy@3fb12ec12f41e471780db15c232d5dd185dcb514  # v0.2.6
         with:
-          scan-type: config
-          scan-ref: infra
-          trivy-config: trivy.yaml
-          scanners: misconfig
-          severity: LOW,MEDIUM,HIGH,CRITICAL
-          exit-code: "0"
           version: v0.74.0
-          cache-dir: ${{ runner.temp }}/trivy-cache
+          cache: true
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      - name: Install baseline comparator dependency
+        run: python -m pip install --no-deps --constraint requirements.txt PyYAML
+
+      - name: Scan Terraform roots as separate entry points
+        run: |
+          trivy config --config trivy.yaml --severity LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0 --format json --output trivy-terraform-bootstrap.json infra/bootstrap
+          trivy config --config trivy.yaml --severity LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0 --format json --output trivy-terraform-central.json infra/central
+          trivy config --config trivy.yaml --severity LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0 --format json --output trivy-terraform-preflight.json infra/preflight
+
+      - name: Compare Terraform findings with the reviewed baseline
+        run: |
+          python scripts/compare_trivy_baseline.py \
+            --baseline .github/trivy-terraform-baseline.yml \
+            --result bootstrap=trivy-terraform-bootstrap.json \
+            --result central=trivy-terraform-central.json \
+            --result preflight=trivy-terraform-preflight.json

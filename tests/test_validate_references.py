@@ -344,6 +344,7 @@ class ReferenceValidatorTests(unittest.TestCase):
 
     def test_quality_workflow_runs_pinned_python_312_checks(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/quality.yml").read_text(encoding="utf-8"))
+        self.assertEqual(set(workflow["on"]), {"pull_request", "workflow_dispatch"})
         steps = workflow["jobs"]["validate"]["steps"]
         checkout = next(step for step in steps if step.get("name") == "Check out repository")
         setup = next(step for step in steps if step.get("name") == "Set up Python")
@@ -352,6 +353,8 @@ class ReferenceValidatorTests(unittest.TestCase):
         workflow_pins.assert_pinned(setup["uses"], "actions/setup-python")
         self.assertEqual(setup["with"]["python-version"], "3.12")
         self.assertEqual(checks["run"], "make check PYTHON=python REQUIRE_TERRAFORM=1")
+        self.assertEqual(checks["env"]["CHECK_DIFF_BASE"], "${{ github.event.pull_request.base.sha }}")
+        self.assertEqual(checks["env"]["CHECK_DIFF_HEAD"], "${{ github.sha }}")
 
     def test_quality_workflow_installs_terraform_before_the_checks(self):
         """The local default may skip Terraform, while CI must require it.
@@ -384,12 +387,28 @@ class ReferenceValidatorTests(unittest.TestCase):
         minimum_version_check = next(
             step for step in minimum_steps if step.get("name") == "Confirm minimum Terraform version"
         )
+        tflint_setup = next(step for step in minimum_steps if step.get("name") == "Set up TFLint")
         minimum_check = next(
-            step for step in minimum_steps if step.get("name") == "Validate Terraform roots at the minimum version"
+            step
+            for step in minimum_steps
+            if step.get("name") == "Validate Terraform roots and run TFLint at the minimum version"
         )
         workflow_pins.assert_pinned(minimum_setup["uses"], "hashicorp/setup-terraform")
         self.assertEqual(minimum_setup["with"]["terraform_version"], minimum_version)
         self.assertFalse(minimum_setup["with"]["terraform_wrapper"])
+        self.assertEqual(
+            workflow_pins.assert_pinned(tflint_setup["uses"], "terraform-linters/setup-tflint"),
+            "6e1e0642c0289bd619021bf6b34e3c08ed1e005a",
+        )
+        self.assertEqual(
+            tflint_setup["with"],
+            {
+                "tflint_version": "v0.64.0",
+                "checksums": "cca9d13e2e1d7a2c627af60ff899a3c9b74212899416aeb96ec764d2ef954537",
+                "cache": True,
+                "tflint_config_path": ".tflint.hcl",
+            },
+        )
         self.assertEqual(
             minimum_version_check["run"].splitlines(),
             [
@@ -397,7 +416,13 @@ class ReferenceValidatorTests(unittest.TestCase):
                 f'test "$(terraform version | sed -n \'1p\')" = "Terraform v{minimum_version}"',
             ],
         )
-        self.assertEqual(minimum_check["run"], "make terraform-check REQUIRE_TERRAFORM=1")
+        self.assertEqual(
+            minimum_check["run"],
+            "make terraform-check tflint-check REQUIRE_TERRAFORM=1 REQUIRE_TFLINT=1",
+        )
+        tflint_config = (ROOT / ".tflint.hcl").read_text(encoding="utf-8")
+        self.assertIn('version = "0.48.0"', tflint_config)
+        self.assertIn('source  = "github.com/terraform-linters/tflint-ruleset-aws"', tflint_config)
 
     def test_provider_lockfiles_cover_the_ci_and_local_platforms(self):
         """A lockfile locked only on the author's platform fails init on the runner."""

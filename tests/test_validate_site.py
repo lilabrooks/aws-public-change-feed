@@ -300,6 +300,7 @@ class SiteValidatorTests(unittest.TestCase):
 
     def test_pages_workflow_uses_immutable_actions_and_minimum_permissions(self):
         workflow = yaml.safe_load((ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8"))
+        self.assertEqual(workflow["jobs"]["deploy"]["timeout-minutes"], 10)
         steps = workflow["jobs"]["deploy"]["steps"]
         step_names = [step["name"] for step in steps]
         steps_by_name = {step["name"]: step for step in steps}

@@ -5,11 +5,16 @@ MYPY_PATHS := $(PYTHON_PATHS)
 YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml $(wildcard .github/workflows)
 TERRAFORM ?= terraform
 REQUIRE_TERRAFORM ?= 0
+TFLINT ?= tflint
+REQUIRE_TFLINT ?= 0
+TFLINT_CONFIG := $(CURDIR)/.tflint.hcl
 TERRAFORM_ROOTS := infra/bootstrap infra/central infra/preflight
+CHECK_DIFF_BASE ?=
+CHECK_DIFF_HEAD ?= HEAD
 
 .PHONY: help install format format-check lint lint-python lint-yaml typecheck validate validate-config \
 	validate-references validate-site generate-slack-sample evaluate-corpus references-online screen-feeds terraform-check \
-	test whitespace check clean
+	tflint-check test whitespace check clean
 
 help:
 	@echo "Available targets:"
@@ -24,8 +29,9 @@ help:
 	@echo "  references-online  Check external links with Lychee (requires network)"
 	@echo "  screen-feeds       Screen live feeds against the rules (requires network)"
 	@echo "  terraform-check    Format-check and validate Terraform roots (REQUIRE_TERRAFORM=1 fails if absent)"
+	@echo "  tflint-check       Run TFLint and its AWS ruleset (REQUIRE_TFLINT=1 fails if absent)"
 	@echo "  test          Run the unittest suite"
-	@echo "  whitespace    Check changed files for Git whitespace errors"
+	@echo "  whitespace    Check the working tree and configured commit range for Git whitespace errors"
 	@echo "  check         Run every non-mutating repository check"
 	@echo "  clean         Remove generated development caches"
 
@@ -92,13 +98,33 @@ terraform-check:
 		done; \
 	fi
 
+# TFLint's plugin installation is version-bound by .tflint.hcl. CI requires
+# the binary; local checks may skip it when the optional tool is absent.
+tflint-check:
+	@if ! command -v $(TFLINT) >/dev/null 2>&1; then \
+		if [ "$(REQUIRE_TFLINT)" = "1" ]; then \
+			echo "tflint is required but not installed" >&2; \
+			exit 1; \
+		fi; \
+		echo "tflint not installed; skipping tflint-check"; \
+	else \
+		$(TFLINT) --init --config="$(TFLINT_CONFIG)" || exit 1; \
+		for root in $(TERRAFORM_ROOTS); do \
+			echo "Linting $$root"; \
+			$(TFLINT) --config="$(TFLINT_CONFIG)" --chdir="$$root" || exit 1; \
+		done; \
+	fi
+
 test:
 	$(PYTHON) -m unittest discover -s tests
 
 whitespace:
 	git diff --check HEAD
+	@if [ -n "$(CHECK_DIFF_BASE)" ]; then \
+		git diff --check "$(CHECK_DIFF_BASE)...$(CHECK_DIFF_HEAD)"; \
+	fi
 
-check: format-check lint typecheck validate test terraform-check whitespace
+check: format-check lint typecheck validate test terraform-check tflint-check whitespace
 
 clean:
 	find $(PYTHON_PATHS) -type d -name __pycache__ -prune -exec rm -rf {} +

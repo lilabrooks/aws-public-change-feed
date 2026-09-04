@@ -1,7 +1,7 @@
 # AWS Public Change Alerting
 
-[![Repository quality](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml)
-[![Repository security](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/security.yml/badge.svg?branch=main)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/security.yml)
+[![Repository quality](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml/badge.svg?event=pull_request)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/quality.yml)
+[![Repository security](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/security.yml/badge.svg?event=pull_request)](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/security.yml)
 [![Public site](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/pages.yml/badge.svg?branch=main)](https://lilabrooks.github.io/aws-public-change-feed/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
@@ -41,7 +41,7 @@ M1 ran the whole dev service on schedule and exercised delivery, recovery, load,
 - The recovery exercise moved one `pending_queue` record to `posted` with 1 Slack attempt and one expired `sending` record to `delivery_unknown` with 0 Slack attempts.
 - The fixed load run created 5 records per minute for 10 minutes and stopped at 50 records.
 - The owner confirmed receipt of the alarm email.
-- Pull requests, pushes to `main`, and weekly CI now scan all 3 pinned Python dependency manifests and tracked plaintext for high and critical findings. Terraform findings remain report-only because the reviewed baseline includes accepted AWS defaults and service-managed encryption choices.
+- Pull requests and weekly CI scan all 3 pinned Python dependency manifests and tracked plaintext for high and critical findings. Terraform scans run separately for the bootstrap, central, and preflight entry points. Classified findings remain visible, and any change from their exact reviewed baseline fails the job.
 
 ### M2: lifecycle and replay
 
@@ -123,7 +123,7 @@ make install
 make check
 ```
 
-`make check` runs formatting, Python and YAML lint, type checks, schema and cross-file validation, corpus scoring, the full unit-test suite, and whitespace checks. It also validates the Terraform roots when Terraform is installed. CI tests Terraform 1.15.8 and the minimum supported 1.10.0 release.
+`make check` runs formatting, Python and YAML lint, type checks, schema and cross-file validation, corpus scoring, the full unit-test suite, and whitespace checks. It validates the Terraform roots when Terraform is installed and runs TFLint with its AWS ruleset when TFLint is installed. CI requires both tools, tests Terraform 1.15.8 and the minimum supported 1.10.0 release, and checks every pull request's committed diff for Git whitespace errors.
 
 Useful focused commands:
 

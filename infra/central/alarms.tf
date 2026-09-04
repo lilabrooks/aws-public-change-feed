@@ -1,6 +1,4 @@
 locals {
-  runbook = "https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/operations.md"
-
   common_alarm_tags = {
     deployment_id = local.deployment_id
   }
