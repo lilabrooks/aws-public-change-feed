@@ -63,11 +63,11 @@ jobs:
 
       - name: Scan Terraform roots as separate entry points
         run: |
-          trivy config --config trivy.yaml --scanners misconfig --severity LOW,MEDIUM,HIGH,CRITICAL \
+          trivy config --config trivy.yaml --severity LOW,MEDIUM,HIGH,CRITICAL \
             --exit-code 0 --format json --output trivy-terraform-bootstrap.json infra/bootstrap
-          trivy config --config trivy.yaml --scanners misconfig --severity LOW,MEDIUM,HIGH,CRITICAL \
+          trivy config --config trivy.yaml --severity LOW,MEDIUM,HIGH,CRITICAL \
             --exit-code 0 --format json --output trivy-terraform-central.json infra/central
-          trivy config --config trivy.yaml --scanners misconfig --severity LOW,MEDIUM,HIGH,CRITICAL \
+          trivy config --config trivy.yaml --severity LOW,MEDIUM,HIGH,CRITICAL \
             --exit-code 0 --format json --output trivy-terraform-preflight.json infra/preflight
 
       - name: Compare Terraform findings with the reviewed baseline

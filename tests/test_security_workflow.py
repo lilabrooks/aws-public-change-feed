@@ -77,6 +77,7 @@ class SecurityWorkflowTests(unittest.TestCase):
         for root in ("bootstrap", "central", "preflight"):
             self.assertIn(f"--output trivy-terraform-{root}.json infra/{root}", scan["run"])
             self.assertIn(f"--result {root}=trivy-terraform-{root}.json", compare["run"])
+        self.assertNotIn("--scanners", scan["run"])
         self.assertEqual(scan["run"].count("--format json"), 3)
         self.assertEqual(scan["run"].count("--exit-code 0"), 3)
         self.assertIn("scripts/compare_trivy_baseline.py", compare["run"])
