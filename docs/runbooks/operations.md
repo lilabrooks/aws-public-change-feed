@@ -336,6 +336,119 @@ the preserved file and matching digest are proved.
 This manual gate is deliberate. Automatic cleanup cannot decide whether a
 partial provider response still matters to the failed operation.
 
+## M3 DynamoDB recovery proof
+
+This exercise implements ADR-027 against the persistent dev tables. It creates
+two new DynamoDB tables and incurs PITR, restore, ordinary table-storage, and
+read charges. Repository implementation authority is not live AWS authority.
+Obtain separate review and authorization for each saved Terraform apply, the
+digest-bound restore apply, and exact-name cleanup.
+
+1. Record the current central Git SHA, account, Region, Terraform state
+   VersionId, runtime table outputs, all four trigger states, watcher reserved
+   concurrency, table sizes, and active package and release identities. Review
+   a central Terraform plan that enables 35-day PITR on both primary tables,
+   creates the scoped `dynamodb_recovery` role, disables watcher, dispatcher,
+   and reconciler trigger requests, keeps the worker's recorded trigger state,
+   and sets `watcher_execution_paused=true`. Apply only those saved plan bytes.
+   Read back PITR, triggers, and reserved concurrency. Wait one full 300-second
+   watcher timeout.
+   Freeze every other source replay, retention migration, retirement, release,
+   and recovery operator command until step 9. Their roles intentionally remain
+   available, but their writes would invalidate this exercise.
+2. Let already accepted worker traffic drain. Confirm all three SQS counters
+   are zero and the delivery table has no `pending_queue`, `queued`, `sending`,
+   or `failed_retryable` item. Create and separately authorize a second saved
+   plan that disables the worker event-source mapping. Read back all four
+   disabled triggers. Keep them disabled through step 8. Wait until both
+   tables' latest restorable times cover one timestamp after the quiescence
+   boundary.
+3. Capture fresh central outputs with the preceding restricted capture
+   procedure. Assume only the role in the captured `roles.dynamodb_recovery`
+   output. Set `STARTED_AT` to the current second in UTC. Preview derives the
+   shared restore point from the earlier provider-reported latest restorable
+   time and records whether its distance meets the nominal five-minute target.
+   Choose item and byte caps above the complete current inventories based on
+   the recorded table sizes. Caps cannot exceed 100,000 items or 256 MiB. The
+   command refuses a start clock more than 60 seconds old, so create a new
+   exercise ID and path if preview cannot start in that interval.
+4. Create the read-only canonical plan. The destination path must not exist:
+
+   ```bash
+   python3 scripts/prove_dynamodb_recovery.py preview \
+     --deployment infra/central/deployment.yaml \
+     --terraform-output "$CAPTURE_PATH" \
+     --exercise-id <unique-lowercase-exercise-id> \
+     --operator <bounded-operator-id> \
+     --started-at "$STARTED_AT" \
+     --max-inventory-items <reviewed-complete-item-cap> \
+     --max-inventory-bytes <reviewed-complete-byte-cap> \
+     --plan build/dynamodb-recovery-plan.json
+   ```
+
+   Preserve the printed SHA-256. Review account, Region, Git and input hashes,
+   both source ARNs and IDs, PITR windows, derived common timestamp, measured
+   nominal-RPO result, exact target names, schemas, settings, tags, complete
+   inventory digests and counts, TTL-eligible cohort, controls, and four-hour
+   deadline. Preview performs no provider mutation.
+5. Obtain authorization for this exact plan digest, then start both restores:
+
+   ```bash
+   python3 scripts/prove_dynamodb_recovery.py apply \
+     --plan build/dynamodb-recovery-plan.json \
+     --expected-plan-sha256 <reviewed-plan-sha256>
+   ```
+
+   `restore_stage_status=completed` is the only successful restore-stage
+   result. The same payload always reports
+   `exercise_status=incomplete_pending_cutover_rollback_and_trigger_restoration`.
+   `restore_stage_status=incomplete` while either table is creating is expected
+   but non-passing. Re-run the same exact apply within the deadline to observe
+   the matching destination and, once it is `ACTIVE`, repair TTL, 35-day PITR,
+   and tags. AWS requires the role's target-prefix item actions while the
+   service populates a restore; the command itself never invokes an item API.
+   `partial` means one table may exist. `ambiguous` means the exact destination
+   reread did not prove the failed response. Do not create a replacement name
+   or retry from a new plan until both exact destinations have been inspected.
+6. A read-only status check revalidates the saved source and stopped-runtime
+   preconditions before comparing both restored tables:
+
+   ```bash
+   python3 scripts/prove_dynamodb_recovery.py status \
+     --plan build/dynamodb-recovery-plan.json \
+     --expected-plan-sha256 <reviewed-plan-sha256>
+   ```
+
+   Preserve the terminal result. The restore stage succeeds only when both
+   tables are `verified` before the bound deadline. Later provider completion
+   leaves `restore_stage_status=incomplete`. The full exercise still requires
+   cutover and rollback.
+7. Put the returned restored names and reviewed plan digest in a restricted
+   Terraform variable file as `dynamodb_recovery_cutover`. Terraform also
+   requires both names to carry the same exercise-ID suffix. Keep
+   `delivery_triggers_enabled=false`, `reconciler_trigger_enabled=false`, all
+   three trigger overrides false, and `watcher_execution_paused=true`. Create a
+   saved central plan. It must retain both primary tables and move every Lambda
+   environment, runtime table and index policy resource, alarm, dashboard
+   dimension, and runtime output to the restored pair. Apply only separately
+   authorized plan bytes. Read every value back while triggers remain stopped.
+8. Before any restored-table trigger runs, create a second saved plan that sets
+   `dynamodb_recovery_cutover=null` and preserves the stopped controls. Apply
+   only separately authorized bytes. Read back every original table binding,
+   policy resource, alarm, dashboard dimension, and output. Compare complete
+   original and restored inventory digests again by rerunning the exact status
+   command from step 6 against the unchanged capture and plan. Any protected
+   item change, changed TTL-eligible item, or expired deadline makes the restore
+   stage incomplete. A bound TTL-eligible item may disappear and is reported as
+   a classified service deletion rather than an application write.
+9. Restore the exact trigger states and watcher concurrency recorded in step 1
+   only after the primary bindings are proved. Record `passed`, `failed`, or
+   `incomplete`, measured recovery-point distance, elapsed recovery time, plan
+   hashes, destination ARNs, settings, inventory evidence, cutover and rollback
+   plan hashes, and all read-backs. Keep original tables. Deleting either
+   restored table is a separate cleanup decision against its exact name and ARN;
+   the permanent recovery role intentionally cannot do it.
+
 ## Configuration release publication
 
 Use the reviewed Terraform backend principal to initialize the remote backend

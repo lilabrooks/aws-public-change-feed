@@ -19,9 +19,42 @@ variable "operational_sns_subscription_endpoints" {
 }
 
 variable "enable_dynamodb_point_in_time_recovery" {
-  description = "Whether DynamoDB point-in-time recovery is enabled. Chapter 05 leaves the production decision open."
+  description = "Whether both DynamoDB tables use the ADR-027 point-in-time recovery boundary."
   type        = bool
-  default     = false
+  default     = true
+  nullable    = false
+}
+
+variable "dynamodb_recovery_period_days" {
+  description = "Number of preceding days retained by PITR when it is enabled. ADR-027 fixes production to 35 days."
+  type        = number
+  default     = 35
+  nullable    = false
+
+  validation {
+    condition     = var.dynamodb_recovery_period_days == 35
+    error_message = "ADR-027 requires a 35-day DynamoDB recovery period."
+  }
+}
+
+variable "dynamodb_recovery_cutover" {
+  description = "Exact restored-table pair and reviewed plan digest selected for a disabled-trigger ADR-027 cutover. Null binds runtimes to the Terraform-owned primary tables."
+  type = object({
+    source_state_table = string
+    delivery_table     = string
+    plan_sha256        = string
+  })
+  default  = null
+  nullable = true
+
+  validation {
+    condition = var.dynamodb_recovery_cutover == null || (
+      can(regex("^[A-Za-z0-9_.-]{3,255}$", var.dynamodb_recovery_cutover.source_state_table)) &&
+      can(regex("^[A-Za-z0-9_.-]{3,255}$", var.dynamodb_recovery_cutover.delivery_table)) &&
+      can(regex("^[a-f0-9]{64}$", var.dynamodb_recovery_cutover.plan_sha256))
+    )
+    error_message = "dynamodb_recovery_cutover must contain two valid table names and one lowercase SHA-256 plan digest."
+  }
 }
 
 variable "source_state_retention_migration_enabled" {

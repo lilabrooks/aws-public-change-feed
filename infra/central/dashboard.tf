@@ -63,8 +63,8 @@ resource "aws_cloudwatch_dashboard" "operations" {
           region      = local.region
           annotations = {}
           metrics = [
-            ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", local.source_state_table, { "stat" : "Sum", "id" : "s1", "label" : "source-state" }],
-            ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", local.delivery_table, { "stat" : "Sum", "id" : "d1", "label" : "delivery" }],
+            ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", local.runtime_source_state_table, { "stat" : "Sum", "id" : "s1", "label" : "source-state" }],
+            ["AWS/DynamoDB", "WriteThrottleEvents", "TableName", local.runtime_delivery_table, { "stat" : "Sum", "id" : "d1", "label" : "delivery" }],
           ]
         }
       },

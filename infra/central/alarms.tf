@@ -43,7 +43,7 @@ resource "aws_cloudwatch_metric_alarm" "outbox_backlog_age" {
   threshold           = 900
   treat_missing_data  = "notBreaching"
 
-  alarm_description         = "Oldest unresolved outbox work exceeds 15 minutes. Deployment ${local.deployment_id}, region ${local.region}, table ${local.delivery_table}. See operations runbook 'Outbox or queue backlog'."
+  alarm_description         = "Oldest unresolved outbox work exceeds 15 minutes. Deployment ${local.deployment_id}, region ${local.region}, table ${local.runtime_delivery_table}. See operations runbook 'Outbox or queue backlog'."
   alarm_actions             = [aws_sns_topic.operations.arn]
   ok_actions                = [aws_sns_topic.operations.arn]
   insufficient_data_actions = [aws_sns_topic.operations.arn]
@@ -273,10 +273,10 @@ resource "aws_cloudwatch_metric_alarm" "source_state_write_throttles" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    TableName = local.source_state_table
+    TableName = local.runtime_source_state_table
   }
 
-  alarm_description         = "Source-state table ${local.source_state_table} reported write throttles. Deployment ${local.deployment_id}, region ${local.region}."
+  alarm_description         = "Source-state table ${local.runtime_source_state_table} reported write throttles. Deployment ${local.deployment_id}, region ${local.region}."
   alarm_actions             = [aws_sns_topic.operations.arn]
   ok_actions                = [aws_sns_topic.operations.arn]
   insufficient_data_actions = [aws_sns_topic.operations.arn]
@@ -295,10 +295,10 @@ resource "aws_cloudwatch_metric_alarm" "delivery_write_throttles" {
   treat_missing_data  = "notBreaching"
 
   dimensions = {
-    TableName = local.delivery_table
+    TableName = local.runtime_delivery_table
   }
 
-  alarm_description         = "Delivery table ${local.delivery_table} reported write throttles. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Outbox or queue backlog'."
+  alarm_description         = "Delivery table ${local.runtime_delivery_table} reported write throttles. Deployment ${local.deployment_id}, region ${local.region}. See operations runbook 'Outbox or queue backlog'."
   alarm_actions             = [aws_sns_topic.operations.arn]
   ok_actions                = [aws_sns_topic.operations.arn]
   insufficient_data_actions = [aws_sns_topic.operations.arn]

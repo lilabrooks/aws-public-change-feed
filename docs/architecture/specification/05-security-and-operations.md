@@ -325,7 +325,47 @@ not conclusions Terraform can establish.
 
 ## Backup and restore
 
-Enable S3 versioning. Decide whether DynamoDB point-in-time recovery is required before production based on the candidate-history recovery objective. If enabled, test restore into new table names and validate indexes, TTL configuration, and runtime cutover. SQS is transport and is rebuilt from durable outbox state; it is not backed up.
+Enable S3 versioning. Both DynamoDB tables use point-in-time recovery with a
+35-day period. Preview derives one shared table timestamp from the earlier of
+the two provider-reported latest restorable times, capped at the declared
+recovery start, and records its distance against the nominal five-minute
+recovery-point target. Provider lag beyond five minutes is evidence of a
+nominal-RPO miss, not an input-validation failure. The operator recovery-time
+target is four hours from that start through restore, settings repair, full
+bounded inventory comparison, disabled-trigger cutover, and rollback
+readiness. Provider completion after four hours does not turn the restore stage
+into a pass.
+
+The preview-first recovery command requires a clean worktree and binds the
+reviewed central deployment, current Git commit, captured Terraform output
+file path and SHA-256, account, Region, scoped recovery role and caller session,
+primary table ARNs and IDs, PITR windows, schemas, settings, tags, complete
+strongly consistent inventories, runtime bindings, triggers, watcher pause,
+and queue state into canonical plan bytes. Apply accepts only the exact digest, rebuilds
+the bound local files and live AWS controls, refuses an expired recovery clock,
+and restores both primary tables to new names at the same timestamp. The file
+hash detects capture-file changes; live STS, Lambda, EventBridge, SQS, and
+DynamoDB reads detect the relevant applied-state changes. A repeated apply may
+observe only a destination whose source ARN and restore time match the plan.
+The tool never calls an item API or deletes a table.
+
+DynamoDB does not copy TTL, PITR, or tags into a restored table. AWS requires
+target-table item actions while it performs the restore, so the recovery role
+grants those actions only on the two restore-name prefixes and never on a
+primary table. Apply repairs
+and reads back those settings after the destination becomes `ACTIVE`; schema,
+billing, encryption, GSI, and tags must match the preview. Every protected item
+digest must match. Items already TTL-eligible by the bound recovery deadline
+may only disappear, and their preview digest set makes a changed item fail.
+The bounded inventory's item or byte cap is a refusal, not a sample;
+operator-selected caps cannot exceed 100,000 items or 256 MiB. The recovery
+Terraform input moves all runtime consumers and operational
+dimensions together while triggers remain stopped. Rollback clears that input
+before any restored-table runtime is enabled. The current guard is deliberately
+proof-only and cannot resume a trigger against a restored pair. That incident
+promotion topology needs a separate accepted decision. Original and restored
+table deletion requires a separate exact authorization. SQS remains transport
+and is rebuilt from durable outbox state; it is not backed up.
 
 ## Operational objectives
 

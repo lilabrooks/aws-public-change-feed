@@ -117,6 +117,15 @@ ADR-026 still needs owner acceptance. No live shadow invocation, configuration
 rollback, or application rollback has run, so L-42 and production readiness
 remain open.
 
+**M3 data recovery.** The owner selected PITR for both DynamoDB tables with a
+35-day recovery period, a 5-minute recovery-point target, and a 4-hour operator
+recovery-time target. Accepted ADR-027 restores both tables to one timestamp
+under new names, repairs provider settings, validates a complete bounded item
+inventory, moves every runtime table binding under disabled triggers, and
+proves rollback before any restored-table runtime writes. The Terraform and
+preview-first operator tooling are implemented in source. No central apply,
+live restore, cutover, rollback, or cleanup has run, so L-41 remains open.
+
 **Production preflight.** Not started, and blocked on the milestones above.
 
 No box is one edit away. The corpus one looks closest and is not: its remaining gap is labelled depth in the thin pairs rather than a threshold setting. The watcher, dispatcher, worker, and reconciler slices now have source-defined handlers, metrics, packaging, and conditional Terraform resources. Found-post reconciliation, unknown-outcome replay, exact terminal replay, and native delivery-DLQ redrive have preview-first operator commands. The canonical Slack sample now comes from the delivery renderer. Persistent feed and delivery operation, recovery, load, and alarm evidence are complete; production preflight remains open.

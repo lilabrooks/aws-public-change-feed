@@ -1,5 +1,6 @@
 """Cross-file Terraform contracts that native validation cannot prove."""
 
+import json
 import os
 import re
 import subprocess
@@ -113,8 +114,10 @@ class TerraformContractTests(unittest.TestCase):
 
     @staticmethod
     def policy_statement(source, sid):
-        marker = f'sid = "{sid}"'
-        start = source.index(marker)
+        match = re.search(rf'(?m)^[ \t]*sid[ \t]*=[ \t]*"{re.escape(sid)}"$', source)
+        if match is None:
+            raise AssertionError(f"policy statement not found: {sid}")
+        start = match.start()
         end = source.find("\n  statement {", start)
         return source[start:] if end == -1 else source[start:end]
 
@@ -1013,6 +1016,340 @@ class TerraformContractTests(unittest.TestCase):
             with self.subTest(always_observed_alarm=alarm):
                 block = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", alarm)
                 self.assertNotIn("count = local.", block)
+
+    def test_dynamodb_recovery_defaults_and_runtime_binding_match_adr_027(self):
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        dynamodb = (ROOT / "infra/central/dynamodb.tf").read_text(encoding="utf-8")
+        locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
+        dashboard = (ROOT / "infra/central/dashboard.tf").read_text(encoding="utf-8")
+        outputs = (ROOT / "infra/central/outputs.tf").read_text(encoding="utf-8")
+        preflight_variables = (ROOT / "infra/preflight/variables.tf").read_text(encoding="utf-8")
+
+        pitr = self.variable_block(variables, "enable_dynamodb_point_in_time_recovery")
+        period = self.variable_block(variables, "dynamodb_recovery_period_days")
+        cutover = self.variable_block(variables, "dynamodb_recovery_cutover")
+        self.assertIn("default     = true", pitr)
+        self.assertIn("nullable    = false", pitr)
+        self.assertIn("default     = 35", period)
+        self.assertIn("var.dynamodb_recovery_period_days == 35", period)
+        self.assertIn("plan_sha256", cutover)
+        self.assertIn('regex("^[a-f0-9]{64}$"', cutover)
+        self.assertIn(
+            "default     = false", self.variable_block(preflight_variables, "enable_dynamodb_point_in_time_recovery")
+        )
+
+        self.assertEqual(dynamodb.count("recovery_period_in_days ="), 2)
+        self.assertEqual(dynamodb.count("var.dynamodb_recovery_period_days"), 2)
+        self.assertIn("recovery_cutover_enabled", locals_source)
+        self.assertIn("var.dynamodb_recovery_cutover.source_state_table", locals_source)
+        self.assertIn("var.dynamodb_recovery_cutover.delivery_table", locals_source)
+
+        resource_names = {
+            "watcher": "watcher",
+            "dispatcher": "dispatcher",
+            "worker": "slack_worker",
+            "reconciler": "reconciler",
+        }
+        for runtime, resource_name in resource_names.items():
+            with self.subTest(runtime=runtime):
+                block = self.resource_block(lambda_source, "aws_lambda_function", resource_name)
+                self.assertIn("local.runtime_delivery_table", block)
+        watcher = self.resource_block(lambda_source, "aws_lambda_function", "watcher")
+        self.assertIn("local.runtime_source_state_table", watcher)
+        for policy_name in ("feed_watcher", "outbox_dispatcher", "slack_worker", "recovery_reconciler"):
+            with self.subTest(runtime_policy=policy_name):
+                marker = f'data "aws_iam_policy_document" "{policy_name}"'
+                start = iam.index(marker)
+                end = iam.find('\ndata "aws_iam_policy_document"', start + 1)
+                block = iam[start:] if end == -1 else iam[start:end]
+                self.assertIn("local.runtime_", block)
+                self.assertNotIn("aws_dynamodb_table.source_state.arn", block)
+                self.assertNotIn("aws_dynamodb_table.delivery.arn", block)
+        for source in (alarms, dashboard):
+            self.assertNotIn("aws_dynamodb_table.delivery.name", source)
+            self.assertNotIn("aws_dynamodb_table.source_state.name", source)
+        for name in (
+            "primary_source_state_table",
+            "primary_delivery_table",
+            "dynamodb_recovery",
+            "watcher_execution_paused",
+        ):
+            self.assertIn(f'output "{name}"', outputs)
+        runtime_source_output = outputs[outputs.index('output "source_state_table"') :]
+        runtime_source_output = runtime_source_output[: runtime_source_output.index("\noutput ", 1)]
+        runtime_delivery_output = outputs[outputs.index('output "delivery_table"') :]
+        runtime_delivery_output = runtime_delivery_output[: runtime_delivery_output.index("\noutput ", 1)]
+        primary_source_output = outputs[outputs.index('output "primary_source_state_table"') :]
+        primary_source_output = primary_source_output[: primary_source_output.index("\noutput ", 1)]
+        primary_delivery_output = outputs[outputs.index('output "primary_delivery_table"') :]
+        primary_delivery_output = primary_delivery_output[: primary_delivery_output.index("\noutput ", 1)]
+        self.assertIn("local.runtime_source_state_table", runtime_source_output)
+        self.assertIn("local.runtime_delivery_table", runtime_delivery_output)
+        self.assertIn("aws_dynamodb_table.source_state.name", primary_source_output)
+        self.assertIn("aws_dynamodb_table.delivery.name", primary_delivery_output)
+
+    def test_dynamodb_recovery_role_can_only_restore_and_configure_exact_recovery_tables(self):
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        policy_start = iam.index('data "aws_iam_policy_document" "dynamodb_recovery"')
+        policy_end = iam.index('data "aws_iam_policy_document" "source_state_retention_migration"')
+        policy = iam[policy_start:policy_end]
+
+        restore = self.policy_statement(policy, "RestoreExactPrimaryTables")
+        self.assertIn('actions   = ["dynamodb:RestoreTableToPointInTime"]', restore)
+        self.assertIn("aws_dynamodb_table.source_state.arn", restore)
+        self.assertIn("aws_dynamodb_table.delivery.arn", restore)
+        self.assertNotIn('resources = ["*"]', restore)
+
+        populate = self.policy_statement(policy, "AllowRestoreToPopulateExactRecoveryTables")
+        for action in (
+            "AssociateTableReplica",
+            "BatchWriteItem",
+            "CreateTableReplica",
+            "DeleteItem",
+            "GetItem",
+            "PutItem",
+            "Query",
+            "Scan",
+            "UpdateItem",
+        ):
+            self.assertIn(f'"dynamodb:{action}"', populate)
+        self.assertIn("local.recovery_source_state_table_arn", populate)
+        self.assertIn("local.recovery_delivery_table_arn", populate)
+        self.assertNotIn("aws_dynamodb_table.source_state.arn", populate)
+        self.assertNotIn("aws_dynamodb_table.delivery.arn", populate)
+        self.assertNotIn('resources = ["*"]', populate)
+
+        configure = self.policy_statement(policy, "ConfigureExactRecoveryTables")
+        for action in ("UpdateContinuousBackups", "UpdateTimeToLive", "TagResource", "UntagResource"):
+            self.assertIn(f'"dynamodb:{action}"', configure)
+        self.assertIn("local.recovery_source_state_table_arn", configure)
+        self.assertIn("local.recovery_delivery_table_arn", configure)
+
+        mapping = self.policy_statement(policy, "LocateWorkerEventSourceMapping")
+        self.assertIn('actions   = ["lambda:ListEventSourceMappings"]', mapping)
+        self.assertIn('resources = ["*"]', mapping)
+        queue = self.policy_statement(policy, "LocateExactDeliveryQueue")
+        self.assertIn('actions   = ["sqs:GetQueueUrl"]', queue)
+        self.assertIn("aws_sqs_queue.delivery.arn", queue)
+        self.assertNotIn('resources = ["*"]', queue)
+        self.assertNotIn("dynamodb:DeleteTable", policy)
+
+        allowed_primary_actions = {
+            "dynamodb:DescribeContinuousBackups",
+            "dynamodb:DescribeTable",
+            "dynamodb:DescribeTimeToLive",
+            "dynamodb:ListTagsOfResource",
+            "dynamodb:RestoreTableToPointInTime",
+            "dynamodb:Scan",
+        }
+        statements = re.split(r"(?m)^  statement \{$", policy)[1:]
+        for position, statement in enumerate(statements, start=1):
+            if not any(
+                primary in statement
+                for primary in ("aws_dynamodb_table.source_state.arn", "aws_dynamodb_table.delivery.arn")
+            ):
+                continue
+            sid = re.search(r'(?m)^[ \t]*sid[ \t]*=[ \t]*"([^"\n]+)"$', statement)
+            with self.subTest(primary_table_statement=sid.group(1) if sid is not None else position):
+                actions = set(re.findall(r'"(dynamodb:[^"\n]+)"', statement))
+                self.assertLessEqual(actions, allowed_primary_actions)
+
+    def test_dynamodb_recovery_cutover_refusals_execute_in_provider_free_plans(self):
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        dynamodb = (ROOT / "infra/central/dynamodb.tf").read_text(encoding="utf-8")
+        selected_variables = "\n\n".join(
+            self.variable_block(variables, name)
+            for name in (
+                "enable_dynamodb_point_in_time_recovery",
+                "dynamodb_recovery_period_days",
+                "dynamodb_recovery_cutover",
+                "watcher_execution_paused",
+            )
+        )
+        guard = self.resource_block(dynamodb, "terraform_data", "dynamodb_recovery_cutover_guard")
+        locals_source = """
+locals {
+  source_state_table = "apcf-source-state-dev"
+  delivery_table = "apcf-delivery-dev"
+  watcher_trigger_requested = var.watcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.watcher_trigger_enabled_override
+  dispatcher_trigger_requested = var.dispatcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.dispatcher_trigger_enabled_override
+  worker_trigger_requested = var.worker_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.worker_trigger_enabled_override
+}
+"""
+        trigger_variables = """
+variable "delivery_triggers_enabled" {
+  type = bool
+  default = false
+}
+variable "watcher_trigger_enabled_override" {
+  type = bool
+  default = null
+}
+variable "dispatcher_trigger_enabled_override" {
+  type = bool
+  default = null
+}
+variable "worker_trigger_enabled_override" {
+  type = bool
+  default = null
+}
+variable "reconciler_trigger_enabled" {
+  type = bool
+  default = false
+}
+"""
+        safe_cutover = {
+            "source_state_table": "apcf-source-state-dev-restore-l41-proof",
+            "delivery_table": "apcf-delivery-dev-restore-l41-proof",
+            "plan_sha256": "a" * 64,
+        }
+        cases: tuple[tuple[str, dict[str, object], int, str | None], ...] = (
+            ("no cutover", {}, 0, None),
+            (
+                "safe cutover",
+                {"watcher_execution_paused": True, "dynamodb_recovery_cutover": safe_cutover},
+                0,
+                None,
+            ),
+            (
+                "PITR off",
+                {
+                    "enable_dynamodb_point_in_time_recovery": False,
+                    "watcher_execution_paused": True,
+                    "dynamodb_recovery_cutover": safe_cutover,
+                },
+                1,
+                "requires PITR",
+            ),
+            (
+                "watcher running",
+                {"dynamodb_recovery_cutover": safe_cutover},
+                1,
+                "watcher execution paused",
+            ),
+            (
+                "trigger requested",
+                {
+                    "watcher_execution_paused": True,
+                    "delivery_triggers_enabled": True,
+                    "dynamodb_recovery_cutover": safe_cutover,
+                },
+                1,
+                "all four requested trigger states disabled",
+            ),
+            (
+                "watcher trigger requested",
+                {
+                    "watcher_execution_paused": True,
+                    "watcher_trigger_enabled_override": True,
+                    "dynamodb_recovery_cutover": safe_cutover,
+                },
+                1,
+                "all four requested trigger states disabled",
+            ),
+            (
+                "dispatcher trigger requested",
+                {
+                    "watcher_execution_paused": True,
+                    "dispatcher_trigger_enabled_override": True,
+                    "dynamodb_recovery_cutover": safe_cutover,
+                },
+                1,
+                "all four requested trigger states disabled",
+            ),
+            (
+                "worker trigger requested",
+                {
+                    "watcher_execution_paused": True,
+                    "worker_trigger_enabled_override": True,
+                    "dynamodb_recovery_cutover": safe_cutover,
+                },
+                1,
+                "all four requested trigger states disabled",
+            ),
+            (
+                "reconciler trigger requested",
+                {
+                    "watcher_execution_paused": True,
+                    "reconciler_trigger_enabled": True,
+                    "dynamodb_recovery_cutover": safe_cutover,
+                },
+                1,
+                "all four requested trigger states disabled",
+            ),
+            (
+                "wrong recovery prefix",
+                {
+                    "watcher_execution_paused": True,
+                    "dynamodb_recovery_cutover": {**safe_cutover, "delivery_table": "unreviewed-restore"},
+                },
+                1,
+                "exact primary-table restore prefixes",
+            ),
+            (
+                "different recovery exercises",
+                {
+                    "watcher_execution_paused": True,
+                    "dynamodb_recovery_cutover": {
+                        **safe_cutover,
+                        "delivery_table": "apcf-delivery-dev-restore-another-proof",
+                    },
+                },
+                1,
+                "share one exercise ID",
+            ),
+            ("wrong recovery period", {"dynamodb_recovery_period_days": 34}, 1, "35-day"),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "main.tf").write_text(
+                f"{selected_variables}\n{trigger_variables}\n{locals_source}\n{guard}\n",
+                encoding="utf-8",
+            )
+            environment = {**os.environ, "CHECKPOINT_DISABLE": "1", "TF_IN_AUTOMATION": "1"}
+            initialized = subprocess.run(
+                ("terraform", "init", "-backend=false", "-input=false", "-no-color"),
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            self.assertEqual(
+                initialized.returncode,
+                0,
+                msg=f"provider-free terraform init failed:\n{initialized.stdout}\n{initialized.stderr}",
+            )
+            for name, values, expected_exit, expected_message in cases:
+                with self.subTest(case=name):
+                    var_file = root / "case.tfvars.json"
+                    var_file.write_text(f"{json.dumps(values)}\n", encoding="utf-8")
+                    result = subprocess.run(
+                        (
+                            "terraform",
+                            "plan",
+                            "-input=false",
+                            "-lock=false",
+                            "-refresh=false",
+                            "-no-color",
+                            f"-var-file={var_file}",
+                        ),
+                        cwd=root,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        check=False,
+                    )
+                    output = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
+                    self.assertEqual(result.returncode, expected_exit, msg=output)
+                    if expected_message is not None:
+                        self.assertIn(expected_message, output)
 
     def test_runtime_trigger_rollout_docs_expose_staging_limits(self):
         specification = (ROOT / "docs/architecture/specification/05-security-and-operations.md").read_text(
