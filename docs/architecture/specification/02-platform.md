@@ -9,6 +9,11 @@ The `infra/central` root creates:
 - A direct-invocation shadow evaluator using the watcher's exact package and feed policy, with release-read and log permissions only and no durable-state, snapshot-write, queue, or secret authority. A separate operator role can invoke only this function.
 - A DynamoDB source-state table for feed checkpoints and announcement records.
 - A DynamoDB delivery table for candidates, outbox work, destination pacing, and delivery outcomes.
+- A recovery operator role that can restore the two exact primary tables, inspect
+  source and restored state, and repair TTL, PITR, and tags on exact
+  restore-name prefixes. It carries DynamoDB's documented restore-dependent
+  item actions only on those destination prefixes, carries no item-write action on a
+  primary table, and cannot delete tables.
 - An encrypted SQS FIFO queue and FIFO DLQ.
 - Conditional outbox dispatcher, Slack worker, and recovery reconciler Lambdas, plus their least-privilege roles.
 - A default-off, one-time source-state retention migration role whose projected scan and conditioned update authority is removed after use.
@@ -18,6 +23,14 @@ The `infra/central` root creates:
 - CloudWatch logs, metrics, dashboard, alarms, and an operational SNS topic.
 
 Resource names derive from `deployment_id` and remain within AWS naming limits. The configuration bucket blocks public access, requires TLS, enables versioning, and uses server-side encryption. Queue encryption uses SQS-managed keys by default.
+
+Both DynamoDB tables use a 35-day point-in-time recovery period. Normal runtime
+bindings point to the Terraform-owned primary tables. An ADR-027 recovery input
+may bind every Lambda, table and index IAM resource, alarm, dashboard dimension,
+and runtime output to one exact restored pair and plan digest. Terraform accepts
+that input only while all four trigger requests are false, watcher reserved
+concurrency is paused, and both names use their primary table's restore prefix.
+The primary resources remain managed and available for rollback.
 
 ## Source-state table
 

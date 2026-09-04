@@ -402,7 +402,7 @@
         <dl class="site-spec">
           <div class="site-spec-row">
             <dt>Required behavior</dt>
-            <dd>Six specification chapters and 21 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
+            <dd>Six specification chapters and 22 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
           </div>
           <div class="site-spec-row">
             <dt>Contracts</dt>
@@ -552,7 +552,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <p class="compact-eyebrow">Required rules</p>
           <div>
             <h2 class="compact-section-title">Public feeds only. DynamoDB owns delivery history.</h2>
-            <p class="compact-section-copy">Twenty-one accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
+            <p class="compact-section-copy">Twenty-two accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
           </div>
         </div>
         <dl class="site-spec">
@@ -610,7 +610,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
             </tr>
             <tr>
               <th scope="row">M3 · Open</th>
-              <td>M3 decides whether the current service and deployment are ready for production. The current 4-feed, 3-service, 4-risk-rule policy is selected unchanged for production preflight, with 6 of 12 service and risk-type pairs carrying no historical positive. Source now includes a scoped direct-invocation shadow evaluator, fixed refusal codes, preview-bound configuration rollback, and a proposed decision that stops durable runtimes during both rollback paths. Owner acceptance and the live exercise remain outstanding. M3 still needs DynamoDB recovery limits, live shadow and rollback proof, the post-M2 gate, and final status reconciliation.</td>
+              <td>M3 decides whether the current service and deployment are ready for production. The current 4-feed, 3-service, 4-risk-rule policy is selected unchanged for production preflight, with 6 of 12 service and risk-type pairs carrying no historical positive. Source now includes a scoped direct-invocation shadow evaluator, fixed refusal codes, preview-bound configuration rollback, and a proposed decision that stops durable runtimes during both rollback paths. Accepted ADR-027 gives both DynamoDB tables 35 days of point-in-time recovery, a 5-minute recovery-point target, and a 4-hour operator recovery-time target. Its source implementation adds restored-pair Terraform bindings, a scoped operator role, and an exact preview/apply/status command. ADR-026 still needs owner confirmation, and both live proofs remain open. M3 then needs the post-M2 gate and final status reconciliation.</td>
             </tr>
           </tbody>
         </table>

@@ -43,6 +43,12 @@ resource "aws_iam_role" "application_artifact_retirement" {
   tags               = local.tags
 }
 
+resource "aws_iam_role" "dynamodb_recovery" {
+  name               = local.role_names.recovery
+  assume_role_policy = data.aws_iam_policy_document.publisher_assume_role.json
+  tags               = local.tags
+}
+
 resource "aws_iam_role" "source_state_retention_migration" {
   count = var.source_state_retention_migration_enabled ? 1 : 0
 
@@ -213,6 +219,104 @@ data "aws_iam_policy_document" "application_artifact_retirement" {
   }
 }
 
+data "aws_iam_policy_document" "dynamodb_recovery" {
+  statement {
+    sid       = "RestoreExactPrimaryTables"
+    actions   = ["dynamodb:RestoreTableToPointInTime"]
+    resources = [aws_dynamodb_table.source_state.arn, aws_dynamodb_table.delivery.arn]
+  }
+
+  # DynamoDB documents these as dependent target-table permissions for
+  # RestoreTableToPointInTime. They are restricted to the two restore-name
+  # prefixes; the recovery tool itself never calls an item API.
+  statement {
+    sid = "AllowRestoreToPopulateExactRecoveryTables"
+    actions = [
+      "dynamodb:AssociateTableReplica",
+      "dynamodb:BatchWriteItem",
+      "dynamodb:CreateTableReplica",
+      "dynamodb:DeleteItem",
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:Query",
+      "dynamodb:Scan",
+      "dynamodb:UpdateItem",
+    ]
+    resources = [
+      local.recovery_source_state_table_arn,
+      local.recovery_delivery_table_arn,
+    ]
+  }
+
+  statement {
+    sid = "ReadRecoveryTableState"
+    actions = [
+      "dynamodb:DescribeContinuousBackups",
+      "dynamodb:DescribeTable",
+      "dynamodb:DescribeTimeToLive",
+      "dynamodb:ListTagsOfResource",
+      "dynamodb:Scan",
+    ]
+    resources = [
+      aws_dynamodb_table.source_state.arn,
+      aws_dynamodb_table.delivery.arn,
+      local.recovery_source_state_table_arn,
+      local.recovery_delivery_table_arn,
+    ]
+  }
+
+  # The proof tool can repair only settings that DynamoDB does not copy. The
+  # role has no table-deletion permission and no item-write permission on a primary.
+  statement {
+    sid = "ConfigureExactRecoveryTables"
+    actions = [
+      "dynamodb:TagResource",
+      "dynamodb:UntagResource",
+      "dynamodb:UpdateContinuousBackups",
+      "dynamodb:UpdateTimeToLive",
+    ]
+    resources = [
+      local.recovery_source_state_table_arn,
+      local.recovery_delivery_table_arn,
+    ]
+  }
+
+  statement {
+    sid     = "ReadExactRuntimeFunctions"
+    actions = ["lambda:GetFunctionConfiguration", "lambda:GetFunctionConcurrency"]
+    resources = [
+      for name in [local.function_names.watcher, local.function_names.dispatcher, local.function_names.worker, local.function_names.reconciler] :
+      "arn:${data.aws_partition.current.partition}:lambda:${local.region}:${data.aws_caller_identity.current.account_id}:function:${name}"
+    ]
+  }
+
+  # ListEventSourceMappings does not support resource-level scoping.
+  statement {
+    sid       = "LocateWorkerEventSourceMapping"
+    actions   = ["lambda:ListEventSourceMappings"]
+    resources = ["*"]
+  }
+
+
+  statement {
+    sid       = "LocateExactDeliveryQueue"
+    actions   = ["sqs:GetQueueUrl"]
+    resources = [aws_sqs_queue.delivery.arn]
+  }
+
+  statement {
+    sid       = "ReadExactScheduleControls"
+    actions   = ["events:DescribeRule"]
+    resources = [for name in [local.function_names.watcher, local.function_names.dispatcher, local.function_names.reconciler] : "arn:${data.aws_partition.current.partition}:events:${local.region}:${data.aws_caller_identity.current.account_id}:rule/${name}"]
+  }
+
+  statement {
+    sid       = "ReadDeliveryQueueState"
+    actions   = ["sqs:GetQueueAttributes"]
+    resources = [aws_sqs_queue.delivery.arn]
+  }
+}
+
 data "aws_iam_policy_document" "source_state_retention_migration" {
   count = var.source_state_retention_migration_enabled ? 1 : 0
 
@@ -375,7 +479,7 @@ data "aws_iam_policy_document" "feed_watcher" {
     sid     = "SourceState"
     actions = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
     resources = [
-      aws_dynamodb_table.source_state.arn,
+      local.runtime_source_state_table_arn,
     ]
   }
 
@@ -385,7 +489,7 @@ data "aws_iam_policy_document" "feed_watcher" {
     sid     = "DurableOutboxWrites"
     actions = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
     resources = [
-      aws_dynamodb_table.delivery.arn,
+      local.runtime_delivery_table_arn,
     ]
   }
 }
@@ -437,7 +541,7 @@ data "aws_iam_policy_document" "outbox_dispatcher" {
     sid     = "QueryDeliveryIndex"
     actions = ["dynamodb:Query"]
     resources = [
-      aws_dynamodb_table.delivery.arn,
+      local.runtime_delivery_table_arn,
       local.delivery_index_arn,
     ]
   }
@@ -446,7 +550,7 @@ data "aws_iam_policy_document" "outbox_dispatcher" {
     sid     = "ReadDeliveryRecords"
     actions = ["dynamodb:GetItem"]
     resources = [
-      aws_dynamodb_table.delivery.arn,
+      local.runtime_delivery_table_arn,
     ]
   }
 
@@ -454,7 +558,7 @@ data "aws_iam_policy_document" "outbox_dispatcher" {
     sid     = "ClaimAndTransition"
     actions = ["dynamodb:UpdateItem", "dynamodb:PutItem"]
     resources = [
-      aws_dynamodb_table.delivery.arn,
+      local.runtime_delivery_table_arn,
     ]
   }
 
@@ -490,7 +594,7 @@ data "aws_iam_policy_document" "slack_worker" {
     sid     = "DeliveryAndPacingState"
     actions = ["dynamodb:GetItem", "dynamodb:UpdateItem", "dynamodb:PutItem"]
     resources = [
-      aws_dynamodb_table.delivery.arn,
+      local.runtime_delivery_table_arn,
     ]
   }
 
@@ -506,7 +610,7 @@ data "aws_iam_policy_document" "recovery_reconciler" {
     sid     = "QueryDeliveryIndex"
     actions = ["dynamodb:Query"]
     resources = [
-      aws_dynamodb_table.delivery.arn,
+      local.runtime_delivery_table_arn,
       local.delivery_index_arn,
     ]
   }
@@ -515,7 +619,7 @@ data "aws_iam_policy_document" "recovery_reconciler" {
     sid     = "ReadDeliveryRecords"
     actions = ["dynamodb:GetItem"]
     resources = [
-      aws_dynamodb_table.delivery.arn,
+      local.runtime_delivery_table_arn,
     ]
   }
 
@@ -523,7 +627,7 @@ data "aws_iam_policy_document" "recovery_reconciler" {
     sid     = "RepairDeliveryState"
     actions = ["dynamodb:UpdateItem"]
     resources = [
-      aws_dynamodb_table.delivery.arn,
+      local.runtime_delivery_table_arn,
     ]
   }
 
@@ -544,6 +648,12 @@ resource "aws_iam_role_policy" "application_artifact_retirement" {
   name   = "application-artifact-retirement"
   role   = aws_iam_role.application_artifact_retirement.id
   policy = data.aws_iam_policy_document.application_artifact_retirement.json
+}
+
+resource "aws_iam_role_policy" "dynamodb_recovery" {
+  name   = "dynamodb-recovery"
+  role   = aws_iam_role.dynamodb_recovery.id
+  policy = data.aws_iam_policy_document.dynamodb_recovery.json
 }
 
 resource "aws_iam_role_policy" "source_state_retention_migration" {

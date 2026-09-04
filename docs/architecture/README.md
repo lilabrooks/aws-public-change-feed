@@ -15,6 +15,11 @@ The [public architecture page](https://lilabrooks.github.io/aws-public-change-fe
 
 The [goal](../GOAL.md) defines the outcome and milestones. The [operations runbook](../runbooks/operations.md) defines response procedures.
 
+ADR-027 is implemented in source by 35-day PITR on both central DynamoDB
+tables, one stopped-runtime restored-pair binding, a scoped recovery role, and
+the digest-bound recovery proof command. The central apply and live restore,
+cutover, rollback, and cleanup evidence remain open.
+
 ## Architecture decision records
 
 - [ADR-001: Separate deployment and runtime configuration](../adr/001-separate-deployment-and-runtime-configuration.md)
@@ -39,6 +44,7 @@ The [goal](../GOAL.md) defines the outcome and milestones. The [operations runbo
 - [ADR-024: Isolated live runtime exercises](../adr/024-isolated-live-runtime-exercises.md)
 - [ADR-025: Source-state and response-page retirement](../adr/025-source-state-and-response-page-retirement.md)
 - [ADR-026: Central shadow and rollback proof](../adr/026-central-shadow-and-rollback-proof.md) (Proposed)
+- [ADR-027: DynamoDB point-in-time recovery for both state tables](../adr/027-dynamodb-point-in-time-recovery.md)
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 

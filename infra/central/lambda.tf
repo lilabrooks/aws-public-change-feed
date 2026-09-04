@@ -22,7 +22,7 @@ resource "aws_lambda_function" "watcher" {
       APPROVED_FEED_HOSTS_JSON      = jsonencode(local.feed_fetch_policy.allowed_feed_hosts)
       CONFIG_BUCKET                 = aws_s3_bucket.config.id
       DELIVERY_INDEX_NAME           = local.delivery_index_name
-      DELIVERY_TABLE_NAME           = aws_dynamodb_table.delivery.name
+      DELIVERY_TABLE_NAME           = local.runtime_delivery_table
       FEED_CONNECT_TIMEOUT_SECONDS  = tostring(local.feed_fetch_policy.connect_timeout_seconds)
       FEED_LEASE_SECONDS            = tostring(local.watcher_lease_seconds)
       FEED_RESPONSE_TIMEOUT_SECONDS = tostring(local.feed_fetch_policy.response_timeout_seconds)
@@ -33,7 +33,7 @@ resource "aws_lambda_function" "watcher" {
       MAX_FEED_RESPONSE_BYTES       = tostring(local.feed_fetch_policy.max_response_bytes)
       METRICS_NAMESPACE             = local.metrics_namespace
       RAW_SNAPSHOT_PREFIX           = local.raw_snapshot_prefix
-      SOURCE_STATE_TABLE_NAME       = aws_dynamodb_table.source_state.name
+      SOURCE_STATE_TABLE_NAME       = local.runtime_source_state_table
     }
   }
 
@@ -156,7 +156,7 @@ resource "aws_lambda_function" "dispatcher" {
     variables = {
       DELIVERY_INDEX_NAME        = local.delivery_index_name
       DELIVERY_QUEUE_URL         = aws_sqs_queue.delivery.id
-      DELIVERY_TABLE_NAME        = aws_dynamodb_table.delivery.name
+      DELIVERY_TABLE_NAME        = local.runtime_delivery_table
       MAX_DELIVERY_REQUEST_BYTES = tostring(local.max_delivery_request_bytes)
       METRICS_NAMESPACE          = local.metrics_namespace
     }
@@ -234,7 +234,7 @@ resource "aws_lambda_function" "slack_worker" {
       CONFIG_BUCKET_NAME                 = aws_s3_bucket.config.id
       DELIVERY_INDEX_NAME                = local.delivery_index_name
       DELIVERY_MODE                      = local.deployment.slack.delivery_mode
-      DELIVERY_TABLE_NAME                = aws_dynamodb_table.delivery.name
+      DELIVERY_TABLE_NAME                = local.runtime_delivery_table
       MAX_DELIVERY_REQUEST_BYTES         = tostring(local.max_delivery_request_bytes)
       METRICS_NAMESPACE                  = local.metrics_namespace
       SECRET_STORE                       = local.secret_store
@@ -289,7 +289,7 @@ resource "aws_lambda_function" "reconciler" {
     variables = {
       DELIVERY_INDEX_NAME           = local.delivery_index_name
       DELIVERY_QUEUE_URL            = aws_sqs_queue.delivery.id
-      DELIVERY_TABLE_NAME           = aws_dynamodb_table.delivery.name
+      DELIVERY_TABLE_NAME           = local.runtime_delivery_table
       MAX_DELIVERY_REQUEST_BYTES    = tostring(local.max_delivery_request_bytes)
       METRICS_NAMESPACE             = local.metrics_namespace
       RECOVERY_OBSERVATION_LIMIT    = tostring(local.reconciler_observation_limit)

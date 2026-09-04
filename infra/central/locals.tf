@@ -47,9 +47,22 @@ locals {
   source_state_table = "apcf-source-state-${local.deployment_id}"
   delivery_table     = "apcf-delivery-${local.deployment_id}"
 
+  recovery_cutover_enabled = var.dynamodb_recovery_cutover != null
+  runtime_source_state_table = (
+    local.recovery_cutover_enabled ? var.dynamodb_recovery_cutover.source_state_table : aws_dynamodb_table.source_state.name
+  )
+  runtime_delivery_table = (
+    local.recovery_cutover_enabled ? var.dynamodb_recovery_cutover.delivery_table : aws_dynamodb_table.delivery.name
+  )
+  dynamodb_table_arn_prefix       = "arn:${data.aws_partition.current.partition}:dynamodb:${local.region}:${data.aws_caller_identity.current.account_id}:table"
+  runtime_source_state_table_arn  = "${local.dynamodb_table_arn_prefix}/${local.runtime_source_state_table}"
+  runtime_delivery_table_arn      = "${local.dynamodb_table_arn_prefix}/${local.runtime_delivery_table}"
+  recovery_source_state_table_arn = "${local.dynamodb_table_arn_prefix}/${local.source_state_table}-restore-*"
+  recovery_delivery_table_arn     = "${local.dynamodb_table_arn_prefix}/${local.delivery_table}-restore-*"
+
   # ADR-007: the dispatcher and reconciler read due work through this index.
   delivery_index_name = "status-next-action-index"
-  delivery_index_arn  = "${aws_dynamodb_table.delivery.arn}/index/${local.delivery_index_name}"
+  delivery_index_arn  = "${local.runtime_delivery_table_arn}/index/${local.delivery_index_name}"
 
   delivery_queue_name        = "apcf-delivery-${local.deployment_id}.fifo"
   delivery_dlq_name          = "apcf-delivery-dlq-${local.deployment_id}.fifo"
@@ -65,6 +78,7 @@ locals {
 
   role_names = {
     publisher      = "apcf-${local.deployment_id}-release-publisher"
+    recovery       = "apcf-${local.deployment_id}-dynamodb-recovery"
     watcher        = "apcf-${local.deployment_id}-feed-watcher"
     shadow         = "apcf-${local.deployment_id}-shadow-evaluator"
     shadow_invoker = "apcf-${local.deployment_id}-shadow-invoker"

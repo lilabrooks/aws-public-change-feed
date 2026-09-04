@@ -107,6 +107,45 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 
 ## Recovery acceptance
 
+- Given the central root's defaults, both primary DynamoDB tables have PITR
+  enabled for exactly 35 days; the isolated preflight root remains default-off.
+- Given recovery preview, a stale or future start clock, wrong deployment path,
+  account or role mismatch, dirty worktree, changed captured Terraform output
+  bytes, unpaused watcher, enabled
+  trigger, nonzero queue counter, actionable delivery state, source outside its
+  PITR window, existing target, or exceeded inventory cap refuses before restore.
+- Preview derives the shared restore timestamp from the earlier provider latest
+  time, records the measured nominal-RPO result, reads every source item
+  strongly, and records order-independent canonical digests, byte counts, item
+  counts, item-type counts, delivery-state counts, and the items TTL-eligible by
+  the deadline. It never treats a bounded sample as full-table proof, and fixed
+  safety ceilings reject caps above 100,000 items or 256 MiB.
+- Apply accepts only unchanged canonical plan bytes and digest, rechecks local,
+  provider, source-inventory, and runtime state, and refuses to start a restore
+  after the four-hour deadline.
+- Both restore calls use the exact primary ARNs, exact derived destinations, and
+  one shared UTC timestamp. An existing destination is reusable only when its
+  provider restore summary matches both the source ARN and timestamp.
+- One accepted restore followed by an uncertain second result is `partial`.
+  A failed response is reread by exact destination name, and an unproved result
+  stays ambiguous without automatic retry.
+- An active restored table passes only when schema, billing, encryption, GSI,
+  TTL, 35-day PITR, tags, and protected inventory equal the bound source state.
+  Its TTL-eligible digest set may only shrink. Completion after the four-hour
+  deadline remains incomplete.
+- A successful machine result uses `restore_stage_status=completed` and always
+  reports `exercise_status=incomplete_pending_cutover_rollback_and_trigger_restoration`.
+  It never claims that the full exercise has completed.
+- The recovery role can restore only the primary pair. It has DynamoDB's
+  restore-dependent item actions only on exact restore-name prefixes, has no
+  item-write action on a primary table, and has no table-delete action.
+- Given a cutover input, Terraform refuses unless PITR remains enabled, watcher
+  execution is paused, all four trigger requests are false, the names use the
+  primary restore prefixes, both names share one exercise ID, and the plan
+  digest is lowercase SHA-256.
+- Given an accepted cutover, every runtime environment, table and index IAM
+  resource, alarm, dashboard dimension, and output uses the restored pair.
+  Clearing the input returns all of them to the retained primary pair.
 - Given overdue pending work, the reconciler makes it dispatchable or raises a bounded-age alarm.
 - Given an expired sending lease, the reconciler marks it unknown.
 - Given due pending or retryable work, the reconciler uses the dispatcher's existing claim and FIFO send path.

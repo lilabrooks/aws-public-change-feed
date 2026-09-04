@@ -36,6 +36,18 @@ output "delivery_table" {
   value = module.runtime.delivery_table
 }
 
+output "primary_source_state_table" {
+  value = module.runtime.primary_source_state_table
+}
+
+output "primary_delivery_table" {
+  value = module.runtime.primary_delivery_table
+}
+
+output "dynamodb_recovery" {
+  value = module.runtime.dynamodb_recovery
+}
+
 output "delivery_index_name" {
   value = module.runtime.delivery_index_name
 }
@@ -74,6 +86,10 @@ output "function_names" {
 
 output "runtime_trigger_states" {
   value = module.runtime.runtime_trigger_states
+}
+
+output "watcher_execution_paused" {
+  value = module.runtime.watcher_execution_paused
 }
 
 output "dashboard_name" {

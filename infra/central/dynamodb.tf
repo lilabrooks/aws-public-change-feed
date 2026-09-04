@@ -20,7 +20,8 @@ resource "aws_dynamodb_table" "source_state" {
   }
 
   point_in_time_recovery {
-    enabled = var.enable_dynamodb_point_in_time_recovery
+    enabled                 = var.enable_dynamodb_point_in_time_recovery
+    recovery_period_in_days = var.enable_dynamodb_point_in_time_recovery ? var.dynamodb_recovery_period_days : null
   }
 
   tags = local.tags
@@ -74,8 +75,37 @@ resource "aws_dynamodb_table" "delivery" {
   }
 
   point_in_time_recovery {
-    enabled = var.enable_dynamodb_point_in_time_recovery
+    enabled                 = var.enable_dynamodb_point_in_time_recovery
+    recovery_period_in_days = var.enable_dynamodb_point_in_time_recovery ? var.dynamodb_recovery_period_days : null
   }
 
   tags = local.tags
+}
+
+resource "terraform_data" "dynamodb_recovery_cutover_guard" {
+  input = var.dynamodb_recovery_cutover
+
+  lifecycle {
+    precondition {
+      condition = var.dynamodb_recovery_cutover == null || (
+        var.enable_dynamodb_point_in_time_recovery &&
+        var.watcher_execution_paused &&
+        !local.watcher_trigger_requested &&
+        !local.dispatcher_trigger_requested &&
+        !local.worker_trigger_requested &&
+        !var.reconciler_trigger_enabled
+      )
+      error_message = "ADR-027 recovery cutover requires PITR, all four requested trigger states disabled, and watcher execution paused."
+    }
+
+    precondition {
+      condition = var.dynamodb_recovery_cutover == null || (
+        startswith(var.dynamodb_recovery_cutover.source_state_table, "${local.source_state_table}-restore-") &&
+        startswith(var.dynamodb_recovery_cutover.delivery_table, "${local.delivery_table}-restore-") &&
+        trimprefix(var.dynamodb_recovery_cutover.source_state_table, "${local.source_state_table}-restore-") == trimprefix(var.dynamodb_recovery_cutover.delivery_table, "${local.delivery_table}-restore-") &&
+        var.dynamodb_recovery_cutover.source_state_table != var.dynamodb_recovery_cutover.delivery_table
+      )
+      error_message = "ADR-027 recovery table names must use the exact primary-table restore prefixes, share one exercise ID, and remain distinct."
+    }
+  }
 }
