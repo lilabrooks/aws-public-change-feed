@@ -17,8 +17,11 @@ The [goal](../GOAL.md) defines the outcome and milestones. The [operations runbo
 
 ADR-027 is implemented in source by 35-day PITR on both central DynamoDB
 tables, one stopped-runtime restored-pair binding, a scoped recovery role, and
-the digest-bound recovery proof command. The central apply and live restore,
-cutover, rollback, and cleanup evidence remain open.
+the digest-bound recovery proof command. ADR-028 adds a separate CloudTrail
+evidence role and canonical event evidence for active tables that omit their
+restore summary. The first live restore exposed that provider behavior and
+remains incomplete. A fresh restore, cutover, rollback, and cleanup evidence
+remain open.
 
 ## Architecture decision records
 
@@ -45,6 +48,7 @@ cutover, rollback, and cleanup evidence remain open.
 - [ADR-025: Source-state and response-page retirement](../adr/025-source-state-and-response-page-retirement.md)
 - [ADR-026: Central shadow and rollback proof](../adr/026-central-shadow-and-rollback-proof.md) (Proposed)
 - [ADR-027: DynamoDB point-in-time recovery for both state tables](../adr/027-dynamodb-point-in-time-recovery.md)
+- [ADR-028: Separate CloudTrail evidence for DynamoDB restore identity](../adr/028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md)
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 

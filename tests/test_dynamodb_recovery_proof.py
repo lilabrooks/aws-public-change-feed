@@ -20,6 +20,8 @@ SPEC.loader.exec_module(recovery)
 
 STARTED = datetime(2026, 9, 3, 15, 0, tzinfo=UTC)
 RESTORE = STARTED - timedelta(minutes=5)
+EVENT_TIME = STARTED + timedelta(seconds=30)
+PLAN_SHA256 = "d" * 64
 SOURCE_NAMES = {
     "source_state": "apcf-source-state-dev",
     "delivery": "apcf-delivery-dev",
@@ -76,6 +78,7 @@ def context() -> dict:
         "region": "us-east-1",
         "account_id": "123456789012",
         "recovery_role_arn": "arn:aws:iam::123456789012:role/apcf-dev-dynamodb-recovery",
+        "recovery_evidence_role_arn": ("arn:aws:iam::123456789012:role/apcf-dev-dynamodb-recovery-evidence"),
         "git_sha": "a" * 40,
         "deployment_path": str((ROOT / "infra/central/deployment.yaml").resolve()),
         "deployment_sha256": "b" * 64,
@@ -103,7 +106,7 @@ def context() -> dict:
 
 def plan() -> dict:
     return {
-        "plan_version": 1,
+        "plan_version": 2,
         "decision": "ADR-027",
         "exercise_id": "l41-proof",
         "operator": "reviewer",
@@ -169,6 +172,92 @@ class WrongRoleSts:
         }
 
 
+class EvidenceSts:
+    def get_caller_identity(self):
+        return {
+            "Account": "123456789012",
+            "Arn": ("arn:aws:sts::123456789012:assumed-role/apcf-dev-dynamodb-recovery-evidence/capture"),
+            "UserId": "AROAEVIDENCE:capture",
+        }
+
+
+def cloudtrail_event(kind: str) -> dict:
+    document = plan()
+    target_name = document["target_tables"][kind]
+    event_id = f"00000000-0000-4000-8000-{1 if kind == 'source_state' else 2:012d}"
+    raw = {
+        "eventVersion": "1.11",
+        "eventSource": "dynamodb.amazonaws.com",
+        "eventName": "RestoreTableToPointInTime",
+        "awsRegion": "us-east-1",
+        "recipientAccountId": "123456789012",
+        "readOnly": False,
+        "eventType": "AwsApiCall",
+        "managementEvent": True,
+        "eventID": event_id,
+        "eventTime": timestamp(EVENT_TIME),
+        "requestID": f"request-{kind}",
+        "userIdentity": {
+            "type": "AssumedRole",
+            "arn": "arn:aws:sts::123456789012:assumed-role/apcf-dev-dynamodb-recovery/apply",
+            "accountId": "123456789012",
+            "principalId": "AROARECOVERY:apply",
+            "sessionContext": {
+                "sessionIssuer": {
+                    "type": "Role",
+                    "principalId": "AROARECOVERY",
+                    "arn": document["context"]["recovery_role_arn"],
+                    "accountId": "123456789012",
+                    "userName": "apcf-dev-dynamodb-recovery",
+                }
+            },
+        },
+        "requestParameters": {
+            "sourceTableArn": document["source_tables"][kind]["arn"],
+            "targetTableName": target_name,
+            "restoreDateTime": document["restore_at"],
+            "billingModeOverride": "PAY_PER_REQUEST",
+        },
+        "responseElements": None,
+        "errorCode": None,
+        "errorMessage": None,
+    }
+    return {
+        "EventId": event_id,
+        "EventName": "RestoreTableToPointInTime",
+        "EventTime": EVENT_TIME,
+        "Resources": [],
+        "CloudTrailEvent": json.dumps(raw, separators=(",", ":"), sort_keys=True),
+    }
+
+
+def evidence_document() -> dict:
+    document = plan()
+    events = {}
+    for kind in SOURCE_NAMES:
+        projected = recovery._event_projection(cloudtrail_event(kind), document)
+        assert projected is not None
+        events[kind] = projected[1]
+    return {
+        "evidence_version": 1,
+        "decision": "ADR-028",
+        "plan_sha256": PLAN_SHA256,
+        "captured_at": timestamp(STARTED + timedelta(minutes=1)),
+        "verifier_git_sha": document["context"]["git_sha"],
+        "context": {
+            "account_id": "123456789012",
+            "region": "us-east-1",
+            "evidence_role_arn": document["context"]["recovery_evidence_role_arn"],
+        },
+        "aws_identity": {
+            "account_id": "123456789012",
+            "arn": EvidenceSts().get_caller_identity()["Arn"],
+            "user_id": "AROAEVIDENCE:capture",
+        },
+        "events": events,
+    }
+
+
 class RecoveryProofTests(unittest.TestCase):
     def test_plan_file_is_canonical_and_digest_bound(self):
         document = plan()
@@ -180,6 +269,152 @@ class RecoveryProofTests(unittest.TestCase):
             path.write_bytes(path.read_bytes() + b" ")
             with self.assertRaisesRegex(recovery.RecoveryProofError, "digest or canonical bytes differ"):
                 recovery.load_plan(path, digest)
+
+    def test_cloudtrail_evidence_is_canonical_digest_bound_and_redacted(self):
+        document = plan()
+        cloudtrail = mock.Mock()
+        cloudtrail.lookup_events.side_effect = [
+            {"Events": [cloudtrail_event("source_state")], "NextToken": "next-page"},
+            {"Events": [cloudtrail_event("delivery")]},
+        ]
+        clients = recovery.AwsClients(EvidenceSts(), mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock(), cloudtrail)
+        with mock.patch.object(recovery, "_local_context", return_value=context()):
+            evidence = recovery.capture_evidence(
+                clients,
+                document,
+                plan_sha256=PLAN_SHA256,
+                now=STARTED + timedelta(minutes=1),
+            )
+
+        self.assertEqual(cloudtrail.lookup_events.call_count, 2)
+        arguments = cloudtrail.lookup_events.call_args_list[0].kwargs
+        self.assertEqual(
+            arguments["LookupAttributes"],
+            [{"AttributeKey": "EventName", "AttributeValue": "RestoreTableToPointInTime"}],
+        )
+        self.assertEqual(arguments["MaxResults"], recovery.CLOUDTRAIL_PAGE_SIZE)
+        self.assertEqual(cloudtrail.lookup_events.call_args_list[1].kwargs["NextToken"], "next-page")
+        self.assertEqual(set(evidence["events"]), set(SOURCE_NAMES))
+        serialized = recovery.canonical_json(evidence).decode("utf-8")
+        for excluded in ("accessKeyId", "sourceIPAddress", "userAgent", "CloudTrailEvent"):
+            self.assertNotIn(excluded, serialized)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "evidence.json"
+            digest = recovery.write_evidence(path, evidence)
+            self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(recovery.load_evidence(path, digest, plan=document, plan_sha256=PLAN_SHA256), evidence)
+            path.write_bytes(path.read_bytes() + b" ")
+            with self.assertRaisesRegex(recovery.RecoveryProofError, "digest or canonical bytes differ"):
+                recovery.load_evidence(path, digest, plan=document, plan_sha256=PLAN_SHA256)
+
+    def test_evidence_role_is_required_before_cloudtrail_lookup(self):
+        cloudtrail = mock.Mock()
+        clients = recovery.AwsClients(Sts(), mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock(), cloudtrail)
+        with mock.patch.object(recovery, "_local_context", return_value=context()):
+            with self.assertRaisesRegex(recovery.RecoveryProofError, "recovery evidence role"):
+                recovery.capture_evidence(
+                    clients,
+                    plan(),
+                    plan_sha256=PLAN_SHA256,
+                    now=STARTED + timedelta(minutes=1),
+                )
+        cloudtrail.lookup_events.assert_not_called()
+
+    def test_each_cloudtrail_restore_identity_field_is_enforced(self):
+        mutations = {
+            "outer event ID": lambda event, raw: event.__setitem__("EventId", "wrong"),
+            "outer event name": lambda event, raw: event.__setitem__("EventName", "Wrong"),
+            "outer event time": lambda event, raw: event.__setitem__("EventTime", STARTED),
+            "event source": lambda event, raw: raw.__setitem__("eventSource", "other.amazonaws.com"),
+            "event name": lambda event, raw: raw.__setitem__("eventName", "Wrong"),
+            "region": lambda event, raw: raw.__setitem__("awsRegion", "us-west-2"),
+            "account": lambda event, raw: raw.__setitem__("recipientAccountId", "000000000000"),
+            "read-only": lambda event, raw: raw.__setitem__("readOnly", True),
+            "management event": lambda event, raw: raw.__setitem__("managementEvent", False),
+            "event type": lambda event, raw: raw.__setitem__("eventType", "AwsServiceEvent"),
+            "event time": lambda event, raw: raw.__setitem__("eventTime", timestamp(STARTED + timedelta(hours=5))),
+            "identity type": lambda event, raw: raw["userIdentity"].__setitem__("type", "IAMUser"),
+            "identity account": lambda event, raw: raw["userIdentity"].__setitem__("accountId", "000000000000"),
+            "session role": lambda event, raw: raw["userIdentity"].__setitem__(
+                "arn", "arn:aws:sts::123456789012:assumed-role/other/apply"
+            ),
+            "issuer": lambda event, raw: raw["userIdentity"]["sessionContext"]["sessionIssuer"].__setitem__(
+                "arn", "arn:aws:iam::123456789012:role/other"
+            ),
+            "source": lambda event, raw: raw["requestParameters"].__setitem__(
+                "sourceTableArn", source_observation("delivery")["arn"]
+            ),
+            "target": lambda event, raw: raw["requestParameters"].__setitem__(
+                "targetTableName", plan()["target_tables"]["delivery"]
+            ),
+            "restore time": lambda event, raw: raw["requestParameters"].__setitem__(
+                "restoreDateTime", timestamp(RESTORE - timedelta(seconds=1))
+            ),
+            "billing": lambda event, raw: raw["requestParameters"].__setitem__("billingModeOverride", "PROVISIONED"),
+            "error": lambda event, raw: raw.__setitem__("errorCode", "AccessDeniedException"),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(field=name):
+                event = cloudtrail_event("source_state")
+                raw = json.loads(event["CloudTrailEvent"])
+                mutate(event, raw)
+                event["CloudTrailEvent"] = json.dumps(raw, separators=(",", ":"), sort_keys=True)
+                with self.assertRaisesRegex(recovery.RecoveryProofError, "differs"):
+                    recovery._event_projection(event, plan())
+
+    def test_missing_duplicate_and_over_cap_cloudtrail_evidence_refuse(self):
+        document = plan()
+        clients = recovery.AwsClients(EvidenceSts(), mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock())
+        cases: tuple[tuple[str, list[dict], str], ...] = (
+            ("missing", [{"Events": [cloudtrail_event("source_state")]}], "not yet complete"),
+            (
+                "duplicate",
+                [
+                    {
+                        "Events": [
+                            cloudtrail_event("source_state"),
+                            cloudtrail_event("source_state"),
+                            cloudtrail_event("delivery"),
+                        ]
+                    }
+                ],
+                "duplicate",
+            ),
+            (
+                "event cap",
+                [{"Events": [{}] * (recovery.MAX_CLOUDTRAIL_EVENTS + 1)}],
+                "event cap",
+            ),
+            (
+                "page cap",
+                [{"Events": [], "NextToken": f"token-{position}"} for position in range(recovery.MAX_CLOUDTRAIL_PAGES)],
+                "page cap",
+            ),
+        )
+        for name, responses, message in cases:
+            with self.subTest(case=name):
+                clients.cloudtrail.reset_mock()
+                clients.cloudtrail.lookup_events.side_effect = responses
+                with mock.patch.object(recovery, "_local_context", return_value=context()):
+                    with self.assertRaisesRegex(recovery.RecoveryProofError, message):
+                        recovery.capture_evidence(
+                            clients,
+                            document,
+                            plan_sha256=PLAN_SHA256,
+                            now=STARTED + timedelta(minutes=1),
+                        )
+
+        clients.cloudtrail.lookup_events.side_effect = RuntimeError("provider detail")
+        with mock.patch.object(recovery, "_local_context", return_value=context()):
+            with self.assertRaisesRegex(recovery.RecoveryProofError, "could not be read") as raised:
+                recovery.capture_evidence(
+                    clients,
+                    document,
+                    plan_sha256=PLAN_SHA256,
+                    now=STARTED + timedelta(minutes=1),
+                )
+        self.assertEqual(raised.exception.status, "provider_error")
 
     def test_saved_plan_deadline_and_derived_names_are_recomputed(self):
         for field, value in (
@@ -493,6 +728,56 @@ class RecoveryProofTests(unittest.TestCase):
                     restore_at=timestamp(RESTORE),
                 )
 
+    def test_active_restore_without_summary_requires_exact_event_evidence(self):
+        document = plan()
+        source = document["source_tables"]["source_state"]
+        target_name = document["target_tables"]["source_state"]
+        target = {
+            "TableName": target_name,
+            "TableArn": recovery._expected_target_arn(source["arn"], target_name),
+            "TableStatus": "ACTIVE",
+        }
+        client = mock.Mock()
+        with mock.patch.object(recovery, "_describe_optional", return_value=target):
+            with self.assertRaisesRegex(recovery.RecoveryProofError, "requires exact ADR-028 evidence"):
+                recovery._start_restore(
+                    client,
+                    source=source,
+                    target_name=target_name,
+                    restore_at=document["restore_at"],
+                )
+            result = recovery._start_restore(
+                client,
+                source=source,
+                target_name=target_name,
+                restore_at=document["restore_at"],
+                evidence_event=evidence_document()["events"]["source_state"],
+            )
+
+        self.assertEqual(result, {"status": "observed", "table_status": "ACTIVE"})
+        client.restore_table_to_point_in_time.assert_not_called()
+
+        for name, conflicting in (
+            ("live ARN", {**target, "TableArn": f"{target['TableArn']}-wrong"}),
+            (
+                "provider summary",
+                {
+                    **target,
+                    "RestoreSummary": {"SourceTableArn": source["arn"], "RestoreDateTime": STARTED},
+                },
+            ),
+        ):
+            with self.subTest(conflict=name):
+                with mock.patch.object(recovery, "_describe_optional", return_value=conflicting):
+                    with self.assertRaisesRegex(recovery.RecoveryProofError, "different restore identity"):
+                        recovery._start_restore(
+                            client,
+                            source=source,
+                            target_name=target_name,
+                            restore_at=document["restore_at"],
+                            evidence_event=evidence_document()["events"]["source_state"],
+                        )
+
         conflicting_source = {
             "TableStatus": "CREATING",
             "RestoreSummary": {
@@ -541,7 +826,8 @@ class RecoveryProofTests(unittest.TestCase):
         clients = recovery.AwsClients(mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock(), mock.Mock())
         calls = []
 
-        def start(_, *, source, target_name, restore_at):
+        def start(_, *, source, target_name, restore_at, evidence_event=None):
+            self.assertIsNone(evidence_event)
             calls.append((source["name"], target_name, restore_at))
             return {"status": "accepted", "table_status": "CREATING"}
 
@@ -566,7 +852,7 @@ class RecoveryProofTests(unittest.TestCase):
         self.assertEqual({call[0] for call in calls}, set(SOURCE_NAMES.values()))
         self.assertEqual(result["restore_stage_status"], "incomplete")
         self.assertIsNone(result["cutover_input"])
-        status.assert_called_once_with(clients, document, verify_preconditions=False)
+        status.assert_called_once_with(clients, document, verify_preconditions=False, evidence=None)
 
     def test_second_restore_failure_is_reported_as_partial(self):
         document = plan()
@@ -669,8 +955,8 @@ class RecoveryProofTests(unittest.TestCase):
             source = document["source_tables"][kind]
             return {
                 "TableStatus": "ACTIVE",
-                "TableArn": f"arn:target:{kind}",
-                "RestoreSummary": {"SourceTableArn": source["arn"], "RestoreDateTime": RESTORE},
+                "TableName": name,
+                "TableArn": recovery._expected_target_arn(source["arn"], name),
             }
 
         with (
@@ -680,7 +966,7 @@ class RecoveryProofTests(unittest.TestCase):
                 recovery,
                 "_schema",
                 side_effect=lambda table: {
-                    "kind": "source_state" if "source_state" in table["TableArn"] else "delivery"
+                    "kind": "source_state" if "source-state" in table["TableArn"] else "delivery"
                 },
             ),
             mock.patch.object(recovery, "_ttl", return_value={"status": "ENABLED", "attribute": "expires_at"}),
@@ -698,11 +984,29 @@ class RecoveryProofTests(unittest.TestCase):
                 ],
             ),
         ):
-            completed = recovery.status_plan(clients, document, now=STARTED + timedelta(hours=3))
-            late = recovery.status_plan(clients, document, now=STARTED + timedelta(hours=5))
+            unproved = recovery.status_plan(clients, document, now=STARTED + timedelta(hours=3))
+            completed = recovery.status_plan(
+                clients,
+                document,
+                now=STARTED + timedelta(hours=3),
+                evidence=evidence_document(),
+            )
+            late = recovery.status_plan(
+                clients,
+                document,
+                now=STARTED + timedelta(hours=5),
+                evidence=evidence_document(),
+            )
             target_inventories["delivery"]["protected"]["item_count"] = 2
-            mismatched = recovery.status_plan(clients, document, now=STARTED + timedelta(hours=3))
+            mismatched = recovery.status_plan(
+                clients,
+                document,
+                now=STARTED + timedelta(hours=3),
+                evidence=evidence_document(),
+            )
 
+        self.assertEqual(unproved["restore_stage_status"], "incomplete")
+        self.assertEqual(unproved["tables"]["source_state"]["status"], "identity_unproved")
         self.assertEqual(completed["restore_stage_status"], "completed")
         self.assertEqual(completed["exercise_status"], "incomplete_pending_cutover_rollback_and_trigger_restoration")
         self.assertNotIn("status", completed)
@@ -712,7 +1016,7 @@ class RecoveryProofTests(unittest.TestCase):
         self.assertIsNone(late["cutover_input"])
         self.assertEqual(mismatched["restore_stage_status"], "incomplete")
         self.assertIsNone(mismatched["cutover_input"])
-        self.assertEqual(preconditions.call_count, 3)
+        self.assertEqual(preconditions.call_count, 4)
 
     def test_restore_window_is_inclusive_and_refuses_outside_bounds(self):
         table = source_observation("source_state")
@@ -759,6 +1063,46 @@ class RecoveryProofTests(unittest.TestCase):
                     self.assertEqual(recovery.main(arguments, clients=mock.Mock()), expected)
                     write.assert_called_once()
 
+    def test_main_captures_evidence_and_requires_paired_status_arguments(self):
+        arguments = [
+            "evidence",
+            "--plan",
+            "plan.json",
+            "--expected-plan-sha256",
+            PLAN_SHA256,
+            "--evidence",
+            "evidence.json",
+        ]
+        document = plan()
+        evidence = evidence_document()
+        with (
+            mock.patch.object(recovery, "load_plan", return_value=document),
+            mock.patch.object(recovery, "capture_evidence", return_value=evidence) as capture,
+            mock.patch.object(recovery, "write_evidence", return_value="e" * 64) as write_evidence,
+            mock.patch.object(recovery, "_write") as write,
+        ):
+            self.assertEqual(recovery.main(arguments, clients=mock.Mock()), 0)
+        capture.assert_called_once_with(mock.ANY, document, plan_sha256=PLAN_SHA256)
+        write_evidence.assert_called_once_with(Path("evidence.json"), evidence)
+        write.assert_called_once_with({"status": "evidence_captured", "evidence_sha256": "e" * 64})
+
+        incomplete_arguments = [
+            "status",
+            "--plan",
+            "plan.json",
+            "--expected-plan-sha256",
+            PLAN_SHA256,
+            "--evidence",
+            "evidence.json",
+        ]
+        with (
+            mock.patch.object(recovery, "load_plan", return_value=document),
+            mock.patch.object(recovery, "status_plan") as status,
+            mock.patch.object(recovery, "_write"),
+        ):
+            self.assertEqual(recovery.main(incomplete_arguments, clients=mock.Mock()), recovery.EXIT_INVALID)
+        status.assert_not_called()
+
     def test_local_context_rejects_cutover_and_unpaused_watcher(self):
         def output(value):
             return {"sensitive": False, "type": "dynamic", "value": value}
@@ -774,7 +1118,12 @@ class RecoveryProofTests(unittest.TestCase):
             "function_names": output(context()["function_names"]),
             "delivery_queue": output(context()["queue_name"]),
             "delivery_queue_arn": output(context()["queue_arn"]),
-            "roles": output({"dynamodb_recovery": context()["recovery_role_arn"]}),
+            "roles": output(
+                {
+                    "dynamodb_recovery": context()["recovery_role_arn"],
+                    "dynamodb_recovery_evidence": context()["recovery_evidence_role_arn"],
+                }
+            ),
         }
         deployment = {
             "deployment_id": "dev",
@@ -793,6 +1142,16 @@ class RecoveryProofTests(unittest.TestCase):
                 mock.patch.object(recovery, "_git_sha", return_value="a" * 40),
             ):
                 self.assertEqual(recovery._local_context(deployment_path, output_path)["primary_tables"], SOURCE_NAMES)
+            outputs["roles"]["value"]["dynamodb_recovery_evidence"] = "arn:aws:iam::123456789012:role/wrong"
+            with (
+                mock.patch.object(
+                    recovery, "_read_mapping", side_effect=[(deployment, b"deployment"), (outputs, b"outputs")]
+                ),
+                mock.patch.object(recovery, "_git_sha", return_value="a" * 40),
+            ):
+                with self.assertRaisesRegex(recovery.RecoveryProofError, "recovery evidence role differs"):
+                    recovery._local_context(deployment_path, output_path)
+            outputs["roles"]["value"]["dynamodb_recovery_evidence"] = context()["recovery_evidence_role_arn"]
             outputs["source_state_table"]["value"] = f"{SOURCE_NAMES['source_state']}-restore-l41-proof"
             outputs["delivery_table"]["value"] = f"{SOURCE_NAMES['delivery']}-restore-l41-proof"
             outputs["dynamodb_recovery"]["value"] = {

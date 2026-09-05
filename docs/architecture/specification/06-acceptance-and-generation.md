@@ -123,9 +123,18 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - Apply accepts only unchanged canonical plan bytes and digest, rechecks local,
   provider, source-inventory, and runtime state, and refuses to start a restore
   after the four-hour deadline.
+- Evidence capture accepts the same exact plan and digest only under the
+  separate recovery-evidence role. It uses one CloudTrail event-name filter,
+  the plan's Region and recovery clock, and fixed pagination and event caps. It
+  writes canonical evidence only after exactly one successful restore event
+  for each target matches account, Region, recovery role and issuer, source
+  ARN, target name, restore timestamp, and billing override.
 - Both restore calls use the exact primary ARNs, exact derived destinations, and
   one shared UTC timestamp. An existing destination is reusable only when its
-  provider restore summary matches both the source ARN and timestamp.
+  provider restore summary matches both the source ARN and timestamp, or, when
+  the summary is absent, exact digest-bound ADR-028 event evidence matches and
+  the live table ARN equals the ARN derived from the source ARN and target
+  name. Evidence never overrides a conflicting restore summary.
 - One accepted restore followed by an uncertain second result is `partial`.
   A failed response is reread by exact destination name, and an unproved result
   stays ambiguous without automatic retry.
@@ -139,6 +148,8 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - The recovery role can restore only the primary pair. It has DynamoDB's
   restore-dependent item actions only on exact restore-name prefixes, has no
   item-write action on a primary table, and has no table-delete action.
+- The recovery-evidence role has only `cloudtrail:LookupEvents` on `*`, has no
+  DynamoDB or runtime action, and retains no raw or unrelated CloudTrail event.
 - Given central recovery staging before a restored pair is selected, Terraform
   accepts individual trigger overrides only with PITR enabled, watcher
   execution paused, the aggregate delivery and reconciler gates disabled, the

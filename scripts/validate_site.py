@@ -2,10 +2,12 @@
 
 import argparse
 import hashlib
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 import zipfile
+from collections import Counter
 from collections.abc import Iterable
 from html.parser import HTMLParser
 from pathlib import Path
@@ -30,6 +32,11 @@ MVP_VIDEO_URL = (
     f"https://github.com/lilabrooks/aws-public-change-feed/releases/download/mvp-evidence-v2/{MVP_VIDEO_NAME}"
 )
 MVP_VIDEO_SHA256 = "adfdd7c7ef8c1071e2b848b49c93e6f75a6003a331f3fc2a31ee54dcb43c5bd7"
+ACCEPTED_ADR_COUNT_RE = re.compile(r"(?<![0-9])([0-9]+) accepted ADRs")
+ADR_INDEX_LINK_RE = re.compile(
+    r"^- \[ADR-[0-9]{3}:[^\n]*\]\(\.\./adr/([0-9]{3}-[^)#]+\.md)(?:#[^)]+)?\)",
+    re.MULTILINE,
+)
 EXPECTED_DIAGRAM_NODES = {
     "feeds",
     "release",
@@ -324,6 +331,58 @@ def validate_mvp_media(root: Path) -> list[str]:
     return errors
 
 
+def validate_adr_public_contract(root: Path) -> list[str]:
+    errors: list[str] = []
+    adr_paths = sorted((root / "docs/adr").glob("[0-9][0-9][0-9]-*.md"))
+    if not adr_paths:
+        return ["docs/adr: no active ADR files found"]
+
+    accepted_count = 0
+    for path in adr_paths:
+        try:
+            metadata = path.read_text(encoding="utf-8").splitlines()[:10]
+        except (OSError, UnicodeError) as error:
+            errors.append(f"cannot read {path.relative_to(root)}: {error}")
+            continue
+        statuses = [line.removeprefix("- Status: ") for line in metadata if line.startswith("- Status: ")]
+        if len(statuses) != 1:
+            errors.append(f"{path.relative_to(root)}: expected one top-level status in the first 10 lines")
+            continue
+        if statuses[0].startswith("Accepted"):
+            accepted_count += 1
+
+    index_path = root / "docs/architecture/README.md"
+    try:
+        index_text = index_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        errors.append(f"cannot read docs/architecture/README.md: {error}")
+        return errors
+    indexed = Counter(ADR_INDEX_LINK_RE.findall(index_text))
+    expected = {path.name for path in adr_paths}
+    missing = sorted(expected - set(indexed))
+    unexpected = sorted(set(indexed) - expected)
+    duplicated = sorted(name for name, count in indexed.items() if count != 1)
+    if missing:
+        errors.append(f"docs/architecture/README.md: missing active ADR entries: {', '.join(missing)}")
+    if unexpected:
+        errors.append(f"docs/architecture/README.md: unexpected active ADR entries: {', '.join(unexpected)}")
+    if duplicated:
+        errors.append(f"docs/architecture/README.md: active ADR entries must appear once: {', '.join(duplicated)}")
+
+    for relative_path in (Path("README.md"), PAGE_PATH):
+        try:
+            text = (root / relative_path).read_text(encoding="utf-8")
+        except (OSError, UnicodeError) as error:
+            errors.append(f"cannot read {relative_path}: {error}")
+            continue
+        claims = [int(value) for value in ACCEPTED_ADR_COUNT_RE.findall(text)]
+        if not claims:
+            errors.append(f"{relative_path}: missing numeric accepted-ADR count")
+        elif any(value != accepted_count for value in claims):
+            errors.append(f"{relative_path}: accepted-ADR count must be {accepted_count}, found {claims}")
+    return errors
+
+
 def validate_repository(root: Path) -> list[str]:
     errors: list[str] = []
     for relative_path in sorted(REQUIRED_SITE_FILES):
@@ -438,6 +497,7 @@ def validate_repository(root: Path) -> list[str]:
 
     errors.extend(validate_drawio_artifacts(root))
     errors.extend(validate_mvp_media(root))
+    errors.extend(validate_adr_public_contract(root))
 
     theme_css = (root / "site/compact-theme.css").read_text(encoding="utf-8")
     theme_js = (root / "site/compact-theme.js").read_text(encoding="utf-8")

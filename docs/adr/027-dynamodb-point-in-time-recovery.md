@@ -5,6 +5,10 @@
 - Owner: Lila Brooks
 - Relates to: [ADR-007](007-central-slack-delivery-queue-and-worker.md), [ADR-016](016-production-preflight-and-event-contracts.md), [ADR-025](025-source-state-and-response-page-retirement.md)
 
+[ADR-028](028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md)
+adds the provider evidence used when an active destination no longer exposes
+`RestoreSummary`.
+
 ## Context
 
 L-41 must set one recovery contract for the source-state and delivery tables

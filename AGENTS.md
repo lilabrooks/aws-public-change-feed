@@ -47,6 +47,12 @@ Use “potentially relevant” for environment matches. Public announcements do 
 - Corpus text comes from the runtime acquisition path, never from an ad-hoc fetch. Text normalized differently from production makes both the labels and any term screen measure something the matcher never sees. A shorter-truncated corpus previously hid a false positive that only appeared in the full text.
 - Adding or removing a risk term reruns `make screen-feeds` when network is available, and every reported unlabeled match is either labeled into the corpus or traced to the rule that fired. A term with no true positive and any false positive is removed rather than excluded case by case.
 - Keep `docs/architecture/README.md` current when specification chapters or ADRs are added or renamed. It is the single index and the human reading order.
+- Treat `site/index.html` as the public projection of `docs/GOAL.md`,
+  `docs/architecture/`, `docs/adr/`, `schemas/`, `examples/`, and the other
+  `site/` assets. A change to any of those paths must update `site/index.html`
+  meaningfully in the same change. Before push, run
+  `python3 scripts/validate_site.py --base <exact-base-sha> --head HEAD`; the
+  default `make check` invocation does not exercise this range-based sync gate.
 
 ## Work selection
 

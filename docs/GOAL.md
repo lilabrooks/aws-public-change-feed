@@ -123,8 +123,13 @@ recovery-time target. Accepted ADR-027 restores both tables to one timestamp
 under new names, repairs provider settings, validates a complete bounded item
 inventory, moves every runtime table binding under disabled triggers, and
 proves rollback before any restored-table runtime writes. The Terraform and
-preview-first operator tooling are implemented in source. No central apply,
-live restore, cutover, rollback, or cleanup has run, so L-41 remains open.
+preview-first operator tooling are implemented in source. The first live
+restore created both tables but stayed incomplete when DynamoDB omitted
+`RestoreSummary` after they became active; no cutover or restored-table runtime
+write occurred, and the original bindings and triggers were restored. Accepted
+ADR-028 adds separate, digest-bound CloudTrail evidence for a fresh proof.
+Fresh restore, cutover, rollback, and exact cleanup evidence remain open, so
+L-41 remains open.
 
 **Production preflight.** Not started, and blocked on the milestones above.
 

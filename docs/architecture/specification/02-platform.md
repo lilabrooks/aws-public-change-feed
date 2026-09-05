@@ -14,6 +14,9 @@ The `infra/central` root creates:
   restore-name prefixes. It carries DynamoDB's documented restore-dependent
   item actions only on those destination prefixes, carries no item-write action on a
   primary table, and cannot delete tables.
+- A separate recovery-evidence role whose only service permission is the
+  account-wide `cloudtrail:LookupEvents` read that AWS cannot scope to one
+  resource. It has no DynamoDB or runtime authority.
 - An encrypted SQS FIFO queue and FIFO DLQ.
 - Conditional outbox dispatcher, Slack worker, and recovery reconciler Lambdas, plus their least-privilege roles.
 - A default-off, one-time source-state retention migration role whose projected scan and conditioned update authority is removed after use.

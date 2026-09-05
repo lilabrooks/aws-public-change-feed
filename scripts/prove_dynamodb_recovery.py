@@ -25,13 +25,17 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from aws_public_change_feed.parsing import load_unique_json  # noqa: E402
 
-PLAN_VERSION = 1
+PLAN_VERSION = 2
+EVIDENCE_VERSION = 1
 RECOVERY_PERIOD_DAYS = 35
 RPO_SECONDS = 300
 RTO_SECONDS = 4 * 60 * 60
 CLOCK_SKEW_SECONDS = 60
 MAX_INVENTORY_ITEMS = 100_000
 MAX_INVENTORY_BYTES = 256 * 1024 * 1024
+MAX_CLOUDTRAIL_PAGES = 10
+MAX_CLOUDTRAIL_EVENTS = 500
+CLOUDTRAIL_PAGE_SIZE = 50
 EXIT_INVALID = 2
 EXIT_REFUSED = 3
 EXIT_AMBIGUOUS = 4
@@ -63,6 +67,7 @@ class AwsClients:
     lambda_client: Any
     events: Any
     sqs: Any
+    cloudtrail: Any | None = None
 
 
 def canonical_json(value: object) -> bytes:
@@ -169,17 +174,18 @@ def _output_value(outputs: Mapping[str, Any], name: str) -> Any:
     return entry["value"]
 
 
-def _atomic_write(path: Path, body: bytes) -> None:
+def _atomic_write(path: Path, body: bytes, kind: str) -> None:
     temporary = path.with_name(f".{path.name}.tmp")
     try:
         if path.exists() or temporary.exists():
-            raise RecoveryProofError("local_write_failed", "recovery plan path or temporary already exists")
+            raise RecoveryProofError("local_write_failed", f"{kind} path or temporary already exists")
         temporary.write_bytes(body)
+        temporary.chmod(0o600)
         temporary.replace(path)
     except RecoveryProofError:
         raise
     except OSError as error:
-        raise RecoveryProofError("local_write_failed", "recovery plan could not be written") from error
+        raise RecoveryProofError("local_write_failed", f"{kind} could not be written") from error
 
 
 def _git_sha() -> str:
@@ -267,14 +273,20 @@ def _local_context(deployment_path: Path, terraform_output_path: Path) -> dict[s
         raise RecoveryProofError("invalid_input", "Terraform function-name output is malformed")
     roles = _output_value(outputs, "roles")
     expected_role_arn = f"arn:aws:iam::{account_id}:role/apcf-dev-dynamodb-recovery"
+    expected_evidence_role_arn = f"arn:aws:iam::{account_id}:role/apcf-dev-dynamodb-recovery-evidence"
     if not isinstance(roles, Mapping) or roles.get("dynamodb_recovery") != expected_role_arn:
         raise RecoveryProofError("state_refused", "Terraform recovery role differs from the reviewed deployment")
+    if roles.get("dynamodb_recovery_evidence") != expected_evidence_role_arn:
+        raise RecoveryProofError(
+            "state_refused", "Terraform recovery evidence role differs from the reviewed deployment"
+        )
 
     return {
         "deployment_id": "dev",
         "region": "us-east-1",
         "account_id": account_id,
         "recovery_role_arn": expected_role_arn,
+        "recovery_evidence_role_arn": expected_evidence_role_arn,
         "git_sha": _git_sha(),
         "deployment_path": str(deployment_path.resolve()),
         "deployment_sha256": sha256_bytes(deployment_body),
@@ -298,7 +310,13 @@ def _client_error_code(error: Exception) -> str | None:
     return None
 
 
-def _caller_identity(client: Any, context: Mapping[str, Any]) -> dict[str, str]:
+def _assumed_role_identity(
+    client: Any,
+    *,
+    account_id: str,
+    role_arn: str,
+    role_description: str,
+) -> dict[str, str]:
     try:
         response = client.get_caller_identity()
     except Exception as error:
@@ -308,12 +326,28 @@ def _caller_identity(client: Any, context: Mapping[str, Any]) -> dict[str, str]:
     account = _safe_text(response.get("Account"), "AWS caller account", status="identity_refused")
     arn = _safe_text(response.get("Arn"), "AWS caller ARN", status="identity_refused")
     user_id = _safe_text(response.get("UserId"), "AWS caller user ID", status="identity_refused")
-    expected_account = context["account_id"]
-    expected_role = context["recovery_role_arn"]
-    expected_prefix = f"arn:aws:sts::{expected_account}:assumed-role/{expected_role.rsplit('/', 1)[-1]}/"
-    if account != expected_account or not arn.startswith(expected_prefix) or len(arn) == len(expected_prefix):
-        raise RecoveryProofError("identity_refused", "AWS caller is not the reviewed DynamoDB recovery role")
+    expected_prefix = f"arn:aws:sts::{account_id}:assumed-role/{role_arn.rsplit('/', 1)[-1]}/"
+    if account != account_id or not arn.startswith(expected_prefix) or len(arn) == len(expected_prefix):
+        raise RecoveryProofError("identity_refused", f"AWS caller is not the reviewed {role_description}")
     return {"account_id": account, "arn": arn, "user_id": user_id}
+
+
+def _caller_identity(client: Any, context: Mapping[str, Any]) -> dict[str, str]:
+    return _assumed_role_identity(
+        client,
+        account_id=context["account_id"],
+        role_arn=context["recovery_role_arn"],
+        role_description="DynamoDB recovery role",
+    )
+
+
+def _evidence_caller_identity(client: Any, context: Mapping[str, Any]) -> dict[str, str]:
+    return _assumed_role_identity(
+        client,
+        account_id=context["account_id"],
+        role_arn=context["recovery_evidence_role_arn"],
+        role_description="DynamoDB recovery evidence role",
+    )
 
 
 def _describe_optional(client: Any, table_name: str) -> Mapping[str, Any] | None:
@@ -744,7 +778,7 @@ def create_preview(
 
 def write_preview(path: Path, plan: Mapping[str, Any]) -> str:
     body = canonical_json(plan) + b"\n"
-    _atomic_write(path, body)
+    _atomic_write(path, body, "recovery plan")
     return sha256_bytes(body)
 
 
@@ -824,6 +858,7 @@ def _validate_saved_plan(plan: Mapping[str, Any]) -> None:
         "region",
         "account_id",
         "recovery_role_arn",
+        "recovery_evidence_role_arn",
         "git_sha",
         "deployment_path",
         "deployment_sha256",
@@ -843,6 +878,9 @@ def _validate_saved_plan(plan: Mapping[str, Any]) -> None:
     expected_role_arn = f"arn:aws:iam::{context['account_id']}:role/apcf-dev-dynamodb-recovery"
     if context.get("recovery_role_arn") != expected_role_arn:
         raise RecoveryProofError("stale_plan", "saved recovery role differs")
+    expected_evidence_role_arn = f"arn:aws:iam::{context['account_id']}:role/apcf-dev-dynamodb-recovery-evidence"
+    if context.get("recovery_evidence_role_arn") != expected_evidence_role_arn:
+        raise RecoveryProofError("stale_plan", "saved recovery evidence role differs")
     if not isinstance(context.get("git_sha"), str) or GIT_SHA_RE.fullmatch(context["git_sha"]) is None:
         raise RecoveryProofError("stale_plan", "saved Git SHA differs")
     for name in ("deployment_sha256", "terraform_output_sha256"):
@@ -968,18 +1006,321 @@ def _fresh_preconditions(clients: AwsClients, plan: Mapping[str, Any]) -> None:
             raise RecoveryProofError("stale_plan", f"{kind} source PITR policy differs from preview")
 
 
-def _restore_identity(table: Mapping[str, Any], source_arn: str, restore_at: str) -> bool:
+def _expected_target_arn(source_arn: str, target_name: str) -> str:
+    prefix, separator, _ = source_arn.rpartition("/")
+    if not separator or not prefix.endswith(":table"):
+        raise RecoveryProofError("stale_plan", "saved source table ARN cannot derive a target ARN")
+    return f"{prefix}/{target_name}"
+
+
+def _event_projection(event: Mapping[str, Any], plan: Mapping[str, Any]) -> tuple[str, dict[str, Any]] | None:
+    raw_text = event.get("CloudTrailEvent")
+    if not isinstance(raw_text, str):
+        raise RecoveryProofError("evidence_conflict", "CloudTrail returned a malformed recovery event")
+    try:
+        raw = load_unique_json(raw_text.encode("utf-8"))
+    except Exception as error:
+        raise RecoveryProofError("evidence_conflict", "CloudTrail returned a malformed recovery event") from error
+    if not isinstance(raw, Mapping):
+        raise RecoveryProofError("evidence_conflict", "CloudTrail returned a malformed recovery event")
+    request = raw.get("requestParameters")
+    if not isinstance(request, Mapping):
+        raise RecoveryProofError("evidence_conflict", "CloudTrail returned a malformed recovery event")
+    target_name = request.get("targetTableName")
+    kinds = {name: kind for kind, name in plan["target_tables"].items()}
+    if not isinstance(target_name, str):
+        raise RecoveryProofError("evidence_conflict", "CloudTrail returned a malformed recovery event")
+    if target_name not in kinds:
+        return None
+    kind = kinds[target_name]
+    context = plan["context"]
+    source = plan["source_tables"][kind]
+    event_time = _timestamp(raw.get("eventTime"), "CloudTrail event time", status="evidence_conflict")
+    started = _timestamp(plan["started_at"], "saved started_at", status="stale_plan")
+    deadline = _timestamp(plan["deadline_at"], "saved deadline_at", status="stale_plan")
+    identity = raw.get("userIdentity")
+    session = identity.get("sessionContext") if isinstance(identity, Mapping) else None
+    issuer = session.get("sessionIssuer") if isinstance(session, Mapping) else None
+    expected_role = context["recovery_role_arn"]
+    expected_session_prefix = f"arn:aws:sts::{context['account_id']}:assumed-role/{expected_role.rsplit('/', 1)[-1]}/"
+    session_arn = identity.get("arn") if isinstance(identity, Mapping) else None
+    exact = (
+        event.get("EventId") == raw.get("eventID")
+        and event.get("EventName") == "RestoreTableToPointInTime"
+        and _json_safe(event.get("EventTime")) == _json_safe(event_time)
+        and raw.get("eventSource") == "dynamodb.amazonaws.com"
+        and raw.get("eventName") == "RestoreTableToPointInTime"
+        and raw.get("awsRegion") == context["region"]
+        and raw.get("recipientAccountId") == context["account_id"]
+        and raw.get("readOnly") is False
+        and raw.get("managementEvent") is True
+        and raw.get("eventType") == "AwsApiCall"
+        and started <= event_time <= deadline
+        and isinstance(identity, Mapping)
+        and identity.get("type") == "AssumedRole"
+        and identity.get("accountId") == context["account_id"]
+        and isinstance(session_arn, str)
+        and session_arn.startswith(expected_session_prefix)
+        and len(session_arn) > len(expected_session_prefix)
+        and isinstance(issuer, Mapping)
+        and issuer.get("type") == "Role"
+        and issuer.get("accountId") == context["account_id"]
+        and issuer.get("arn") == expected_role
+        and request.get("sourceTableArn") == source["arn"]
+        and request.get("targetTableName") == plan["target_tables"][kind]
+        and request.get("restoreDateTime") == plan["restore_at"]
+        and request.get("billingModeOverride") == "PAY_PER_REQUEST"
+        and raw.get("errorCode") is None
+        and raw.get("errorMessage") is None
+    )
+    if not exact:
+        raise RecoveryProofError("evidence_conflict", "CloudTrail recovery event differs from the saved plan")
+    event_id = _safe_text(raw.get("eventID"), "CloudTrail event ID", status="evidence_conflict")
+    request_id = _safe_text(raw.get("requestID"), "CloudTrail request ID", status="evidence_conflict")
+    return kind, {
+        "event_id": event_id,
+        "event_time": _json_safe(event_time),
+        "request_id": request_id,
+        "event_sha256": sha256_bytes(raw_text.encode("utf-8")),
+        "recovery_role_session_arn": session_arn,
+        "recovery_role_issuer_arn": expected_role,
+        "source_table_arn": source["arn"],
+        "target_table_name": target_name,
+        "expected_target_table_arn": _expected_target_arn(source["arn"], target_name),
+        "restore_at": plan["restore_at"],
+        "billing_mode_override": "PAY_PER_REQUEST",
+    }
+
+
+def capture_evidence(
+    clients: AwsClients,
+    plan: Mapping[str, Any],
+    *,
+    plan_sha256: str,
+    now: datetime | None = None,
+) -> dict[str, Any]:
+    _validate_saved_plan(plan)
+    plan_sha256 = _sha256(plan_sha256, "recovery plan SHA-256", status="stale_plan")
+    context = plan["context"]
+    fresh_context = _local_context(Path(context["deployment_path"]), Path(context["terraform_output_path"]))
+    if fresh_context != context:
+        raise RecoveryProofError("stale_plan", "local or Terraform recovery context differs")
+    identity = _evidence_caller_identity(clients.sts, context)
+    if clients.cloudtrail is None:
+        raise RecoveryProofError("provider_error", "CloudTrail client is unavailable")
+    observed_at = (now or datetime.now(UTC)).astimezone(UTC)
+    started = _timestamp(plan["started_at"], "saved started_at", status="stale_plan")
+    deadline = _timestamp(plan["deadline_at"], "saved deadline_at", status="stale_plan")
+    if observed_at < started:
+        raise RecoveryProofError("state_refused", "evidence capture precedes the recovery start")
+    end = min(observed_at, deadline)
+    matches: dict[str, list[dict[str, Any]]] = {kind: [] for kind in plan["target_tables"]}
+    event_count = 0
+    token: str | None = None
+    seen_tokens: set[str] = set()
+    for _ in range(MAX_CLOUDTRAIL_PAGES):
+        arguments: dict[str, Any] = {
+            "LookupAttributes": [{"AttributeKey": "EventName", "AttributeValue": "RestoreTableToPointInTime"}],
+            "StartTime": started,
+            "EndTime": end,
+            "MaxResults": CLOUDTRAIL_PAGE_SIZE,
+        }
+        if token is not None:
+            arguments["NextToken"] = token
+        try:
+            response = clients.cloudtrail.lookup_events(**arguments)
+        except Exception as error:
+            raise RecoveryProofError("provider_error", "CloudTrail recovery evidence could not be read") from error
+        events = response.get("Events") if isinstance(response, Mapping) else None
+        if not isinstance(events, list):
+            raise RecoveryProofError("provider_error", "CloudTrail recovery evidence response is malformed")
+        event_count += len(events)
+        if event_count > MAX_CLOUDTRAIL_EVENTS:
+            raise RecoveryProofError("evidence_incomplete", "CloudTrail recovery evidence exceeded its event cap")
+        for event in events:
+            if not isinstance(event, Mapping):
+                raise RecoveryProofError("evidence_conflict", "CloudTrail returned a malformed recovery event")
+            projected = _event_projection(event, plan)
+            if projected is not None:
+                kind, value = projected
+                matches[kind].append(value)
+        next_token = response.get("NextToken")
+        if next_token is None:
+            break
+        if not isinstance(next_token, str) or not next_token or next_token in seen_tokens:
+            raise RecoveryProofError("provider_error", "CloudTrail recovery evidence cursor is malformed")
+        seen_tokens.add(next_token)
+        token = next_token
+    else:
+        raise RecoveryProofError("evidence_incomplete", "CloudTrail recovery evidence exceeded its page cap")
+
+    if any(len(values) > 1 for values in matches.values()):
+        raise RecoveryProofError("evidence_conflict", "CloudTrail returned duplicate recovery evidence")
+    if any(len(values) != 1 for values in matches.values()):
+        raise RecoveryProofError("evidence_incomplete", "CloudTrail evidence is not yet complete for both tables")
+    return {
+        "evidence_version": EVIDENCE_VERSION,
+        "decision": "ADR-028",
+        "plan_sha256": plan_sha256,
+        "captured_at": _json_safe(observed_at),
+        "verifier_git_sha": context["git_sha"],
+        "context": {
+            "account_id": context["account_id"],
+            "region": context["region"],
+            "evidence_role_arn": context["recovery_evidence_role_arn"],
+        },
+        "aws_identity": identity,
+        "events": {kind: values[0] for kind, values in sorted(matches.items())},
+    }
+
+
+def write_evidence(path: Path, evidence: Mapping[str, Any]) -> str:
+    body = canonical_json(evidence) + b"\n"
+    _atomic_write(path, body, "recovery evidence")
+    return sha256_bytes(body)
+
+
+def _validate_evidence(evidence: Mapping[str, Any], plan: Mapping[str, Any], plan_sha256: str) -> None:
+    required = {
+        "evidence_version",
+        "decision",
+        "plan_sha256",
+        "captured_at",
+        "verifier_git_sha",
+        "context",
+        "aws_identity",
+        "events",
+    }
+    if set(evidence) != required or evidence.get("evidence_version") != EVIDENCE_VERSION:
+        raise RecoveryProofError("stale_evidence", "saved recovery evidence shape or version differs")
+    if evidence.get("decision") != "ADR-028" or evidence.get("plan_sha256") != plan_sha256:
+        raise RecoveryProofError("stale_evidence", "saved recovery evidence plan identity differs")
+    captured_at = _timestamp(evidence.get("captured_at"), "saved evidence capture time", status="stale_evidence")
+    context = plan["context"]
+    if evidence.get("verifier_git_sha") != context["git_sha"]:
+        raise RecoveryProofError("stale_evidence", "saved recovery evidence Git identity differs")
+    expected_context = {
+        "account_id": context["account_id"],
+        "region": context["region"],
+        "evidence_role_arn": context["recovery_evidence_role_arn"],
+    }
+    if evidence.get("context") != expected_context:
+        raise RecoveryProofError("stale_evidence", "saved recovery evidence context differs")
+    identity = evidence.get("aws_identity")
+    if not isinstance(identity, Mapping) or set(identity) != {"account_id", "arn", "user_id"}:
+        raise RecoveryProofError("stale_evidence", "saved recovery evidence caller differs")
+    role_name = context["recovery_evidence_role_arn"].rsplit("/", 1)[-1]
+    identity_prefix = f"arn:aws:sts::{context['account_id']}:assumed-role/{role_name}/"
+    if (
+        identity.get("account_id") != context["account_id"]
+        or not isinstance(identity.get("arn"), str)
+        or not identity["arn"].startswith(identity_prefix)
+        or len(identity["arn"]) == len(identity_prefix)
+    ):
+        raise RecoveryProofError("stale_evidence", "saved recovery evidence caller role differs")
+    _safe_text(identity.get("user_id"), "saved evidence caller user ID", status="stale_evidence")
+    events = evidence.get("events")
+    if not isinstance(events, Mapping) or set(events) != {"source_state", "delivery"}:
+        raise RecoveryProofError("stale_evidence", "saved recovery evidence table set differs")
+    started = _timestamp(plan["started_at"], "saved started_at", status="stale_plan")
+    deadline = _timestamp(plan["deadline_at"], "saved deadline_at", status="stale_plan")
+    if captured_at < started:
+        raise RecoveryProofError("stale_evidence", "saved recovery evidence predates the recovery start")
+    recovery_role_name = context["recovery_role_arn"].rsplit("/", 1)[-1]
+    recovery_prefix = f"arn:aws:sts::{context['account_id']}:assumed-role/{recovery_role_name}/"
+    event_keys = {
+        "event_id",
+        "event_time",
+        "request_id",
+        "event_sha256",
+        "recovery_role_session_arn",
+        "recovery_role_issuer_arn",
+        "source_table_arn",
+        "target_table_name",
+        "expected_target_table_arn",
+        "restore_at",
+        "billing_mode_override",
+    }
+    for kind, event in events.items():
+        if not isinstance(event, Mapping) or set(event) != event_keys:
+            raise RecoveryProofError("stale_evidence", "saved recovery event shape differs")
+        event_time = _timestamp(event.get("event_time"), "saved recovery event time", status="stale_evidence")
+        source_arn = plan["source_tables"][kind]["arn"]
+        target_name = plan["target_tables"][kind]
+        session_arn = event.get("recovery_role_session_arn")
+        if (
+            not started <= event_time <= deadline
+            or event.get("recovery_role_issuer_arn") != context["recovery_role_arn"]
+            or not isinstance(session_arn, str)
+            or not session_arn.startswith(recovery_prefix)
+            or len(session_arn) == len(recovery_prefix)
+            or event.get("source_table_arn") != source_arn
+            or event.get("target_table_name") != target_name
+            or event.get("expected_target_table_arn") != _expected_target_arn(source_arn, target_name)
+            or event.get("restore_at") != plan["restore_at"]
+            or event.get("billing_mode_override") != "PAY_PER_REQUEST"
+        ):
+            raise RecoveryProofError("stale_evidence", "saved recovery event identity differs")
+        for name in ("event_id", "request_id"):
+            _safe_text(event.get(name), f"saved recovery {name}", status="stale_evidence")
+        _sha256(event.get("event_sha256"), "saved recovery event SHA-256", status="stale_evidence")
+
+
+def load_evidence(
+    path: Path,
+    expected_sha256: str,
+    *,
+    plan: Mapping[str, Any],
+    plan_sha256: str,
+) -> dict[str, Any]:
+    expected = _sha256(expected_sha256, "expected evidence SHA-256", status="stale_evidence")
+    try:
+        body = path.read_bytes()
+        evidence = load_unique_json(body)
+    except Exception as error:
+        raise RecoveryProofError("stale_evidence", "saved recovery evidence is malformed") from error
+    if sha256_bytes(body) != expected or not isinstance(evidence, dict) or canonical_json(evidence) + b"\n" != body:
+        raise RecoveryProofError("stale_evidence", "saved recovery evidence digest or canonical bytes differ")
+    _validate_evidence(evidence, plan, plan_sha256)
+    return evidence
+
+
+def _restore_identity(
+    table: Mapping[str, Any],
+    source_arn: str,
+    restore_at: str,
+    target_name: str,
+    evidence_event: Mapping[str, Any] | None = None,
+) -> bool:
     summary = table.get("RestoreSummary")
-    if not isinstance(summary, Mapping) or summary.get("SourceTableArn") != source_arn:
+    if summary is not None:
+        if not isinstance(summary, Mapping) or summary.get("SourceTableArn") != source_arn:
+            return False
+        return _json_safe(summary.get("RestoreDateTime")) == restore_at
+    if evidence_event is None:
         return False
-    value = summary.get("RestoreDateTime")
-    return _json_safe(value) == restore_at
+    return (
+        evidence_event.get("source_table_arn") == source_arn
+        and evidence_event.get("restore_at") == restore_at
+        and evidence_event.get("target_table_name") == target_name
+        and table.get("TableName") == target_name
+        and table.get("TableArn") == evidence_event.get("expected_target_table_arn")
+    )
 
 
-def _start_restore(client: Any, *, source: Mapping[str, Any], target_name: str, restore_at: str) -> dict[str, Any]:
+def _start_restore(
+    client: Any,
+    *,
+    source: Mapping[str, Any],
+    target_name: str,
+    restore_at: str,
+    evidence_event: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
     existing = _describe_optional(client, target_name)
     if existing is not None:
-        if not _restore_identity(existing, source["arn"], restore_at):
+        if not _restore_identity(existing, source["arn"], restore_at, target_name, evidence_event):
+            if existing.get("RestoreSummary") is None and evidence_event is None:
+                raise RecoveryProofError("evidence_required", "existing recovery table requires exact ADR-028 evidence")
             raise RecoveryProofError("target_conflict", "existing recovery table has a different restore identity")
         return {"status": "observed", "table_status": existing.get("TableStatus")}
     try:
@@ -991,13 +1332,13 @@ def _start_restore(client: Any, *, source: Mapping[str, Any], target_name: str, 
         )
     except Exception as error:
         reread = _describe_optional(client, target_name)
-        if reread is not None and _restore_identity(reread, source["arn"], restore_at):
+        if reread is not None and _restore_identity(reread, source["arn"], restore_at, target_name):
             return {"status": "accepted_after_reread", "table_status": reread.get("TableStatus")}
         raise RecoveryProofError(
             "ambiguous", "restore response failed without an exact destination read-back"
         ) from error
     table = response.get("TableDescription")
-    if not isinstance(table, Mapping) or not _restore_identity(table, source["arn"], restore_at):
+    if not isinstance(table, Mapping) or not _restore_identity(table, source["arn"], restore_at, target_name):
         raise RecoveryProofError("ambiguous", "restore response omitted the exact destination identity")
     return {"status": "accepted", "table_status": table.get("TableStatus")}
 
@@ -1048,6 +1389,7 @@ def status_plan(
     *,
     now: datetime | None = None,
     verify_preconditions: bool = True,
+    evidence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     _validate_saved_plan(plan)
     if verify_preconditions:
@@ -1063,7 +1405,15 @@ def status_plan(
             results[kind] = {"status": "missing"}
             complete = False
             continue
-        if not _restore_identity(target, source["arn"], plan["restore_at"]):
+        evidence_event = evidence["events"][kind] if evidence is not None else None
+        if not _restore_identity(target, source["arn"], plan["restore_at"], target_name, evidence_event):
+            if target.get("RestoreSummary") is None and evidence_event is None:
+                results[kind] = {
+                    "status": "identity_unproved",
+                    "table_status": str(target.get("TableStatus")).lower(),
+                }
+                complete = False
+                continue
             raise RecoveryProofError("target_conflict", "recovery table restore identity differs from the plan")
         table_status = target.get("TableStatus")
         result: dict[str, Any] = {"status": str(table_status).lower()}
@@ -1127,6 +1477,7 @@ def apply_plan(
     *,
     plan_sha256: str,
     now: datetime | None = None,
+    evidence: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     _validate_saved_plan(plan)
     _fresh_preconditions(clients, plan)
@@ -1142,11 +1493,13 @@ def apply_plan(
     started: list[str] = []
     try:
         for kind, source in plan["source_tables"].items():
+            evidence_event = evidence["events"][kind] if evidence is not None else None
             outcome = _start_restore(
                 clients.dynamodb,
                 source=source,
                 target_name=plan["target_tables"][kind],
                 restore_at=plan["restore_at"],
+                evidence_event=evidence_event,
             )
             outcomes[kind] = outcome
             if outcome["status"] in {"accepted", "accepted_after_reread"}:
@@ -1190,7 +1543,7 @@ def apply_plan(
             "configuration_changes": changes,
             "detail": "restored-table configuration failed without a safe complete result",
         }
-    status = status_plan(clients, plan, verify_preconditions=False)
+    status = status_plan(clients, plan, verify_preconditions=False, evidence=evidence)
     return {
         **status,
         "plan_sha256": plan_sha256,
@@ -1209,6 +1562,7 @@ def _clients(region: str) -> AwsClients:
         lambda_client=boto3.client("lambda", region_name=region),
         events=boto3.client("events", region_name=region),
         sqs=boto3.client("sqs", region_name=region),
+        cloudtrail=boto3.client("cloudtrail", region_name=region),
     )
 
 
@@ -1226,10 +1580,17 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     preview.add_argument("--max-inventory-bytes", type=int, required=True)
     preview.add_argument("--plan", type=Path, required=True)
 
+    evidence = subparsers.add_parser("evidence", help="write exact read-only CloudTrail recovery evidence")
+    evidence.add_argument("--plan", type=Path, required=True)
+    evidence.add_argument("--expected-plan-sha256", required=True)
+    evidence.add_argument("--evidence", type=Path, required=True)
+
     for action in ("apply", "status"):
         command = subparsers.add_parser(action, help=f"{action} one exact saved recovery plan")
         command.add_argument("--plan", type=Path, required=True)
         command.add_argument("--expected-plan-sha256", required=True)
+        command.add_argument("--evidence", type=Path)
+        command.add_argument("--expected-evidence-sha256")
     return parser.parse_args(argv)
 
 
@@ -1257,10 +1618,40 @@ def main(argv: Sequence[str] | None = None, *, clients: AwsClients | None = None
             return 0
         plan = load_plan(arguments.plan, arguments.expected_plan_sha256)
         active_clients = clients or _clients(plan["context"]["region"])
+        if arguments.action == "evidence":
+            evidence = capture_evidence(
+                active_clients,
+                plan,
+                plan_sha256=arguments.expected_plan_sha256,
+            )
+            digest = write_evidence(arguments.evidence, evidence)
+            _write({"status": "evidence_captured", "evidence_sha256": digest})
+            return 0
+        evidence_path = arguments.evidence
+        evidence_sha256 = arguments.expected_evidence_sha256
+        if (evidence_path is None) != (evidence_sha256 is None):
+            raise RecoveryProofError(
+                "invalid_input", "evidence path and expected evidence SHA-256 must be supplied together"
+            )
+        saved_evidence = (
+            load_evidence(
+                evidence_path,
+                evidence_sha256,
+                plan=plan,
+                plan_sha256=arguments.expected_plan_sha256,
+            )
+            if evidence_path is not None and evidence_sha256 is not None
+            else None
+        )
         if arguments.action == "status":
-            result = status_plan(active_clients, plan)
+            result = status_plan(active_clients, plan, evidence=saved_evidence)
         else:
-            result = apply_plan(active_clients, plan, plan_sha256=arguments.expected_plan_sha256)
+            result = apply_plan(
+                active_clients,
+                plan,
+                plan_sha256=arguments.expected_plan_sha256,
+                evidence=saved_evidence,
+            )
         _write(result)
         result_status = result.get("restore_stage_status", result.get("status"))
         if result_status == "completed":

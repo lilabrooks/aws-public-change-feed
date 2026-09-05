@@ -339,15 +339,32 @@ into a pass.
 The preview-first recovery command requires a clean worktree and binds the
 reviewed central deployment, current Git commit, captured Terraform output
 file path and SHA-256, account, Region, scoped recovery role and caller session,
-primary table ARNs and IDs, PITR windows, schemas, settings, tags, complete
+separate recovery-evidence role, primary table ARNs and IDs, PITR windows,
+schemas, settings, tags, complete
 strongly consistent inventories, runtime bindings, triggers, watcher pause,
 and queue state into canonical plan bytes. Apply accepts only the exact digest, rebuilds
 the bound local files and live AWS controls, refuses an expired recovery clock,
 and restores both primary tables to new names at the same timestamp. The file
 hash detects capture-file changes; live STS, Lambda, EventBridge, SQS, and
-DynamoDB reads detect the relevant applied-state changes. A repeated apply may
-observe only a destination whose source ARN and restore time match the plan.
+DynamoDB reads detect the relevant applied-state changes. The initial restore
+response and a creating destination must expose a restore summary matching the
+source ARN and restore time. When an existing destination omits that summary,
+apply and status require a second canonical evidence file and exact digest.
 The tool never calls an item API or deletes a table.
+
+The evidence file is captured under a separate role whose only service action
+is `cloudtrail:LookupEvents` on `*`; AWS does not support resource-level scope
+for this API. Capture filters the plan's Region and recovery clock for
+`RestoreTableToPointInTime`, then locally validates exactly one successful
+event per target against account, Region, recovery role and issuer, source ARN,
+target name, restore timestamp, and billing override. The expected target ARN
+is derived from the bound source ARN and target name and must equal the live
+table ARN. Fixed event and page caps bound the lookup. Canonical evidence keeps
+only this projection and a raw-event SHA-256, not the raw event or unrelated
+account activity. Missing evidence is incomplete; malformed, duplicate,
+changed, or conflicting evidence refuses; an uncertain provider lookup is
+ambiguous. Evidence arriving after the four-hour deadline remains audit
+material and cannot make the stage pass.
 
 DynamoDB does not copy TTL, PITR, or tags into a restored table. AWS requires
 target-table item actions while it performs the restore, so the recovery role

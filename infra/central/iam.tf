@@ -49,6 +49,12 @@ resource "aws_iam_role" "dynamodb_recovery" {
   tags               = local.tags
 }
 
+resource "aws_iam_role" "dynamodb_recovery_evidence" {
+  name               = local.role_names.recovery_evidence
+  assume_role_policy = data.aws_iam_policy_document.publisher_assume_role.json
+  tags               = local.tags
+}
+
 resource "aws_iam_role" "source_state_retention_migration" {
   count = var.source_state_retention_migration_enabled ? 1 : 0
 
@@ -314,6 +320,16 @@ data "aws_iam_policy_document" "dynamodb_recovery" {
     sid       = "ReadDeliveryQueueState"
     actions   = ["sqs:GetQueueAttributes"]
     resources = [aws_sqs_queue.delivery.arn]
+  }
+}
+
+data "aws_iam_policy_document" "dynamodb_recovery_evidence" {
+  # LookupEvents does not support resource-level scoping. Keep this account-wide
+  # management-event read separate from the role that can restore tables.
+  statement {
+    sid       = "ReadRegionalRecoveryEvents"
+    actions   = ["cloudtrail:LookupEvents"]
+    resources = ["*"]
   }
 }
 
@@ -654,6 +670,12 @@ resource "aws_iam_role_policy" "dynamodb_recovery" {
   name   = "dynamodb-recovery"
   role   = aws_iam_role.dynamodb_recovery.id
   policy = data.aws_iam_policy_document.dynamodb_recovery.json
+}
+
+resource "aws_iam_role_policy" "dynamodb_recovery_evidence" {
+  name   = "dynamodb-recovery-evidence"
+  role   = aws_iam_role.dynamodb_recovery_evidence.id
+  policy = data.aws_iam_policy_document.dynamodb_recovery_evidence.json
 }
 
 resource "aws_iam_role_policy" "source_state_retention_migration" {
