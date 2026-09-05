@@ -24,6 +24,9 @@ class SiteValidatorTests(unittest.TestCase):
         root = Path(directory.name)
         shutil.copytree(ROOT / "site", root / "site")
         shutil.copytree(ROOT / "examples", root / "examples")
+        shutil.copytree(ROOT / "docs/adr", root / "docs/adr")
+        (root / "docs/architecture").mkdir(parents=True)
+        shutil.copy2(ROOT / "docs/architecture/README.md", root / "docs/architecture/README.md")
         shutil.copy2(ROOT / "README.md", root / "README.md")
         return directory, root
 
@@ -230,6 +233,30 @@ class SiteValidatorTests(unittest.TestCase):
         changed = ["docs/GOAL.md", "site/architecture.drawio", "site/architecture.svg", "site/index.html"]
         self.assertEqual(validator.validate_site_sync(changed), [])
 
+    def test_accepted_adr_count_is_derived_from_top_level_statuses(self):
+        directory, root = self.make_repository()
+        with directory:
+            decision = root / "docs/adr/028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md"
+            decision.write_text(
+                decision.read_text(encoding="utf-8").replace("- Status: Accepted", "- Status: Proposed", 1),
+                encoding="utf-8",
+            )
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("accepted-ADR count must be 22" in error for error in errors))
+
+    def test_architecture_index_must_list_each_active_adr_once(self):
+        directory, root = self.make_repository()
+        with directory:
+            index = root / "docs/architecture/README.md"
+            line = next(
+                value
+                for value in index.read_text(encoding="utf-8").splitlines(keepends=True)
+                if "028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md" in value
+            )
+            index.write_text(index.read_text(encoding="utf-8").replace(line, "", 1), encoding="utf-8")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("missing active ADR entries" in error and "028-separate" in error for error in errors))
+
     def test_retirement_status_matches_the_implemented_tools(self):
         page = (ROOT / "site/index.html").read_text(encoding="utf-8")
         self.assertIn(
@@ -275,7 +302,7 @@ class SiteValidatorTests(unittest.TestCase):
 
     def test_source_state_lifecycle_matches_the_accepted_decision(self):
         page = (ROOT / "site/index.html").read_text(encoding="utf-8")
-        self.assertIn("Twenty-three accepted ADRs", page)
+        self.assertIn("23 accepted ADRs", page)
         self.assertIn("Active feed checkpoints do not expire", page)
         self.assertIn("docs/adr/025-source-state-and-response-page-retirement.md", page)
         self.assertIn("A separate CloudTrail-only role captures digest-bound provider evidence", page)
