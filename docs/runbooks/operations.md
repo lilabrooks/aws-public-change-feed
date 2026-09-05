@@ -355,6 +355,14 @@ result, and both readbacks. The preflight module keeps the property `false` so
 its existing exact destroy procedure still works; restore-target deletion keeps
 its separate authorization.
 
+The dev L-50 rollout completed on 2026-09-05 from commit `4833343` under account
+`667653114001` in `us-east-1`. The owner authorized saved plan SHA-256
+`2bc02f0d47437a67b1be1546ab9dab5c5c88859f147bc5437d2507251d74986c`.
+Terraform reported 0 added, 2 changed, and 0 destroyed. Both exact-name AWS
+reads returned `ACTIVE` with `DeletionProtectionEnabled=true`; a fresh central
+plan reported no changes. A separate, unapplied preflight plan showed
+`DeletionProtectionEnabled=false` for both isolated tables.
+
 1. Record the current central Git SHA, account, Region, Terraform state
    VersionId, runtime table outputs, all four trigger states, watcher reserved
    concurrency, table sizes, and active package and release identities. Review

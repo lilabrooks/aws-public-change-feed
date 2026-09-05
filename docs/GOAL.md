@@ -143,10 +143,13 @@ and superseded attempts were deleted and confirmed absent. L-41 is complete;
 this dev proof does not complete the later production gate.
 
 L-49 now binds recovery plan, evidence, and inventory digests to independent
-known-answer tests. The central Terraform source sets DynamoDB deletion
-protection on both primary tables while leaving isolated preflight tables
-disposable. L-50 still needs its exact saved central plan, owner-authorized
-apply, and live readback before it is complete.
+known-answer tests. L-50 is also complete. The owner authorized saved central
+plan `2bc02f0d47437a67b1be1546ab9dab5c5c88859f147bc5437d2507251d74986c`
+from commit `4833343`; its only actions were two in-place updates enabling
+DynamoDB deletion protection on the primary tables. Direct AWS reads returned
+both tables `ACTIVE` with protection enabled, and a fresh central plan reported
+no changes. The isolated preflight plan still creates both tables with
+protection disabled, preserving reviewed teardown.
 
 **Production preflight.** Not started, and blocked on the milestones above.
 

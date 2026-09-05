@@ -24,8 +24,10 @@ disabled-trigger cutover, rollback, trigger restoration, and exact cleanup. It
 met the nominal recovery objectives and left the primary runtime healthy. L-41
 is complete. Independent recovery digest vectors are now covered by tests, and
 the central source enables deletion protection on both primary tables while
-leaving preflight tables disposable. The exact L-50 live plan, apply, and
-readback remain open; M3 and its later production gate remain open.
+leaving preflight tables disposable. The exact L-50 plan changed only those two
+tables in place; owner-authorized apply, direct enabled readback, and a no-change
+central plan completed on 2026-09-05. M3 and its later production gate remain
+open.
 
 ## Architecture decision records
 
