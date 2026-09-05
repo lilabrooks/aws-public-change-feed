@@ -1177,6 +1177,76 @@ class TerraformContractTests(unittest.TestCase):
             outputs,
         )
 
+    def test_primary_dynamodb_deletion_protection_is_disabled_only_for_preflight(self):
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        dynamodb = (ROOT / "infra/central/dynamodb.tf").read_text(encoding="utf-8")
+        preflight = (ROOT / "infra/preflight/main.tf").read_text(encoding="utf-8")
+        expressions = {}
+        for table in ("source_state", "delivery"):
+            block = self.resource_block(dynamodb, "aws_dynamodb_table", table)
+            matches = re.findall(r"(?m)^\s*deletion_protection_enabled\s*=\s*(.+)$", block)
+            self.assertEqual(matches, ["!var.preflight_mode"], msg=f"{table} deletion protection drifted")
+            expressions[table] = matches[0]
+        self.assertIn("preflight_mode               = true", preflight)
+
+        outputs = "\n".join(
+            f'output "{table}_deletion_protection" {{\n  value = {expression}\n}}'
+            for table, expression in expressions.items()
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            root.joinpath("main.tf").write_text(
+                f"{self.variable_block(variables, 'preflight_mode')}\n\n{outputs}\n",
+                encoding="utf-8",
+            )
+            environment = {**os.environ, "CHECKPOINT_DISABLE": "1", "TF_IN_AUTOMATION": "1"}
+            initialized = subprocess.run(
+                ("terraform", "init", "-backend=false", "-input=false", "-no-color"),
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            self.assertEqual(
+                initialized.returncode,
+                0,
+                msg=f"provider-free terraform init failed:\n{initialized.stdout}\n{initialized.stderr}",
+            )
+            for name, preflight_mode, expected in (
+                ("central default", False, "true"),
+                ("preflight destroy", True, "false"),
+            ):
+                with self.subTest(case=name):
+                    planned = subprocess.run(
+                        (
+                            "terraform",
+                            "plan",
+                            "-input=false",
+                            "-lock=false",
+                            "-refresh=false",
+                            "-no-color",
+                            f"-var=preflight_mode={str(preflight_mode).lower()}",
+                        ),
+                        cwd=root,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        check=False,
+                    )
+                    self.assertEqual(
+                        planned.returncode,
+                        0,
+                        msg=f"provider-free terraform plan failed:\n{planned.stdout}\n{planned.stderr}",
+                    )
+                    for table in expressions:
+                        self.assertRegex(
+                            planned.stdout,
+                            rf"(?m)^\s*\+\s+{table}_deletion_protection\s*=\s*{expected}$",
+                        )
+
     def test_central_recovery_pause_allows_only_the_worker_drain_override(self):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
         s3 = (ROOT / "infra/central/s3.tf").read_text(encoding="utf-8")

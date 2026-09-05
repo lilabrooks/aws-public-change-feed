@@ -1,8 +1,9 @@
 resource "aws_dynamodb_table" "source_state" {
-  name         = local.source_state_table
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "PK"
-  range_key    = "SK"
+  name                        = local.source_state_table
+  billing_mode                = "PAY_PER_REQUEST"
+  hash_key                    = "PK"
+  range_key                   = "SK"
+  deletion_protection_enabled = !var.preflight_mode
 
   attribute {
     name = "PK"
@@ -28,10 +29,11 @@ resource "aws_dynamodb_table" "source_state" {
 }
 
 resource "aws_dynamodb_table" "delivery" {
-  name         = local.delivery_table
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "PK"
-  range_key    = "SK"
+  name                        = local.delivery_table
+  billing_mode                = "PAY_PER_REQUEST"
+  hash_key                    = "PK"
+  range_key                   = "SK"
+  deletion_protection_enabled = !var.preflight_mode
 
   attribute {
     name = "PK"

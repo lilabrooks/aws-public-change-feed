@@ -47,6 +47,12 @@ rate and a formula, not a current bill estimate.
 Enable DynamoDB PITR on both tables with a 35-day recovery period. A shorter
 period has the same PITR storage price and would remove recovery points.
 
+Enable DynamoDB deletion protection on both Terraform-owned primary tables.
+The shared central module disables it only when `preflight_mode=true`, because
+the isolated ADR-024 stack must remain disposable through its reviewed destroy
+plan. Restored tables stay outside this primary-table guard and keep their
+separate exact-name cleanup authorization.
+
 Use these production recovery objectives for the pair:
 
 | Objective | Boundary |
