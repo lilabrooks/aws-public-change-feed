@@ -63,7 +63,7 @@ M2 set rules for old feed data, removed feeds, saved responses, and known recove
 M3 decides whether the current service and deployment are ready for production.
 
 - [L-40](https://github.com/lilabrooks/aws-public-change-feed/issues/145) selected the current 4-feed, 3-service, 4-risk-rule policy unchanged for production preflight. Its [evidence record](docs/evidence/production-policy.md) retains all 12 service and risk-type pairs, including 6 with no historical positive, and keeps the global thresholds without inventing pair-specific floors.
-- [L-41](https://github.com/lilabrooks/aws-public-change-feed/issues/146) now has an accepted PITR decision in ADR-027: both DynamoDB tables, a 35-day window, a 5-minute recovery-point target, and a 4-hour operator recovery-time target. Source includes the Terraform policy, exact restored-pair cutover and rollback bindings, scoped recovery role, and digest-bound preview/apply/status command. No central apply, controlled restore, cutover, rollback, or cleanup has run.
+- [L-41](https://github.com/lilabrooks/aws-public-change-feed/issues/146) now has accepted recovery decisions in ADR-027 and ADR-028: both DynamoDB tables use a 35-day PITR window, a 5-minute recovery-point target, and a 4-hour operator recovery-time target, while a separate CloudTrail-only role supplies digest-bound restore identity evidence. The first live restore created both targets but remained incomplete when DynamoDB omitted `RestoreSummary` after they became active. No cutover or restored-table runtime write occurred, and the original bindings and triggers were restored. A fresh restore, cutover, rollback, trigger-restoration proof, and cleanup remain open.
 - [L-42](https://github.com/lilabrooks/aws-public-change-feed/issues/147) now has a source-defined, direct-invocation shadow evaluator with no durable-state authority, a scoped invoker, fixed refusal codes, and an exact preview/apply command for configuration rollback and forward restoration. Proposed ADR-026 requires all durable runtimes to stop before rollback and records the five-function application boundary. The live shadow run, both configuration promotions, application rollback and restoration, and historical-reference proof have not run yet.
 - [L-43](https://github.com/lilabrooks/aws-public-change-feed/issues/148) will map every M2 change to the M1 evidence it could affect. It will reuse evidence only for unchanged mechanisms, rerun affected or missing checks, and record the result as passed, failed, or incomplete.
 - [L-44](https://github.com/lilabrooks/aws-public-change-feed/issues/149) will update the goal, architecture status, README, and public site after the production gate so every completion claim matches the recorded result.
@@ -110,7 +110,7 @@ A direct SQS-to-Lambda-to-Slack path is a smaller design for notifications that 
 | Slack uncertainty stays visible | A timeout becomes `delivery_unknown`. An operator checks Slack before closure or one audited retry. |
 | Credentials stay with the worker | Feed content, configuration, candidates, fixtures, and logs contain no Slack secret values. |
 
-The [numbered specification and 22 accepted ADRs](docs/architecture/README.md) define these rules in full.
+The [numbered specification and 23 accepted ADRs](docs/architecture/README.md) define these rules in full.
 
 ## Run locally
 

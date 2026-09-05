@@ -402,7 +402,7 @@
         <dl class="site-spec">
           <div class="site-spec-row">
             <dt>Required behavior</dt>
-            <dd>Six specification chapters and 22 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
+            <dd>Six specification chapters and 23 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
           </div>
           <div class="site-spec-row">
             <dt>Contracts</dt>
@@ -552,7 +552,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <p class="compact-eyebrow">Required rules</p>
           <div>
             <h2 class="compact-section-title">Public feeds only. DynamoDB owns delivery history.</h2>
-            <p class="compact-section-copy">Twenty-two accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
+            <p class="compact-section-copy">Twenty-three accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
           </div>
         </div>
         <dl class="site-spec">
@@ -571,6 +571,10 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <div class="site-spec-row">
             <dt>Source-state lifecycle</dt>
             <dd>Active feed checkpoints do not expire. Announcement and response-page history use exact-release TTL metadata. Legacy rows use a bounded conditional migration under a temporary scan role that is removed after the result is recorded. Removed feeds use exact-feed retirement and compaction plans under a permanent session-tagged role; same-name restoration requires the original URL hash. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/025-source-state-and-response-page-retirement.md">ADR-025</a></dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>DynamoDB recovery</dt>
+            <dd>Both primary state tables use 35-day point-in-time recovery. Restore proof binds one reviewed plan to exact source tables, targets, inventories, and runtime controls. A separate CloudTrail-only role captures digest-bound provider evidence when an active table omits its restore summary. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/027-dynamodb-point-in-time-recovery.md">ADR-027</a> <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md">ADR-028</a></dd>
           </div>
           <div class="site-spec-row">
             <dt>Slack timeout</dt>
@@ -610,7 +614,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
             </tr>
             <tr>
               <th scope="row">M3 · Open</th>
-              <td>M3 decides whether the current service and deployment are ready for production. The current 4-feed, 3-service, 4-risk-rule policy is selected unchanged for production preflight, with 6 of 12 service and risk-type pairs carrying no historical positive. Source now includes a scoped direct-invocation shadow evaluator, fixed refusal codes, preview-bound configuration rollback, and a proposed decision that stops durable runtimes during both rollback paths. Accepted ADR-027 gives both DynamoDB tables 35 days of point-in-time recovery, a 5-minute recovery-point target, and a 4-hour operator recovery-time target. Its source implementation adds restored-pair Terraform bindings, a scoped operator role, and an exact preview/apply/status command. The central Terraform root accepts the exact worker-drain and fully stopped trigger shapes used during recovery staging, and refuses other individual override combinations. ADR-026 still needs owner confirmation, and both live proofs remain open. M3 then needs the post-M2 gate and final status reconciliation.</td>
+              <td>M3 decides whether the current service and deployment are ready for production. The current 4-feed, 3-service, 4-risk-rule policy is selected unchanged for production preflight, with 6 of 12 service and risk-type pairs carrying no historical positive. Source now includes a scoped direct-invocation shadow evaluator, fixed refusal codes, preview-bound configuration rollback, and a proposed decision that stops durable runtimes during both rollback paths. Accepted ADR-027 gives both DynamoDB tables 35 days of point-in-time recovery, a 5-minute recovery-point target, and a 4-hour operator recovery-time target. Accepted ADR-028 separates CloudTrail evidence from the mutating recovery role and binds exact restore events to the recovery plan. The first live restore created both targets but remained incomplete when their active descriptions omitted the restore summary; no cutover or restored-table runtime write occurred, and the original bindings and triggers were restored. A fresh restore, cutover, rollback, trigger-restoration proof, and cleanup remain open. The central Terraform root accepts the exact worker-drain and fully stopped trigger shapes used during recovery staging, and refuses other individual override combinations. ADR-026 still needs owner confirmation, and both live proofs remain open. M3 then needs the post-M2 gate and final status reconciliation.</td>
             </tr>
           </tbody>
         </table>

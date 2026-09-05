@@ -275,9 +275,11 @@ class SiteValidatorTests(unittest.TestCase):
 
     def test_source_state_lifecycle_matches_the_accepted_decision(self):
         page = (ROOT / "site/index.html").read_text(encoding="utf-8")
-        self.assertIn("Twenty-two accepted ADRs", page)
+        self.assertIn("Twenty-three accepted ADRs", page)
         self.assertIn("Active feed checkpoints do not expire", page)
         self.assertIn("docs/adr/025-source-state-and-response-page-retirement.md", page)
+        self.assertIn("A separate CloudTrail-only role captures digest-bound provider evidence", page)
+        self.assertIn("docs/adr/028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md", page)
 
     def test_delivery_unknown_reassessment_matches_the_accepted_decision(self):
         decision = " ".join(
