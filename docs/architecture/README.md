@@ -19,9 +19,10 @@ ADR-027 is implemented in source by 35-day PITR on both central DynamoDB
 tables, one stopped-runtime restored-pair binding, a scoped recovery role, and
 the digest-bound recovery proof command. ADR-028 adds a separate CloudTrail
 evidence role and canonical event evidence for active tables that omit their
-restore summary. The first live restore exposed that provider behavior and
-remains incomplete. A fresh restore, cutover, rollback, and cleanup evidence
-remain open.
+restore summary. The 2026-09-05 dev proof completed restore verification,
+disabled-trigger cutover, rollback, trigger restoration, and exact cleanup. It
+met the nominal recovery objectives and left the primary runtime healthy. L-41
+is complete; M3 and its later production gate remain open.
 
 ## Architecture decision records
 

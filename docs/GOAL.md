@@ -123,13 +123,24 @@ recovery-time target. Accepted ADR-027 restores both tables to one timestamp
 under new names, repairs provider settings, validates a complete bounded item
 inventory, moves every runtime table binding under disabled triggers, and
 proves rollback before any restored-table runtime writes. The Terraform and
-preview-first operator tooling are implemented in source. The first live
-restore created both tables but stayed incomplete when DynamoDB omitted
-`RestoreSummary` after they became active; no cutover or restored-table runtime
-write occurred, and the original bindings and triggers were restored. Accepted
-ADR-028 adds separate, digest-bound CloudTrail evidence for a fresh proof.
-Fresh restore, cutover, rollback, and exact cleanup evidence remain open, so
-L-41 remains open.
+preview-first operator tooling are implemented in source. Accepted ADR-028
+supplies separate, digest-bound CloudTrail evidence when an active destination
+omits `RestoreSummary`.
+
+The fresh dev proof completed on 2026-09-05 against commit `3bf35b7`. Recovery
+plan SHA-256 `aa0f10e27f977c0f04ab7f3b8faa5ecdbc5222fad3e28cebbacd2dbe763a9a25`
+and evidence SHA-256
+`011258c9c89185ac94ead6afb6bc3f152d1f80d8bfc6c41ac8444d109cdc4899`
+bind the result. Its shared restore point was 298 seconds behind the declared
+start, meeting the nominal 5-minute target. Both full inventories, schemas,
+tags, TTL settings, and 35-day PITR settings matched. A disabled-trigger
+cutover moved every runtime, IAM, alarm, dashboard, and output reference to the
+restored pair; rollback returned them to the primary pair with no inventory
+change. All four triggers, watcher concurrency, and seven relevant alarms were
+restored inside the 4-hour boundary, and the final Terraform plan
+reported no changes. The four disposable restore tables from the successful
+and superseded attempts were deleted and confirmed absent. L-41 is complete;
+this dev proof does not complete the later production gate.
 
 **Production preflight.** Not started, and blocked on the milestones above.
 

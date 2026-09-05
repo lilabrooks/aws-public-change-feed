@@ -73,9 +73,9 @@ one.
 | Trigger restoration | The operator restores the four trigger states and watcher concurrency recorded before quiescence, after the primary bindings pass read-back. | Service restart is evidence in its own right; rollback completion does not establish it. |
 | Cleanup | A separate authorization names each temporary table and ARN, removes it through an identity-checked path, and records the result. | The permanent recovery role has no `DeleteTable` permission. Failed, partial, and abandoned targets remain visible until this cleanup occurs. |
 
-L-41 closes on one fresh end-to-end proof that records these stage outcomes and
-the exact cleanup result. A successful restore request or a completed restore
-stage alone leaves the issue open.
+L-41's completion boundary requires one fresh end-to-end proof that records
+these stage outcomes and the exact cleanup result. A successful restore request
+or a completed restore stage alone cannot satisfy it.
 
 ### Trust and safety boundaries
 
@@ -322,11 +322,32 @@ triggers were restored. ADR-028 records the observed provider behavior and the
 new evidence path. Its accepted implementation cannot retroactively complete
 that attempt because the old plan and verifier bind an earlier Git identity.
 
-Fresh restore-request evidence, restored-table verification, cutover, rollback,
-trigger restoration, and exact cleanup evidence remain open. Local tests prove
-the repository's refusal and transition rules under simulated provider
-responses. They do not establish that a fresh live exercise will meet the
-5-minute or 4-hour targets.
+The fresh dev exercise completed on 2026-09-05 against commit `3bf35b7`.
+Recovery plan SHA-256
+`aa0f10e27f977c0f04ab7f3b8faa5ecdbc5222fad3e28cebbacd2dbe763a9a25`
+and recovery evidence SHA-256
+`011258c9c89185ac94ead6afb6bc3f152d1f80d8bfc6c41ac8444d109cdc4899`
+bind the provider calls and verified state. The shared restore point was 298
+seconds behind the declared start, so it met the nominal 5-minute target. Both
+destinations passed complete inventory, schema, tag, TTL, and 35-day PITR
+checks before the 4-hour deadline.
+
+With all triggers disabled, the saved cutover plan moved every runtime, IAM,
+alarm, dashboard, and output reference to the restored pair. The saved rollback
+plan returned those references to the primary pair before any restored-table
+runtime write. The inventory comparison passed again, all four triggers and
+watcher concurrency were restored, all seven relevant alarms reached `OK` with
+actions enabled, and the final Terraform plan reported no changes at
+`2026-09-05T18:55:41Z`.
+
+The repository owner then authorized deletion of all four disposable restore
+tables from the successful and superseded attempts. AWS waiters completed, and
+exact-name reads confirmed all four absent at `2026-09-05T19:09:15Z`. The
+[L-41 record](https://github.com/lilabrooks/aws-public-change-feed/issues/146)
+preserves the live proof in comment `5554120649` and cleanup result in comment
+`5554142372`. This completes L-41's dev operational proof. Production
+readiness remains a later M3 decision, and one successful exercise cannot
+guarantee future provider timing.
 
 ## Verification
 
@@ -375,7 +396,7 @@ lifecycle and separately reviewed cleanup.
 
 ## References
 
-References verified: 2026-09-03.
+References verified: 2026-09-05.
 
 - [L-41: Decide and prove the production data-recovery objective](https://github.com/lilabrooks/aws-public-change-feed/issues/146)
 - [DynamoDB disaster-recovery strategies](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamodbDisasterRecoveryStrategy.html)
