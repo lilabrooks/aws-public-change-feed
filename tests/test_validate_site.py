@@ -305,7 +305,8 @@ class SiteValidatorTests(unittest.TestCase):
         self.assertIn("23 accepted ADRs", page)
         self.assertIn("Active feed checkpoints do not expire", page)
         self.assertIn("docs/adr/025-source-state-and-response-page-retirement.md", page)
-        self.assertIn("A separate CloudTrail-only role captures digest-bound provider evidence", page)
+        self.assertIn("A CloudTrail-only role supplies digest-bound request evidence", page)
+        self.assertIn("that evidence does not establish table contents or complete L-41", page)
         self.assertIn("docs/adr/028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md", page)
 
     def test_delivery_unknown_reassessment_matches_the_accepted_decision(self):

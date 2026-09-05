@@ -160,6 +160,7 @@ Terraform cleanup is event-driven. Use `make terraform-clean` after a backend or
 - [Product goal](docs/GOAL.md): scope, exclusions, quality bar, and completion criteria.
 - [Architecture index](docs/architecture/README.md): 6 specification chapters, 23 accepted ADRs, and the schema-to-example map.
 - [Repository checks](docs/repository-file-checks.md): local, CI, security, and operator-only checks, plus a diagram of the 4 CI workflows.
+- [DynamoDB PITR recovery decision](docs/adr/027-dynamodb-point-in-time-recovery.md): the 35-day two-table mechanism, safety boundaries, staged proof, implemented checks, and current L-41 evidence limits.
 - [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
 - [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
 - [Dev MVP walkthrough](docs/evidence/mvp-walkthrough.md): narrated video, slides, captions, transcript, recorded results, and artifact hashes.
