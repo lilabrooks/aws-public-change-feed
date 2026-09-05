@@ -324,7 +324,9 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn("value = module.runtime.release_prefix", outputs)
         self.assertEqual(central_lambda.count("s3_bucket         = local.runtime_artifact_bucket_name"), 5)
         self.assertIn("CONFIG_BUCKET_NAME                 = aws_s3_bucket.config.id", central_lambda)
-        self.assertIn("external runtime artifacts and individual trigger overrides are restricted", central_s3)
+        self.assertIn(
+            "individual trigger overrides require preflight_mode or the stopped ADR-027 recovery topology", central_s3
+        )
         self.assertIn('condition     = !var.preflight_mode || local.deployment_id == "preflight"', central_s3)
 
     def test_terraform_check_skips_an_absent_optional_binary(self):
@@ -1170,6 +1172,184 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn("local.runtime_delivery_table", runtime_delivery_output)
         self.assertIn("aws_dynamodb_table.source_state.name", primary_source_output)
         self.assertIn("aws_dynamodb_table.delivery.name", primary_delivery_output)
+
+    def test_central_recovery_pause_allows_only_the_worker_drain_override(self):
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        s3 = (ROOT / "infra/central/s3.tf").read_text(encoding="utf-8")
+        specification = (ROOT / "docs/architecture/specification/06-acceptance-and-generation.md").read_text(
+            encoding="utf-8"
+        )
+        runbook = (ROOT / "docs/runbooks/operations.md").read_text(encoding="utf-8")
+        normalized_specification = re.sub(r"\s+", " ", specification)
+        normalized_runbook = re.sub(r"\s+", " ", runbook)
+        self.assertIn(
+            "A true worker override is the drain stage; false is the fully stopped stage.",
+            normalized_specification,
+        )
+        for required in (
+            "`delivery_triggers_enabled=false`",
+            "`watcher_trigger_enabled_override=false`",
+            "`dispatcher_trigger_enabled_override=false`",
+            "`worker_trigger_enabled_override=true`",
+            "`reconciler_trigger_enabled=false`",
+        ):
+            with self.subTest(runbook=required):
+                self.assertIn(required, normalized_runbook)
+        selected_variables = "\n\n".join(
+            self.variable_block(variables, name)
+            for name in (
+                "preflight_mode",
+                "runtime_artifact_bucket_name",
+                "enable_dynamodb_point_in_time_recovery",
+                "watcher_execution_paused",
+                "delivery_triggers_enabled",
+                "reconciler_trigger_enabled",
+                "watcher_trigger_enabled_override",
+                "dispatcher_trigger_enabled_override",
+                "worker_trigger_enabled_override",
+                "worker_artifact_sha256",
+                "worker_artifact_version_id",
+                "watcher_artifact_sha256",
+                "watcher_artifact_version_id",
+                "dispatcher_artifact_sha256",
+                "dispatcher_artifact_version_id",
+                "reconciler_artifact_sha256",
+                "reconciler_artifact_version_id",
+            )
+        )
+        bucket = self.resource_block(s3, "aws_s3_bucket", "config")
+        lifecycle = bucket[bucket.index("  lifecycle {") : bucket.rfind("\n}")]
+        guard = f'resource "terraform_data" "config" {{\n{lifecycle}\n}}\n'
+        locals_source = """
+variable "deployment_id" {
+  type = string
+  default = "dev"
+}
+locals {
+  deployment_id = var.deployment_id
+  watcher_runtime_enabled = true
+  watcher_trigger_requested = var.watcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.watcher_trigger_enabled_override
+  watcher_trigger_enabled = local.watcher_runtime_enabled && local.watcher_trigger_requested
+}
+"""
+        recovery_pause = {
+            "watcher_execution_paused": True,
+            "delivery_triggers_enabled": False,
+            "reconciler_trigger_enabled": False,
+            "watcher_trigger_enabled_override": False,
+            "dispatcher_trigger_enabled_override": False,
+        }
+        cases: tuple[tuple[str, dict[str, object], int, str | None], ...] = (
+            ("ordinary central defaults", {}, 0, None),
+            (
+                "preflight override",
+                {
+                    "preflight_mode": True,
+                    "deployment_id": "preflight",
+                    "watcher_trigger_enabled_override": True,
+                },
+                0,
+                None,
+            ),
+            ("recovery worker drain", {**recovery_pause, "worker_trigger_enabled_override": True}, 0, None),
+            ("recovery all stopped", {**recovery_pause, "worker_trigger_enabled_override": False}, 0, None),
+            (
+                "override without watcher pause",
+                {
+                    **recovery_pause,
+                    "watcher_execution_paused": False,
+                    "worker_trigger_enabled_override": True,
+                },
+                1,
+                "stopped ADR-027 recovery topology",
+            ),
+            (
+                "recovery without PITR",
+                {
+                    **recovery_pause,
+                    "enable_dynamodb_point_in_time_recovery": False,
+                    "worker_trigger_enabled_override": True,
+                },
+                1,
+                "stopped ADR-027 recovery topology",
+            ),
+            (
+                "aggregate delivery gate still requested",
+                {
+                    **recovery_pause,
+                    "delivery_triggers_enabled": True,
+                    "worker_trigger_enabled_override": True,
+                    "worker_artifact_sha256": "a" * 64,
+                    "worker_artifact_version_id": "version-1",
+                    "watcher_artifact_sha256": "a" * 64,
+                    "watcher_artifact_version_id": "version-1",
+                    "dispatcher_artifact_sha256": "a" * 64,
+                    "dispatcher_artifact_version_id": "version-1",
+                },
+                1,
+                "stopped ADR-027 recovery topology",
+            ),
+            (
+                "recovery missing exact watcher override",
+                {
+                    **recovery_pause,
+                    "watcher_trigger_enabled_override": None,
+                    "worker_trigger_enabled_override": True,
+                },
+                1,
+                "stopped ADR-027 recovery topology",
+            ),
+            (
+                "central external artifact",
+                {"runtime_artifact_bucket_name": "another-artifact-bucket"},
+                1,
+                "stopped ADR-027 recovery topology",
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "main.tf").write_text(f"{selected_variables}\n{locals_source}\n{guard}\n", encoding="utf-8")
+            environment = {**os.environ, "CHECKPOINT_DISABLE": "1", "TF_IN_AUTOMATION": "1"}
+            initialized = subprocess.run(
+                ("terraform", "init", "-backend=false", "-input=false", "-no-color"),
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            self.assertEqual(
+                initialized.returncode,
+                0,
+                msg=f"provider-free terraform init failed:\n{initialized.stdout}\n{initialized.stderr}",
+            )
+            for name, values, expected_exit, expected_message in cases:
+                with self.subTest(case=name):
+                    var_file = root / "case.tfvars.json"
+                    var_file.write_text(f"{json.dumps(values)}\n", encoding="utf-8")
+                    result = subprocess.run(
+                        (
+                            "terraform",
+                            "plan",
+                            "-input=false",
+                            "-lock=false",
+                            "-refresh=false",
+                            "-no-color",
+                            f"-var-file={var_file}",
+                        ),
+                        cwd=root,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        check=False,
+                    )
+                    output = re.sub(r"\s+", " ", f"{result.stdout}\n{result.stderr}")
+                    self.assertEqual(result.returncode, expected_exit, msg=output)
+                    if expected_message is not None:
+                        self.assertIn(expected_message, output)
 
     def test_dynamodb_recovery_role_can_only_restore_and_configure_exact_recovery_tables(self):
         iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")

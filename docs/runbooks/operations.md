@@ -350,7 +350,12 @@ digest-bound restore apply, and exact-name cleanup.
    a central Terraform plan that enables 35-day PITR on both primary tables,
    creates the scoped `dynamodb_recovery` role, disables watcher, dispatcher,
    and reconciler trigger requests, keeps the worker's recorded trigger state,
-   and sets `watcher_execution_paused=true`. Apply only those saved plan bytes.
+   and sets `watcher_execution_paused=true`. For the enabled worker drain,
+   supply `delivery_triggers_enabled=false`,
+   `watcher_trigger_enabled_override=false`,
+   `dispatcher_trigger_enabled_override=false`,
+   `worker_trigger_enabled_override=true`, and
+   `reconciler_trigger_enabled=false`. Apply only those saved plan bytes.
    Read back PITR, triggers, and reserved concurrency. Wait one full 300-second
    watcher timeout.
    Freeze every other source replay, retention migration, retirement, release,

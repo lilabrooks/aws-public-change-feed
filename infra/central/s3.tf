@@ -7,11 +7,23 @@ resource "aws_s3_bucket" "config" {
     precondition {
       condition = var.preflight_mode || (
         var.runtime_artifact_bucket_name == null &&
-        var.watcher_trigger_enabled_override == null &&
-        var.dispatcher_trigger_enabled_override == null &&
-        var.worker_trigger_enabled_override == null
+        (
+          (
+            var.watcher_trigger_enabled_override == null &&
+            var.dispatcher_trigger_enabled_override == null &&
+            var.worker_trigger_enabled_override == null
+            ) || (
+            var.enable_dynamodb_point_in_time_recovery &&
+            var.watcher_execution_paused &&
+            !var.delivery_triggers_enabled &&
+            !var.reconciler_trigger_enabled &&
+            var.watcher_trigger_enabled_override == false &&
+            var.dispatcher_trigger_enabled_override == false &&
+            var.worker_trigger_enabled_override != null
+          )
+        )
       )
-      error_message = "external runtime artifacts and individual trigger overrides are restricted to preflight_mode."
+      error_message = "external runtime artifacts and individual trigger overrides require preflight_mode or the stopped ADR-027 recovery topology."
     }
 
     precondition {
