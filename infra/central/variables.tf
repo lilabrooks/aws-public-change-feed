@@ -95,7 +95,7 @@ variable "runtime_artifact_bucket_name" {
 }
 
 variable "watcher_trigger_enabled_override" {
-  description = "Preflight-only watcher trigger override. Null follows delivery_triggers_enabled."
+  description = "Preflight or stopped ADR-027 recovery watcher trigger override. Null follows delivery_triggers_enabled."
   type        = bool
   default     = null
   nullable    = true
@@ -109,14 +109,14 @@ variable "watcher_execution_paused" {
 }
 
 variable "dispatcher_trigger_enabled_override" {
-  description = "Preflight-only dispatcher trigger override. Null follows delivery_triggers_enabled."
+  description = "Preflight or stopped ADR-027 recovery dispatcher trigger override. Null follows delivery_triggers_enabled."
   type        = bool
   default     = null
   nullable    = true
 }
 
 variable "worker_trigger_enabled_override" {
-  description = "Preflight-only worker event-source override. Null follows delivery_triggers_enabled."
+  description = "Preflight or stopped ADR-027 recovery worker event-source override. Null follows delivery_triggers_enabled."
   type        = bool
   default     = null
   nullable    = true

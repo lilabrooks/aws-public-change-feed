@@ -139,6 +139,12 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - The recovery role can restore only the primary pair. It has DynamoDB's
   restore-dependent item actions only on exact restore-name prefixes, has no
   item-write action on a primary table, and has no table-delete action.
+- Given central recovery staging before a restored pair is selected, Terraform
+  accepts individual trigger overrides only with PITR enabled, watcher
+  execution paused, the aggregate delivery and reconciler gates disabled, the
+  watcher and dispatcher overrides explicitly false, and the worker override
+  explicit. A true worker override is the drain stage; false is the fully
+  stopped stage. Every other central-root override combination refuses.
 - Given a cutover input, Terraform refuses unless PITR remains enabled, watcher
   execution is paused, all four trigger requests are false, the names use the
   primary restore prefixes, both names share one exercise ID, and the plan
