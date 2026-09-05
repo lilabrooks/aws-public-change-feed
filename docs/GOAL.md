@@ -107,15 +107,15 @@ fetch, parse, normalize, match, route, candidate, and durability orchestration
 against fresh in-memory stores. Terraform gives it the watcher's exact package
 and network policy but only release-read and log permissions. A separate role
 can invoke only that function, and fixed refusal codes survive the Lambda
-boundary. Proposed ADR-026 stops all durable runtimes and sets watcher reserved
+boundary. Accepted ADR-026 stops all durable runtimes and sets watcher reserved
 concurrency to zero before either rollback path. The release
 publisher command now previews and applies an exact retained-pointer rollback,
 then supports forward restoration from the former active VersionId through the
 same path. Local tests cover identity inversion, no durable client construction,
 stale rollback plans, rollback, forward restoration, and compatibility probing.
-ADR-026 still needs owner acceptance. No live shadow invocation, configuration
-rollback, or application rollback has run, so L-42 and production readiness
-remain open.
+The owner accepted ADR-026 on 2026-09-05. No live shadow invocation,
+configuration rollback, or application rollback has run, so L-42 and
+production readiness remain open.
 
 **M3 data recovery.** The owner selected PITR for both DynamoDB tables with a
 35-day recovery period, a 5-minute recovery-point target, and a 4-hour operator
