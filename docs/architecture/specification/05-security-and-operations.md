@@ -326,7 +326,13 @@ not conclusions Terraform can establish.
 ## Backup and restore
 
 Enable S3 versioning. Both DynamoDB tables use point-in-time recovery with a
-35-day period. Preview derives one shared table timestamp from the earlier of
+35-day period. Both Terraform-owned primary tables also enable DynamoDB
+deletion protection. The shared module disables it only for `preflight_mode`,
+where the isolated ADR-024 tables must remain removable by the exact reviewed
+teardown plan. Temporary restore targets remain outside this guard and require
+their own exact-name cleanup authorization.
+
+Preview derives one shared table timestamp from the earlier of
 the two provider-reported latest restorable times, capped at the declared
 recovery start, and records its distance against the nominal five-minute
 recovery-point target. Provider lag beyond five minutes is evidence of a

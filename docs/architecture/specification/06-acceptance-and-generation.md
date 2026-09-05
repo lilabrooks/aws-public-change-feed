@@ -109,6 +109,14 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 
 - Given the central root's defaults, both primary DynamoDB tables have PITR
   enabled for exactly 35 days; the isolated preflight root remains default-off.
+- Given the central root, both Terraform-owned primary tables have DynamoDB
+  deletion protection enabled. Given `preflight_mode`, both isolated tables
+  have deletion protection disabled so the reviewed destroy plan remains
+  applicable.
+- Given the ordinary central rollout plan for deletion protection, both table
+  changes are in-place updates with no delete, replacement, or unrelated
+  action. Exact post-apply reads report deletion protection enabled on both
+  primary tables.
 - Given recovery preview, a stale or future start clock, wrong deployment path,
   account or role mismatch, dirty worktree, changed captured Terraform output
   bytes, unpaused watcher, enabled

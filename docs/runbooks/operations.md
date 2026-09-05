@@ -344,6 +344,25 @@ read charges. Repository implementation authority is not live AWS authority.
 Obtain separate review and authorization for each saved Terraform apply, the
 digest-bound restore apply, and exact-name cleanup.
 
+The L-50 deletion-protection rollout is its own saved central plan. Review the
+plan JSON and require exactly 2 in-place updates: `aws_dynamodb_table.source_state`
+and `aws_dynamodb_table.delivery`, each changing only
+`deletion_protection_enabled` from `false` to `true`. Hash the saved plan bytes
+and obtain exact owner authorization before apply. After apply, read each table
+with `aws dynamodb describe-table` and require
+`Table.DeletionProtectionEnabled` to be `true`. Preserve the plan digest, apply
+result, and both readbacks. The preflight module keeps the property `false` so
+its existing exact destroy procedure still works; restore-target deletion keeps
+its separate authorization.
+
+The dev L-50 rollout completed on 2026-09-05 from commit `4833343` under account
+`667653114001` in `us-east-1`. The owner authorized saved plan SHA-256
+`2bc02f0d47437a67b1be1546ab9dab5c5c88859f147bc5437d2507251d74986c`.
+Terraform reported 0 added, 2 changed, and 0 destroyed. Both exact-name AWS
+reads returned `ACTIVE` with `DeletionProtectionEnabled=true`; a fresh central
+plan reported no changes. A separate, unapplied preflight plan showed
+`DeletionProtectionEnabled=false` for both isolated tables.
+
 1. Record the current central Git SHA, account, Region, Terraform state
    VersionId, runtime table outputs, all four trigger states, watcher reserved
    concurrency, table sizes, and active package and release identities. Review

@@ -142,6 +142,15 @@ reported no changes. The four disposable restore tables from the successful
 and superseded attempts were deleted and confirmed absent. L-41 is complete;
 this dev proof does not complete the later production gate.
 
+L-49 now binds recovery plan, evidence, and inventory digests to independent
+known-answer tests. L-50 is also complete. The owner authorized saved central
+plan `2bc02f0d47437a67b1be1546ab9dab5c5c88859f147bc5437d2507251d74986c`
+from commit `4833343`; its only actions were two in-place updates enabling
+DynamoDB deletion protection on the primary tables. Direct AWS reads returned
+both tables `ACTIVE` with protection enabled, and a fresh central plan reported
+no changes. The isolated preflight plan still creates both tables with
+protection disabled, preserving reviewed teardown.
+
 **Production preflight.** Not started, and blocked on the milestones above.
 
 No box is one edit away. The corpus one looks closest and is not: its remaining gap is labelled depth in the thin pairs rather than a threshold setting. The watcher, dispatcher, worker, and reconciler slices now have source-defined handlers, metrics, packaging, and conditional Terraform resources. Found-post reconciliation, unknown-outcome replay, exact terminal replay, and native delivery-DLQ redrive have preview-first operator commands. The canonical Slack sample now comes from the delivery renderer. Persistent feed and delivery operation, recovery, load, and alarm evidence are complete; production preflight remains open.

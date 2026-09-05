@@ -47,6 +47,12 @@ rate and a formula, not a current bill estimate.
 Enable DynamoDB PITR on both tables with a 35-day recovery period. A shorter
 period has the same PITR storage price and would remove recovery points.
 
+Enable DynamoDB deletion protection on both Terraform-owned primary tables.
+The shared central module disables it only when `preflight_mode=true`, because
+the isolated ADR-024 stack must remain disposable through its reviewed destroy
+plan. Restored tables stay outside this primary-table guard and keep their
+separate exact-name cleanup authorization.
+
 Use these production recovery objectives for the pair:
 
 | Objective | Boundary |
@@ -311,8 +317,9 @@ The repository implements the decision across these owned surfaces:
   outcomes, settings repair, the recovery clock, and the distinction between
   restore-stage and exercise status.
   [`test_terraform_contracts.py`](../../tests/test_terraform_contracts.py)
-  checks the 35-day defaults, IAM limits, all runtime consumers, provider-free
-  cutover refusals, and return to primary bindings.
+  checks the 35-day defaults, deletion protection and preflight disposal, IAM
+  limits, all runtime consumers, provider-free cutover refusals, and return to
+  primary bindings.
 
 The first live attempt, `l41-20260905t162330z`, created both planned tables.
 Its immediate responses contained the expected restore summaries; later active
@@ -348,6 +355,19 @@ preserves the live proof in comment `5554120649` and cleanup result in comment
 `5554142372`. This completes L-41's dev operational proof. Production
 readiness remains a later M3 decision, and one successful exercise cannot
 guarantee future provider timing.
+
+L-50 completed on 2026-09-05 against commit
+`4833343fd99a8938f12ee2c71854780490c5193c`. Saved central plan SHA-256
+`2bc02f0d47437a67b1be1546ab9dab5c5c88859f147bc5437d2507251d74986c`
+contained exactly two in-place updates, changing only
+`deletion_protection_enabled` from `false` to `true` on the primary tables.
+The owner authorized those exact bytes. Terraform reported 0 added, 2 changed,
+and 0 destroyed. Direct DynamoDB reads returned both tables `ACTIVE` with
+deletion protection enabled. Fresh central plan SHA-256
+`4a399d5db77a5487b2b33b89e69c867fc9f9be1245522b9aee778f8216ea1b3d`
+reported no changes. Isolated preflight plan SHA-256
+`b0e1de2f168ca1302d791b86fb6270c0d8972147baf04c00df1545bd2560a079`
+planned both tables with deletion protection disabled; it was not applied.
 
 ## Verification
 

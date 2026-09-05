@@ -22,7 +22,12 @@ evidence role and canonical event evidence for active tables that omit their
 restore summary. The 2026-09-05 dev proof completed restore verification,
 disabled-trigger cutover, rollback, trigger restoration, and exact cleanup. It
 met the nominal recovery objectives and left the primary runtime healthy. L-41
-is complete; M3 and its later production gate remain open.
+is complete. Independent recovery digest vectors are now covered by tests, and
+the central source enables deletion protection on both primary tables while
+leaving preflight tables disposable. The exact L-50 plan changed only those two
+tables in place; owner-authorized apply, direct enabled readback, and a no-change
+central plan completed on 2026-09-05. M3 and its later production gate remain
+open.
 
 ## Architecture decision records
 
