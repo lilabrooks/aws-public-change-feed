@@ -18,8 +18,8 @@ The recovery command treated the omission as a conflicting destination. Both
 tables were active and complete when scanned, but the command could no longer
 prove how they were created. The exercise stopped before settings repair,
 cutover, or restored-table writes. Its original runtime bindings and triggers
-were restored. The two recovery tables and the plan evidence remain for
-separately authorized cleanup.
+were restored. The two recovery tables were retained for separately authorized
+cleanup rather than deleted as part of this decision.
 
 AWS documents `RestoreSummary` as an optional `DescribeTable` response field.
 It does not document how long the field remains present. The observed response
@@ -99,16 +99,32 @@ CloudTrail evidence proves the restore request. It does not prove table
 contents, successful settings repair, cutover, rollback, zero restored-table
 writes, trigger restoration, or cleanup. Those ADR-027 checks remain separate.
 
-## Current exercise disposition
+## Exercise disposition
 
 The `l41-20260905t162330z` attempt remains incomplete. Its verifier and plan
 were produced by the code version that assumed persistent `RestoreSummary`.
 ADR-028 does not reinterpret that result or relax its Git identity. After this
-decision is accepted and implemented, L-41 uses a fresh exercise ID, fresh
+decision was accepted and implemented, L-41 used a fresh exercise ID, fresh
 targets, fresh capture, and a newly authorized plan.
 
-The current restored tables are not deleted as part of this decision. Their
-exact cleanup remains a separate live mutation.
+That fresh dev proof completed on 2026-09-05 against commit `3bf35b7`. Recovery
+plan SHA-256
+`aa0f10e27f977c0f04ab7f3b8faa5ecdbc5222fad3e28cebbacd2dbe763a9a25`
+and recovery evidence SHA-256
+`011258c9c89185ac94ead6afb6bc3f152d1f80d8bfc6c41ac8444d109cdc4899`
+bound the exact restore calls. CloudTrail evidence carried the missing active-
+table restore identity; full inventories and settings supplied the separate
+restored-table proof. The exercise then completed disabled-trigger cutover,
+rollback, trigger restoration, and Terraform convergence inside the accepted
+recovery clock.
+
+The owner separately authorized cleanup after the outcome was recorded on
+L-41. All four restore tables from the successful and superseded attempts were
+deleted and confirmed absent. The
+[L-41 record](https://github.com/lilabrooks/aws-public-change-feed/issues/146)
+preserves the live proof in comment `5554120649` and cleanup result in comment
+`5554142372`, without turning restore-request evidence into a table-contents
+claim.
 
 ## Failure semantics
 
@@ -206,9 +222,10 @@ dependency is added.
 
 ## Migration and rollback
 
-After acceptance, implement and test the role, output, evidence format,
-command, and runbook together. Deploy them through an exact central Terraform
-plan. Run a fresh L-41 proof; the prior targets remain outside the new plan.
+The role, output, evidence format, command, runbook, and acceptance text were
+implemented and deployed through reviewed central Terraform plans. The fresh
+L-41 proof kept the prior targets outside its plan and cleaned up both attempts
+only after the successful result was durable.
 
 Before another restore starts, rollback consists of removing the proposed
 role, output, evidence action, and acceptance text. After an evidence file or

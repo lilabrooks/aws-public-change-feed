@@ -58,6 +58,47 @@ Use these production recovery objectives for the pair:
 | Source audit and dedupe history | 730-day TTL policy; PITR gives no recovery promise after a deletion falls outside its 35-day window. |
 | Original-table hold | Keep both original tables until the restored pair has passed the production gate or an incident-specific owner decision authorizes retirement. |
 
+### Mechanism and proof boundary
+
+The recovery mechanism has six recorded stages. Each answers a different
+operational question, and evidence from one stage cannot stand in for a later
+one.
+
+| Stage | Required evidence | Boundary |
+| --- | --- | --- |
+| Restore request | The digest-bound plan names both primary ARNs, one shared UTC restore point, and two new destination names. The immediate response supplies an exact `RestoreSummary`; ADR-028 CloudTrail evidence supplies the same identity after that optional field disappears. | This proves which provider calls were accepted. It does not prove that either destination is complete or contains the expected state. |
+| Restored-table verification | Both destinations are `ACTIVE`; schema, billing, encryption, GSI, TTL, 35-day PITR, and tags pass read-back; complete strongly consistent inventories satisfy the protected and TTL-eligible cohort rules. | Only this stage may report `restore_stage_status=completed`. The command still reports `exercise_status=incomplete_pending_cutover_rollback_and_trigger_restoration`. |
+| Cutover | One saved Terraform plan selects the exact restored pair and recovery-plan digest while all four trigger requests remain false and watcher execution stays paused. Read-back covers Lambda environment variables, table and index IAM resources, alarms, dashboard dimensions, and outputs. | The proof records a coherent runtime binding with zero application writes. The guard cannot enable a trigger against the restored pair. |
+| Rollback | A second saved Terraform plan clears the recovery input before any restored-table trigger runs. Read-back proves that every binding has returned to the retained primary pair. | This avoids two writable histories. Any later incident promotion of a restored pair needs another accepted decision. |
+| Trigger restoration | The operator restores the four trigger states and watcher concurrency recorded before quiescence, after the primary bindings pass read-back. | Service restart is evidence in its own right; rollback completion does not establish it. |
+| Cleanup | A separate authorization names each temporary table and ARN, removes it through an identity-checked path, and records the result. | The permanent recovery role has no `DeleteTable` permission. Failed, partial, and abandoned targets remain visible until this cleanup occurs. |
+
+L-41's completion boundary requires one fresh end-to-end proof that records
+these stage outcomes and the exact cleanup result. A successful restore request
+or a completed restore stage alone cannot satisfy it.
+
+### Trust and safety boundaries
+
+- Quiescence stops watcher, dispatcher, worker, and reconciler triggers and
+  pauses watcher execution before the source inventories are bound. The worker
+  drains accepted FIFO work first.
+- The recovery role can start restores from the two primary tables, inspect
+  both pairs, and repair TTL, PITR, and tags on restore-name prefixes. Its
+  primary-table access is read-only, the proof command calls no item-write API,
+  and the role cannot delete a table.
+- ADR-028 keeps `cloudtrail:LookupEvents` in a separate evidence role. AWS
+  requires that permission on `*`, so the role can see recent management events
+  outside this service. The command retains only the two bounded event
+  projections and their raw-event hashes.
+- Inventory verification is complete within reviewed caps. Reaching 100,000
+  items or 256 MiB is a refusal; a sample cannot qualify a table for cutover.
+- SQS remains transport. The operator reviews restored `queued`, `sending`, and
+  `delivery_unknown` records before rebuilding queue work, and neither restore
+  nor rollback authorizes an automatic resend.
+- PITR recovers recent DynamoDB state. Raw-snapshot retention still sets the
+  30-day executable source-replay window, and DynamoDB TTL can remove eligible
+  records from a restored table.
+
 The 5-minute value is a nominal operator target derived from DynamoDB's
 documented latest-restorable boundary. Preview selects the earlier of the two
 reported latest times, capped at the declared recovery start, instead of
@@ -243,6 +284,71 @@ inventory, disabled-trigger cutover, rollback, and cleanup.
 PITR protects at most 35 days. The 730-day source-state TTL policy remains an
 audit and dedupe policy rather than a 730-day disaster-recovery promise.
 
+## Implemented work and checked evidence
+
+The repository implements the decision across these owned surfaces:
+
+- [`infra/central/dynamodb.tf`](../../infra/central/dynamodb.tf) enables
+  35-day PITR on both primary tables and
+  rejects a recovery cutover unless PITR, stopped triggers, paused watcher
+  execution, exact restore-name prefixes, and one shared exercise ID all hold.
+- `infra/central/locals.tf`, `lambda.tf`, `iam.tf`, `alarms.tf`,
+  `dashboard.tf`, and `outputs.tf` derive runtime table and index references
+  from the selected pair. The primary resources remain under Terraform
+  ownership for rollback.
+- [`infra/central/iam.tf`](../../infra/central/iam.tf) defines the scoped
+  recovery role and the separate
+  CloudTrail-only evidence role. The latter has one service action:
+  `cloudtrail:LookupEvents`.
+- [`prove_dynamodb_recovery.py`](../../scripts/prove_dynamodb_recovery.py) owns
+  `preview`, `apply`, `evidence`, and
+  `status`. Canonical plan and evidence files have caller-supplied expected
+  SHA-256 values, and the command returns bounded refused, partial, ambiguous,
+  incomplete, or completed results.
+- [`test_dynamodb_recovery_proof.py`](../../tests/test_dynamodb_recovery_proof.py)
+  covers plan and evidence identity,
+  shared timestamps, quiescence, inventory caps and TTL cohorts, restore
+  outcomes, settings repair, the recovery clock, and the distinction between
+  restore-stage and exercise status.
+  [`test_terraform_contracts.py`](../../tests/test_terraform_contracts.py)
+  checks the 35-day defaults, IAM limits, all runtime consumers, provider-free
+  cutover refusals, and return to primary bindings.
+
+The first live attempt, `l41-20260905t162330z`, created both planned tables.
+Its immediate responses contained the expected restore summaries; later active
+table descriptions omitted them. The command stopped before settings repair,
+cutover, or restored-table runtime writes, and the original bindings and
+triggers were restored. ADR-028 records the observed provider behavior and the
+new evidence path. Its accepted implementation cannot retroactively complete
+that attempt because the old plan and verifier bind an earlier Git identity.
+
+The fresh dev exercise completed on 2026-09-05 against commit `3bf35b7`.
+Recovery plan SHA-256
+`aa0f10e27f977c0f04ab7f3b8faa5ecdbc5222fad3e28cebbacd2dbe763a9a25`
+and recovery evidence SHA-256
+`011258c9c89185ac94ead6afb6bc3f152d1f80d8bfc6c41ac8444d109cdc4899`
+bind the provider calls and verified state. The shared restore point was 298
+seconds behind the declared start, so it met the nominal 5-minute target. Both
+destinations passed complete inventory, schema, tag, TTL, and 35-day PITR
+checks before the 4-hour deadline.
+
+With all triggers disabled, the saved cutover plan moved every runtime, IAM,
+alarm, dashboard, and output reference to the restored pair. The saved rollback
+plan returned those references to the primary pair before any restored-table
+runtime write. The inventory comparison passed again, all four triggers and
+watcher concurrency were restored, all seven relevant alarms reached `OK` with
+actions enabled, and the final Terraform plan reported no changes at
+`2026-09-05T18:55:41Z`.
+
+The repository owner then authorized deletion of all four disposable restore
+tables from the successful and superseded attempts. AWS waiters completed, and
+exact-name reads confirmed all four absent at `2026-09-05T19:09:15Z`. The
+[L-41 record](https://github.com/lilabrooks/aws-public-change-feed/issues/146)
+preserves the live proof in comment `5554120649` and cleanup result in comment
+`5554142372`. This completes L-41's dev operational proof. Production
+readiness remains a later M3 decision, and one successful exercise cannot
+guarantee future provider timing.
+
 ## Verification
 
 - Invert every bound plan identity and prove the restore calls do not run.
@@ -290,7 +396,7 @@ lifecycle and separately reviewed cleanup.
 
 ## References
 
-References verified: 2026-09-03.
+References verified: 2026-09-05.
 
 - [L-41: Decide and prove the production data-recovery objective](https://github.com/lilabrooks/aws-public-change-feed/issues/146)
 - [DynamoDB disaster-recovery strategies](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/DynamodbDisasterRecoveryStrategy.html)
