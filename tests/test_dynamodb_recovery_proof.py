@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import importlib.util
 import json
 import sys
@@ -26,6 +27,29 @@ SOURCE_NAMES = {
     "source_state": "apcf-source-state-dev",
     "delivery": "apcf-delivery-dev",
 }
+CANONICAL_JSON_VECTOR = {
+    "zeta": ["雪", {"é": "café"}],
+    "alpha": {"space": "kept value", "line": "\n"},
+}
+CANONICAL_JSON_BYTES = (
+    b'{"alpha":{"line":"\\n","space":"kept value"},"zeta":["\xe9\x9b\xaa",{"\xc3\xa9":"caf\xc3\xa9"}]}\n'
+)
+INVENTORY_ITEMS = (
+    {
+        "PK": {"S": "B"},
+        "item_type": {"S": "record"},
+        "tags": {"SS": ["beta", "alpha"]},
+    },
+    {
+        "PK": {"S": "A"},
+        "ordered": {"L": [{"S": "first"}, {"S": "second"}]},
+        "status": {"S": "sent"},
+    },
+)
+INVENTORY_ITEM_BYTES = (
+    b'{"PK":{"S":"B"},"item_type":{"S":"record"},"tags":{"SS":["alpha","beta"]}}',
+    b'{"PK":{"S":"A"},"ordered":{"L":[{"S":"first"},{"S":"second"}]},"status":{"S":"sent"}}',
+)
 
 
 def timestamp(value: datetime) -> str:
@@ -259,12 +283,66 @@ def evidence_document() -> dict:
 
 
 class RecoveryProofTests(unittest.TestCase):
+    def _assert_canonical_json_contract(self):
+        self.assertEqual(recovery.canonical_json(CANONICAL_JSON_VECTOR), CANONICAL_JSON_BYTES[:-1])
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "canonical-vector.json"
+            digest = recovery.write_preview(path, CANONICAL_JSON_VECTOR)
+            self.assertEqual(path.read_bytes(), CANONICAL_JSON_BYTES)
+            self.assertEqual(digest, hashlib.sha256(CANONICAL_JSON_BYTES).hexdigest())
+
+    def _assert_inventory_digest_contract(self):
+        observed = recovery._inventory(
+            ScanClient(list(INVENTORY_ITEMS)),
+            "table",
+            max_items=len(INVENTORY_ITEMS),
+            max_bytes=1000,
+        )
+        item_digests = sorted(hashlib.sha256(body).digest() for body in INVENTORY_ITEM_BYTES)
+        expected_digest = hashlib.sha256(b"".join(item_digests)).hexdigest()
+        expected_bytes = sum(len(body) for body in INVENTORY_ITEM_BYTES)
+        empty_digest = hashlib.sha256(b"").hexdigest()
+        self.assertEqual(
+            observed,
+            {
+                "item_count": 2,
+                "canonical_bytes": expected_bytes,
+                "items_sha256": expected_digest,
+                "item_types": {"record": 1, "unknown": 1},
+                "delivery_states": {"sent": 1},
+                "ttl_cutoff_epoch": None,
+                "protected": {
+                    "item_count": 2,
+                    "canonical_bytes": expected_bytes,
+                    "items_sha256": expected_digest,
+                },
+                "ttl_eligible_by_deadline": {
+                    "item_count": 0,
+                    "canonical_bytes": 0,
+                    "items_sha256": empty_digest,
+                    "item_digests": [],
+                },
+            },
+        )
+
+    def test_canonical_json_has_independent_known_answer_bytes(self):
+        self._assert_canonical_json_contract()
+
+    def test_canonical_json_contract_detects_serializer_mutation(self):
+        def structurally_spaced_json(value):
+            return json.dumps(value, ensure_ascii=False, separators=(", ", ": "), sort_keys=True).encode("utf-8")
+
+        with mock.patch.object(recovery, "canonical_json", side_effect=structurally_spaced_json):
+            with self.assertRaises(AssertionError):
+                self._assert_canonical_json_contract()
+
     def test_plan_file_is_canonical_and_digest_bound(self):
         document = plan()
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "plan.json"
             digest = recovery.write_preview(path, document)
 
+            self.assertEqual(digest, hashlib.sha256(path.read_bytes()).hexdigest())
             self.assertEqual(recovery.load_plan(path, digest), document)
             path.write_bytes(path.read_bytes() + b" ")
             with self.assertRaisesRegex(recovery.RecoveryProofError, "digest or canonical bytes differ"):
@@ -303,6 +381,7 @@ class RecoveryProofTests(unittest.TestCase):
             path = Path(directory) / "evidence.json"
             digest = recovery.write_evidence(path, evidence)
             self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(digest, hashlib.sha256(path.read_bytes()).hexdigest())
             self.assertEqual(recovery.load_evidence(path, digest, plan=document, plan_sha256=PLAN_SHA256), evidence)
             path.write_bytes(path.read_bytes() + b" ")
             with self.assertRaisesRegex(recovery.RecoveryProofError, "digest or canonical bytes differ"):
@@ -634,6 +713,21 @@ class RecoveryProofTests(unittest.TestCase):
             recovery._inventory(ScanClient([first, second]), "table", max_items=1, max_bytes=1000)
         with self.assertRaisesRegex(recovery.RecoveryProofError, "cursor repeated"):
             recovery._inventory(RepeatingCursorClient(), "table", max_items=1, max_bytes=1000)
+
+    def test_inventory_digest_has_independent_known_answer(self):
+        self._assert_inventory_digest_contract()
+
+    def test_inventory_digest_contract_detects_construction_mutation(self):
+        def digest_hex_text(digests, byte_count):
+            return {
+                "item_count": len(digests),
+                "canonical_bytes": byte_count,
+                "items_sha256": hashlib.sha256("".join(sorted(digests)).encode("ascii")).hexdigest(),
+            }
+
+        with mock.patch.object(recovery, "_digest_summary", side_effect=digest_hex_text):
+            with self.assertRaises(AssertionError):
+                self._assert_inventory_digest_contract()
 
     def test_inventory_canonicalizes_sets_without_reordering_lists(self):
         first: dict = {
