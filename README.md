@@ -159,6 +159,7 @@ Terraform cleanup is event-driven. Use `make terraform-clean` after a backend or
 - [Public system page](https://lilabrooks.github.io/aws-public-change-feed/): system diagram, processing summary, contract checks, and generated Slack output.
 - [Product goal](docs/GOAL.md): scope, exclusions, quality bar, and completion criteria.
 - [Architecture index](docs/architecture/README.md): 6 specification chapters, 23 accepted ADRs, and the schema-to-example map.
+- [Repository checks](docs/repository-file-checks.md): local, CI, security, and operator-only checks, plus a diagram of the 4 CI workflows.
 - [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
 - [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
 - [Dev MVP walkthrough](docs/evidence/mvp-walkthrough.md): narrated video, slides, captions, transcript, recorded results, and artifact hashes.
