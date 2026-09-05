@@ -118,6 +118,7 @@ output "roles" {
   value = {
     release_publisher                = aws_iam_role.release_publisher.arn
     dynamodb_recovery                = aws_iam_role.dynamodb_recovery.arn
+    dynamodb_recovery_evidence       = aws_iam_role.dynamodb_recovery_evidence.arn
     application_artifact_retirement  = aws_iam_role.application_artifact_retirement.arn
     source_state_retention_migration = try(aws_iam_role.source_state_retention_migration[0].arn, null)
     source_state_retirement          = aws_iam_role.source_state_retirement.arn

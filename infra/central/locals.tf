@@ -77,14 +77,15 @@ locals {
   }
 
   role_names = {
-    publisher      = "apcf-${local.deployment_id}-release-publisher"
-    recovery       = "apcf-${local.deployment_id}-dynamodb-recovery"
-    watcher        = "apcf-${local.deployment_id}-feed-watcher"
-    shadow         = "apcf-${local.deployment_id}-shadow-evaluator"
-    shadow_invoker = "apcf-${local.deployment_id}-shadow-invoker"
-    dispatcher     = "apcf-${local.deployment_id}-outbox-dispatcher"
-    worker         = "apcf-${local.deployment_id}-slack-worker"
-    reconciler     = "apcf-${local.deployment_id}-recovery-reconciler"
+    publisher         = "apcf-${local.deployment_id}-release-publisher"
+    recovery          = "apcf-${local.deployment_id}-dynamodb-recovery"
+    recovery_evidence = "apcf-${local.deployment_id}-dynamodb-recovery-evidence"
+    watcher           = "apcf-${local.deployment_id}-feed-watcher"
+    shadow            = "apcf-${local.deployment_id}-shadow-evaluator"
+    shadow_invoker    = "apcf-${local.deployment_id}-shadow-invoker"
+    dispatcher        = "apcf-${local.deployment_id}-outbox-dispatcher"
+    worker            = "apcf-${local.deployment_id}-slack-worker"
+    reconciler        = "apcf-${local.deployment_id}-recovery-reconciler"
   }
 
   worker_timeout_seconds             = 300

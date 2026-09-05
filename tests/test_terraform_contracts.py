@@ -1172,6 +1172,10 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn("local.runtime_delivery_table", runtime_delivery_output)
         self.assertIn("aws_dynamodb_table.source_state.name", primary_source_output)
         self.assertIn("aws_dynamodb_table.delivery.name", primary_delivery_output)
+        self.assertIn(
+            "dynamodb_recovery_evidence       = aws_iam_role.dynamodb_recovery_evidence.arn",
+            outputs,
+        )
 
     def test_central_recovery_pause_allows_only_the_worker_drain_override(self):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
@@ -1354,7 +1358,7 @@ locals {
     def test_dynamodb_recovery_role_can_only_restore_and_configure_exact_recovery_tables(self):
         iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
         policy_start = iam.index('data "aws_iam_policy_document" "dynamodb_recovery"')
-        policy_end = iam.index('data "aws_iam_policy_document" "source_state_retention_migration"')
+        policy_end = iam.index('data "aws_iam_policy_document" "dynamodb_recovery_evidence"')
         policy = iam[policy_start:policy_end]
 
         restore = self.policy_statement(policy, "RestoreExactPrimaryTables")
@@ -1416,6 +1420,25 @@ locals {
             with self.subTest(primary_table_statement=sid.group(1) if sid is not None else position):
                 actions = set(re.findall(r'"(dynamodb:[^"\n]+)"', statement))
                 self.assertLessEqual(actions, allowed_primary_actions)
+
+    def test_dynamodb_recovery_evidence_role_only_reads_cloudtrail_events(self):
+        iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
+        role = self.resource_block(iam, "aws_iam_role", "dynamodb_recovery_evidence")
+        self.assertIn("name               = local.role_names.recovery_evidence", role)
+        self.assertIn("data.aws_iam_policy_document.publisher_assume_role.json", role)
+
+        start = iam.index('data "aws_iam_policy_document" "dynamodb_recovery_evidence"')
+        end = iam.index('data "aws_iam_policy_document" "source_state_retention_migration"')
+        policy = iam[start:end]
+        statement = self.policy_statement(policy, "ReadRegionalRecoveryEvents")
+        self.assertEqual(re.findall(r'"([a-z]+:[A-Za-z]+)"', statement), ["cloudtrail:LookupEvents"])
+        self.assertIn('resources = ["*"]', statement)
+        for forbidden in ("dynamodb:", "lambda:", "events:", "sqs:", "s3:", "secretsmanager:", "sts:"):
+            self.assertNotIn(forbidden, policy)
+
+        attached = self.resource_block(iam, "aws_iam_role_policy", "dynamodb_recovery_evidence")
+        self.assertIn("role   = aws_iam_role.dynamodb_recovery_evidence.id", attached)
+        self.assertIn("policy = data.aws_iam_policy_document.dynamodb_recovery_evidence.json", attached)
 
     def test_dynamodb_recovery_cutover_refusals_execute_in_provider_free_plans(self):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")

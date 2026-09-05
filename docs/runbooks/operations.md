@@ -348,9 +348,10 @@ digest-bound restore apply, and exact-name cleanup.
    VersionId, runtime table outputs, all four trigger states, watcher reserved
    concurrency, table sizes, and active package and release identities. Review
    a central Terraform plan that enables 35-day PITR on both primary tables,
-   creates the scoped `dynamodb_recovery` role, disables watcher, dispatcher,
-   and reconciler trigger requests, keeps the worker's recorded trigger state,
-   and sets `watcher_execution_paused=true`. For the enabled worker drain,
+   creates the scoped `dynamodb_recovery` role and separate read-only
+   `dynamodb_recovery_evidence` role, disables watcher, dispatcher, and
+   reconciler trigger requests, keeps the worker's recorded trigger state, and
+   sets `watcher_execution_paused=true`. For the enabled worker drain,
    supply `delivery_triggers_enabled=false`,
    `watcher_trigger_enabled_override=false`,
    `dispatcher_trigger_enabled_override=false`,
@@ -369,8 +370,9 @@ digest-bound restore apply, and exact-name cleanup.
    tables' latest restorable times cover one timestamp after the quiescence
    boundary.
 3. Capture fresh central outputs with the preceding restricted capture
-   procedure. Assume only the role in the captured `roles.dynamodb_recovery`
-   output. Set `STARTED_AT` to the current second in UTC. Preview derives the
+   procedure. Confirm that they contain both `roles.dynamodb_recovery` and
+   `roles.dynamodb_recovery_evidence`, then assume only the recovery role. Set
+   `STARTED_AT` to the current second in UTC. Preview derives the
    shared restore point from the earlier provider-reported latest restorable
    time and records whether its distance meets the nominal five-minute target.
    Choose item and byte caps above the complete current inventories based on
@@ -396,7 +398,8 @@ digest-bound restore apply, and exact-name cleanup.
    nominal-RPO result, exact target names, schemas, settings, tags, complete
    inventory digests and counts, TTL-eligible cohort, controls, and four-hour
    deadline. Preview performs no provider mutation.
-5. Obtain authorization for this exact plan digest, then start both restores:
+5. Obtain authorization for this exact plan digest, then start both restores
+   under the recovery role:
 
    ```bash
    python3 scripts/prove_dynamodb_recovery.py apply \
@@ -404,30 +407,66 @@ digest-bound restore apply, and exact-name cleanup.
      --expected-plan-sha256 <reviewed-plan-sha256>
    ```
 
+   The first result is normally incomplete while either table is creating. Its
+   immediate response must carry the exact provider restore summary. After both
+   calls are accepted, leave the recovery role and assume only the captured
+   `roles.dynamodb_recovery_evidence` role. Capture the two CloudTrail events
+   into a new path:
+
+   ```bash
+   python3 scripts/prove_dynamodb_recovery.py evidence \
+     --plan build/dynamodb-recovery-plan.json \
+     --expected-plan-sha256 <reviewed-plan-sha256> \
+     --evidence build/dynamodb-recovery-evidence.json
+   ```
+
+   Missing events produce a bounded incomplete result and no evidence file.
+   The same read-only capture may be retried within the plan deadline; do not
+   extend the deadline. The lookup uses the event-name filter and plan time
+   range once, then checks target names and every other identity field locally.
+   Review the printed evidence SHA-256 and the restricted file's account,
+   Region, evidence-role session, recovery-role sessions, event IDs and times,
+   request IDs, source ARNs, target names, derived target ARNs, restore
+   timestamp, billing override, and raw-event hashes. The file excludes raw
+   events and unrelated activity. Restrict the evidence file to the operator.
+
+   Return to the recovery role. Re-run the exact apply with both digests so an
+   existing destination whose `RestoreSummary` has disappeared can be proved,
+   configured, and verified:
+
+   ```bash
+   python3 scripts/prove_dynamodb_recovery.py apply \
+     --plan build/dynamodb-recovery-plan.json \
+     --expected-plan-sha256 <reviewed-plan-sha256> \
+     --evidence build/dynamodb-recovery-evidence.json \
+     --expected-evidence-sha256 <reviewed-evidence-sha256>
+   ```
+
    `restore_stage_status=completed` is the only successful restore-stage
    result. The same payload always reports
    `exercise_status=incomplete_pending_cutover_rollback_and_trigger_restoration`.
-   `restore_stage_status=incomplete` while either table is creating is expected
-   but non-passing. Re-run the same exact apply within the deadline to observe
-   the matching destination and, once it is `ACTIVE`, repair TTL, 35-day PITR,
-   and tags. AWS requires the role's target-prefix item actions while the
-   service populates a restore; the command itself never invokes an item API.
-   `partial` means one table may exist. `ambiguous` means the exact destination
-   reread did not prove the failed response. Do not create a replacement name
-   or retry from a new plan until both exact destinations have been inspected.
+   The command repairs TTL, 35-day PITR, and tags only after restore identity is
+   proved. AWS requires the recovery role's target-prefix item actions while
+   the service populates a restore; the command itself never invokes an item
+   API. `partial` means one table may exist. `ambiguous` means a provider result
+   was uncertain. Do not create a replacement name or new plan until both exact
+   destinations have been inspected.
 6. A read-only status check revalidates the saved source and stopped-runtime
    preconditions before comparing both restored tables:
 
    ```bash
    python3 scripts/prove_dynamodb_recovery.py status \
      --plan build/dynamodb-recovery-plan.json \
-     --expected-plan-sha256 <reviewed-plan-sha256>
+     --expected-plan-sha256 <reviewed-plan-sha256> \
+     --evidence build/dynamodb-recovery-evidence.json \
+     --expected-evidence-sha256 <reviewed-evidence-sha256>
    ```
 
    Preserve the terminal result. The restore stage succeeds only when both
-   tables are `verified` before the bound deadline. Later provider completion
-   leaves `restore_stage_status=incomplete`. The full exercise still requires
-   cutover and rollback.
+   tables are `verified` before the bound deadline. Missing CloudTrail evidence
+   or later provider completion leaves `restore_stage_status=incomplete`.
+   Conflicting summaries or event evidence refuse. The full exercise still
+   requires cutover and rollback.
 7. Put the returned restored names and reviewed plan digest in a restricted
    Terraform variable file as `dynamodb_recovery_cutover`. Terraform also
    requires both names to carry the same exercise-ID suffix. Keep
