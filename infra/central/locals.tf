@@ -55,6 +55,8 @@ locals {
     local.recovery_cutover_enabled ? var.dynamodb_recovery_cutover.delivery_table : aws_dynamodb_table.delivery.name
   )
   dynamodb_table_arn_prefix       = "arn:${data.aws_partition.current.partition}:dynamodb:${local.region}:${data.aws_caller_identity.current.account_id}:table"
+  primary_source_state_table_arn  = "${local.dynamodb_table_arn_prefix}/${local.source_state_table}"
+  primary_delivery_table_arn      = "${local.dynamodb_table_arn_prefix}/${local.delivery_table}"
   runtime_source_state_table_arn  = "${local.dynamodb_table_arn_prefix}/${local.runtime_source_state_table}"
   runtime_delivery_table_arn      = "${local.dynamodb_table_arn_prefix}/${local.runtime_delivery_table}"
   recovery_source_state_table_arn = "${local.dynamodb_table_arn_prefix}/${local.source_state_table}-restore-*"

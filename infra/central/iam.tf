@@ -229,7 +229,7 @@ data "aws_iam_policy_document" "dynamodb_recovery" {
   statement {
     sid       = "RestoreExactPrimaryTables"
     actions   = ["dynamodb:RestoreTableToPointInTime"]
-    resources = [aws_dynamodb_table.source_state.arn, aws_dynamodb_table.delivery.arn]
+    resources = [local.primary_source_state_table_arn, local.primary_delivery_table_arn]
   }
 
   # DynamoDB documents these as dependent target-table permissions for
@@ -264,8 +264,8 @@ data "aws_iam_policy_document" "dynamodb_recovery" {
       "dynamodb:Scan",
     ]
     resources = [
-      aws_dynamodb_table.source_state.arn,
-      aws_dynamodb_table.delivery.arn,
+      local.primary_source_state_table_arn,
+      local.primary_delivery_table_arn,
       local.recovery_source_state_table_arn,
       local.recovery_delivery_table_arn,
     ]
@@ -339,7 +339,7 @@ data "aws_iam_policy_document" "source_state_retention_migration" {
   statement {
     sid       = "ProjectedSourceStateInventory"
     actions   = ["dynamodb:Scan"]
-    resources = [aws_dynamodb_table.source_state.arn]
+    resources = [local.primary_source_state_table_arn]
 
     condition {
       test     = "StringEquals"
@@ -370,7 +370,7 @@ data "aws_iam_policy_document" "source_state_retention_migration" {
   statement {
     sid       = "ConditionedRetentionMetadataWrites"
     actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
-    resources = [aws_dynamodb_table.source_state.arn]
+    resources = [local.primary_source_state_table_arn]
 
     condition {
       test     = "ForAllValues:StringLike"
@@ -403,7 +403,7 @@ data "aws_iam_policy_document" "source_state_retirement" {
   statement {
     sid       = "ReadAndConditionallyUpdateExactFeed"
     actions   = ["dynamodb:GetItem", "dynamodb:UpdateItem"]
-    resources = [aws_dynamodb_table.source_state.arn]
+    resources = [local.primary_source_state_table_arn]
 
     condition {
       test     = "ForAllValues:StringEquals"
@@ -432,7 +432,7 @@ data "aws_iam_policy_document" "source_replay" {
   statement {
     sid       = "FillAnnouncementAndPageState"
     actions   = ["dynamodb:GetItem", "dynamodb:PutItem", "dynamodb:UpdateItem"]
-    resources = [aws_dynamodb_table.source_state.arn]
+    resources = [local.primary_source_state_table_arn]
 
     condition {
       test     = "ForAllValues:StringLike"
@@ -444,7 +444,7 @@ data "aws_iam_policy_document" "source_replay" {
   statement {
     sid       = "FillCandidateAndDeliveryState"
     actions   = ["dynamodb:GetItem", "dynamodb:PutItem"]
-    resources = [aws_dynamodb_table.delivery.arn]
+    resources = [local.primary_delivery_table_arn]
 
     condition {
       test     = "ForAllValues:StringLike"
