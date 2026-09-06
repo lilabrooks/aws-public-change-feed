@@ -151,6 +151,20 @@ variable "worker_artifact_version_id" {
   }
 }
 
+variable "worker_artifact_checksum_sha256" {
+  description = "Optional base64 S3 SHA-256 checksum for a checksum-bearing shared runtime package; L-53 owns universal enforcement."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = var.worker_artifact_checksum_sha256 == null || (
+      var.worker_artifact_sha256 != null && can(regex("^[A-Za-z0-9+/]{43}=$", var.worker_artifact_checksum_sha256))
+    )
+    error_message = "worker_artifact_checksum_sha256 must be null or a base64-encoded SHA-256 paired with a selected artifact."
+  }
+}
+
 variable "watcher_artifact_sha256" {
   description = "Lowercase SHA-256 digest of the exact published feed watcher package bytes. Null leaves Ledger 4 undeployed."
   type        = string
@@ -263,6 +277,20 @@ variable "reconciler_artifact_version_id" {
   validation {
     condition     = var.reconciler_artifact_version_id == null || length(trimspace(var.reconciler_artifact_version_id)) > 0
     error_message = "reconciler_artifact_version_id must be null or a nonempty S3 version ID."
+  }
+}
+
+variable "reconciler_artifact_checksum_sha256" {
+  description = "Optional base64 S3 SHA-256 checksum for a checksum-bearing reconciler package; L-53 owns universal enforcement."
+  type        = string
+  default     = null
+  nullable    = true
+
+  validation {
+    condition = var.reconciler_artifact_checksum_sha256 == null || (
+      var.reconciler_artifact_sha256 != null && can(regex("^[A-Za-z0-9+/]{43}=$", var.reconciler_artifact_checksum_sha256))
+    )
+    error_message = "reconciler_artifact_checksum_sha256 must be null or a base64-encoded SHA-256 paired with a selected artifact."
   }
 }
 

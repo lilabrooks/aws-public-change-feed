@@ -1,5 +1,7 @@
 """Cross-file Terraform contracts that native validation cannot prove."""
 
+import base64
+import hashlib
 import json
 import os
 import re
@@ -757,14 +759,110 @@ class TerraformContractTests(unittest.TestCase):
         self.assertEqual(artifacts.count("lookup(data.aws_s3_object."), 4)
         self.assertEqual(artifacts.count('"runtime-entrypoints-sha256"'), 2)
         self.assertEqual(artifacts.count("== local.runtime_entrypoints_sha256"), 2)
-        self.assertIn("version_id = var.worker_artifact_version_id", artifacts)
-        self.assertIn("version_id = var.reconciler_artifact_version_id", artifacts)
+        self.assertIn("version_id    = var.worker_artifact_version_id", artifacts)
+        self.assertIn("version_id    = var.reconciler_artifact_version_id", artifacts)
         self.assertIn(
             'runtime_entrypoints_sha256 = sha256(join("\\u0000", local.runtime_entrypoints))',
             locals_source,
         )
         self.assertEqual(lambda_source.count("terraform_data.shared_runtime_artifact_guard"), 4)
         self.assertEqual(lambda_source.count("terraform_data.reconciler_runtime_artifact_guard"), 1)
+
+    def test_checksum_bearing_artifacts_use_the_s3_computed_sha256(self):
+        artifacts = (ROOT / "infra/central/artifacts.tf").read_text(encoding="utf-8")
+        variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
+        digest = hashlib.sha256(b"fixture package bytes").hexdigest()
+        expected_base64 = "YsO/0ZwoflcO8MMGKhlZYesroZjWHbsquq8GKcvLIro="
+
+        self.assertEqual(base64.b64encode(bytes.fromhex(digest)).decode(), expected_base64)
+        self.assertEqual(artifacts.count("checksum_mode = var."), 2)
+        self.assertEqual(artifacts.count(".checksum_sha256 == var."), 2)
+        self.assertIn('variable "worker_artifact_checksum_sha256"', variables)
+        self.assertIn('variable "reconciler_artifact_checksum_sha256"', variables)
+
+        guard_match = re.search(
+            r'''precondition \{\s+condition = (?P<condition>var\.worker_artifact_checksum_sha256 == null \|\| \(\s+data\.aws_s3_object\.shared_runtime_artifact\[0\]\.checksum_sha256 == var\.worker_artifact_checksum_sha256\s+\))\s+error_message = "(?P<message>[^"]+)"''',
+            artifacts,
+        )
+        self.assertIsNotNone(guard_match)
+        assert guard_match is not None
+        condition = guard_match.group("condition").replace(
+            "data.aws_s3_object.shared_runtime_artifact[0].checksum_sha256",
+            "var.observed_checksum_sha256",
+        )
+        checksum_variable = self.variable_block(variables, "worker_artifact_checksum_sha256")
+        fixture = f'''variable "worker_artifact_sha256" {{
+  type    = string
+  default = null
+}}
+
+{checksum_variable}
+
+variable "observed_checksum_sha256" {{
+  type     = string
+  nullable = true
+}}
+
+resource "terraform_data" "checksum_guard" {{
+  input = var.observed_checksum_sha256
+
+  lifecycle {{
+    precondition {{
+      condition     = {condition}
+      error_message = "{guard_match.group("message")}"
+    }}
+  }}
+}}
+'''
+        cases = (
+            ("matching checksum", expected_base64, expected_base64, 0),
+            ("mismatched checksum", expected_base64, base64.b64encode(b"x" * 32).decode(), 1),
+            ("legacy omission", None, base64.b64encode(b"x" * 32).decode(), 0),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "main.tf").write_text(fixture, encoding="utf-8")
+            environment = {**os.environ, "CHECKPOINT_DISABLE": "1", "TF_IN_AUTOMATION": "1"}
+            initialized = subprocess.run(
+                ("terraform", "init", "-backend=false", "-input=false", "-no-color"),
+                cwd=root,
+                env=environment,
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            self.assertEqual(initialized.returncode, 0, msg=initialized.stderr)
+            for name, selected_checksum, observed_checksum, expected_exit in cases:
+                with self.subTest(case=name):
+                    values = {
+                        "worker_artifact_sha256": digest,
+                        "worker_artifact_checksum_sha256": selected_checksum,
+                        "observed_checksum_sha256": observed_checksum,
+                    }
+                    var_file = root / "case.tfvars.json"
+                    var_file.write_text(f"{json.dumps(values)}\n", encoding="utf-8")
+                    planned = subprocess.run(
+                        (
+                            "terraform",
+                            "plan",
+                            "-input=false",
+                            "-lock=false",
+                            "-refresh=false",
+                            "-no-color",
+                            f"-var-file={var_file}",
+                        ),
+                        cwd=root,
+                        env=environment,
+                        capture_output=True,
+                        text=True,
+                        timeout=60,
+                        check=False,
+                    )
+                    output = f"{planned.stdout}\n{planned.stderr}"
+                    self.assertEqual(planned.returncode, expected_exit, msg=output)
+                    if expected_exit:
+                        self.assertIn(guard_match.group("message"), re.sub(r"\s+", " ", output))
 
     def test_dispatcher_artifact_validations_execute_in_provider_free_plans(self):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")

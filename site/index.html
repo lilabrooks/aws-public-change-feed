@@ -402,7 +402,7 @@
         <dl class="site-spec">
           <div class="site-spec-row">
             <dt>Required behavior</dt>
-            <dd>Six specification chapters and 24 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
+            <dd>Six specification chapters and 25 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
           </div>
           <div class="site-spec-row">
             <dt>Contracts</dt>
@@ -552,7 +552,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <p class="compact-eyebrow">Required rules</p>
           <div>
             <h2 class="compact-section-title">Public feeds only. DynamoDB owns delivery history.</h2>
-            <p class="compact-section-copy">24 accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
+            <p class="compact-section-copy">25 accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
           </div>
         </div>
         <dl class="site-spec">
@@ -619,6 +619,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           </tbody>
         </table>
         <div class="site-note">
+          <p>Accepted ADR-029 defines L-52&rsquo;s package repair: a stable input manifest inside each new ZIP, exact source-member checks before publication, an S3-computed SHA-256, and a Linux target import gate. Volatile build attestations stay outside package identity. L-53 still owns the exact compatibility rule for the retained checksum-less rollback package. Signed hosted-build provenance remains a revisit condition if the deployment gains another publisher, CI publication, an external artifact consumer, or a production policy requiring cryptographic build origin.</p>
           <p>The repository includes separate operator controls for retained-source replay, delivery replay, DLQ movement, package retirement, and configuration-release retirement.</p>
         </div>
       </div>

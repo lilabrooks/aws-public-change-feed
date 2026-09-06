@@ -29,6 +29,13 @@ tables in place; owner-authorized apply, direct enabled readback, and a no-chang
 central plan completed on 2026-09-05. M3 and its later production gate remain
 open.
 
+Accepted ADR-029 defines L-52's package-provenance repair. It keeps volatile
+build attestations outside package identity, adds a stable in-archive input
+manifest, requires source-member and handler checks before publication, uses an
+S3-computed SHA-256 for checksum-bearing objects, and adds a Linux target import
+gate. L-53 still owns the exact compatibility rule for the retained
+checksum-less rollback package.
+
 ## Architecture decision records
 
 - [ADR-001: Separate deployment and runtime configuration](../adr/001-separate-deployment-and-runtime-configuration.md)
@@ -55,6 +62,7 @@ open.
 - [ADR-026: Central shadow and rollback proof](../adr/026-central-shadow-and-rollback-proof.md)
 - [ADR-027: DynamoDB point-in-time recovery for both state tables](../adr/027-dynamodb-point-in-time-recovery.md)
 - [ADR-028: Separate CloudTrail evidence for DynamoDB restore identity](../adr/028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md)
+- [ADR-029: Lambda package provenance and entrypoint proof](../adr/029-lambda-package-provenance-and-entrypoint-proof.md)
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 
@@ -70,6 +78,7 @@ ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the pro
 | Slack work item | [`delivery-request.schema.json`](../../schemas/delivery-request.schema.json) | [`delivery-request.json`](../../examples/delivery-request.json) |
 | Labeled matching corpus | [`corpus.schema.json`](../../schemas/corpus.schema.json) | [`announcements.json`](../../corpus/announcements.json) |
 | Approved matching thresholds | [`corpus-thresholds.schema.json`](../../schemas/corpus-thresholds.schema.json) | [`thresholds.json`](../../corpus/thresholds.json) |
+| Lambda package provenance | [`lambda-package-manifest.schema.json`](../../schemas/lambda-package-manifest.schema.json) | [`lambda-package-manifest.json`](../../examples/lambda-package-manifest.json) |
 
 [`validate_config.py`](../../scripts/validate_config.py) enforces schema and cross-document rules. [`test_validate_config.py`](../../tests/test_validate_config.py) keeps a regression case for each rejected mutation.
 
@@ -110,6 +119,13 @@ ADR-024 state key. It fixes mutable identities to the isolated exercise
 deployment, keeps the persistent application object read-only, and gives the
 recovery, fixed-load, and exact-teardown protocols their own preview-first
 runner.
+
+Accepted [ADR-029](../adr/029-lambda-package-provenance-and-entrypoint-proof.md)
+binds package-producing inputs through a stable archive manifest, refuses
+unsafe or source-divergent ZIPs before publication, and checks real imports on
+the Linux target. It defers signed hosted-build provenance until the deployment
+has another publisher, CI publication, an external consumer, or a production
+policy that needs cryptographic build origin.
 
 ## Public page maintenance
 

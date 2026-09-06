@@ -82,6 +82,17 @@ Revisit the 400-day and 10-package floor when measured artifact size makes it a
 material storage cost, routine deployments leave old-version actionable work,
 or operators need replay after the supported window.
 
+### Revision: source provenance remains separate from application identity
+
+- Status: Accepted
+- Date: 2026-09-06
+- Accepted: 2026-09-06
+
+ADR-029 adds a stable package-input manifest and external build attestations.
+Neither replaces `sha256:<exact-package-bytes>` as `application_version`.
+Volatile source and builder observations stay outside the ZIP so a
+documentation-only commit cannot create a new application identity.
+
 ## Alternatives considered
 
 **Always re-evaluate with current code.** This was the original behavior. It can terminally discard retained work after semantic drift and makes the embedded application version observational only.
