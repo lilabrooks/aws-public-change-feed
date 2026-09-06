@@ -118,10 +118,14 @@ day reached the scoped invoker but failed before handler entry: the deployed
 exact package predated `shadow_runtime.py`. Read-back found no source-state,
 delivery, or raw-snapshot change, and the fixed attempt was not repeated. The
 exercise stopped with a failed disposition. Package publication and Terraform
-now define a configured-handler metadata guard; that remediation still needs a
-reviewed deployment and a fresh, separately authorized exercise. No
-configuration or application rollback has run, so L-42 and production
-readiness remain open.
+now define a configured-handler metadata guard. On 2026-09-06 an exact reviewed
+plan disabled all four triggers and set watcher concurrency to zero, the full
+300-second quiescence window elapsed, and a second exact reviewed plan deployed
+one verified handler-complete package to all five Lambdas with both artifact
+guards. Independent read-back matched every handler, code digest, object
+VersionId, update status, and stopped-state control. The runtimes remain stopped
+for a fresh, separately authorized exercise. No configuration or application
+rollback has run, so L-42 and production readiness remain open.
 
 **M3 data recovery.** The owner selected PITR for both DynamoDB tables with a
 35-day recovery period, a 5-minute recovery-point target, and a 4-hour operator
