@@ -130,8 +130,16 @@ items, and 635 raw-snapshot versions remained unchanged, with no delete markers.
 The following single valid sample fetched all four feeds, normalized 240 items,
 matched 8 route-scoped candidates, and returned `passed` under invocation ID
 `eff3c045-1959-477e-b5be-ade9c176a69d`; a second complete read-back was also
-unchanged. The runtimes remain stopped. No configuration or application rollback
-has run, so L-42 and production readiness remain open.
+unchanged. Configuration rollback then promoted retained release
+`0ffc94ed3c5a16d55561aa00f018c6cf6f1e81ec58539ce002f42c6e45eb7225`
+through a new exact pointer version and passed its compatibility probe. Its one
+shadow sample again normalized 240 items and produced the same 8 candidates and
+candidate-identity digest. A preview-only retained-source replay resolved a
+pre-exercise snapshot, pointer VersionId, exact release objects, and all four
+existing candidate and delivery records without applying replay. The pointer
+currently names the retained release, all runtimes remain stopped, and exact
+forward restoration is previewed but unrun. Application rollback has not run,
+so L-42 and production readiness remain open.
 
 **M3 data recovery.** The owner selected PITR for both DynamoDB tables with a
 35-day recovery period, a 5-minute recovery-point target, and a 4-hour operator
