@@ -1,0 +1,20 @@
+{
+  "builder_contract_sha256": "355323a1b2179ac6875d606337eb21fb4ebb78bd98dcf70e5958305b2945f8ed",
+  "contract_version": 1,
+  "requirements_lambda_sha256": "8a7431e06d3af0e67a29e7942a22cbeb50feab8a853a4163d8d27b771698f3eb",
+  "runtime_entrypoints": [
+    "aws_public_change_feed.dispatcher_runtime.lambda_handler",
+    "aws_public_change_feed.recovery_runtime.lambda_handler",
+    "aws_public_change_feed.shadow_runtime.lambda_handler",
+    "aws_public_change_feed.slack_worker_runtime.lambda_handler",
+    "aws_public_change_feed.watcher_runtime.lambda_handler"
+  ],
+  "runtime_entrypoints_sha256": "8d934863e4305f466c8e4982215f37b48222fee3cb18635509fae7163156cf29",
+  "source_tree_sha256": "6270babcd76e421398e9ffc76336eac328f19320c12078c44ed8276e894428bd",
+  "target": {
+    "architecture": "x86_64",
+    "implementation": "cp",
+    "platform": "manylinux2014_x86_64",
+    "python_version": "3.12"
+  }
+}

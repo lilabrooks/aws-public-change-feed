@@ -155,8 +155,12 @@ eligible predecessor therefore existed at preflight, so application rollback
 was not attempted. L-42 ends with the bounded `incomplete` disposition allowed
 by its issue contract. The [public evidence
 record](evidence/l42-shadow-and-rollback-2026-09-06.md) binds the public facts to
-the restricted evidence manifest. L-52 owns artifact provenance and callable
-entrypoint proof, L-53 owns the application rollback boundary decision, and
+the restricted evidence manifest. Accepted ADR-029 now defines L-52's stable
+in-archive input manifest, source-member and handler checks, S3 SHA-256
+checksum, and Linux target import gate. It records volatile build details
+outside package identity and defers signed hosted-build provenance until the
+deployment's trust boundary grows. L-53 owns the exact compatibility rule for
+the checksum-less retained package and the application rollback boundary;
 L-54 owns the live proof with a genuine successor. M3 remains open through
 those successors, the post-M2 gate, and final status reconciliation.
 

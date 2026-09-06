@@ -242,7 +242,7 @@ class SiteValidatorTests(unittest.TestCase):
                 encoding="utf-8",
             )
             errors = validator.validate_repository(root)
-        self.assertTrue(any("accepted-ADR count must be 23" in error for error in errors))
+        self.assertTrue(any("accepted-ADR count must be 24" in error for error in errors))
 
     def test_architecture_index_must_list_each_active_adr_once(self):
         directory, root = self.make_repository()
@@ -302,7 +302,7 @@ class SiteValidatorTests(unittest.TestCase):
 
     def test_source_state_lifecycle_matches_the_accepted_decision(self):
         page = (ROOT / "site/index.html").read_text(encoding="utf-8")
-        self.assertIn("24 accepted ADRs", page)
+        self.assertIn("25 accepted ADRs", page)
         self.assertIn("Active feed checkpoints do not expire", page)
         self.assertIn("docs/adr/025-source-state-and-response-page-retirement.md", page)
 

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lilabrooks.github.io/aws-public-change-feed/schemas/lambda-package-manifest.schema.json",
+  "title": "Lambda package manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "builder_contract_sha256",
+    "contract_version",
+    "requirements_lambda_sha256",
+    "runtime_entrypoints",
+    "runtime_entrypoints_sha256",
+    "source_tree_sha256",
+    "target"
+  ],
+  "properties": {
+    "builder_contract_sha256": { "$ref": "#/$defs/sha256" },
+    "contract_version": { "const": 1 },
+    "requirements_lambda_sha256": { "$ref": "#/$defs/sha256" },
+    "runtime_entrypoints": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^[a-z_][a-z0-9_.]*\\.[a-z_][a-z0-9_]*$" }
+    },
+    "runtime_entrypoints_sha256": { "$ref": "#/$defs/sha256" },
+    "source_tree_sha256": { "$ref": "#/$defs/sha256" },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["architecture", "implementation", "platform", "python_version"],
+      "properties": {
+        "architecture": { "const": "x86_64" },
+        "implementation": { "const": "cp" },
+        "platform": { "const": "manylinux2014_x86_64" },
+        "python_version": { "const": "3.12" }
+      }
+    }
+  },
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+  }
+}

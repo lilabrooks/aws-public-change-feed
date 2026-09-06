@@ -138,6 +138,11 @@ Lambda memory limit, if the shadow path needs durable state for comparison, if
 the exercise needs synthetic candidate or delivery records, or if trigger and
 reserved-concurrency read-back cannot prove the watcher stopped.
 
+ADR-029 now governs package provenance and target handler evidence for new
+packages. L-53 still decides how that evidence changes rollback eligibility and
+whether the exact checksum-less `c88b49c8...` package receives a bounded legacy
+exception. This decision does not grant that exception.
+
 ## References
 
 References verified: 2026-09-03.

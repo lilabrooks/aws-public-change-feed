@@ -413,12 +413,17 @@ actionable work from the current package, record any remaining package versions,
 deploy the watcher, regular dispatcher, and worker roots with one identical
 digest and exact S3 object version, and then resume. The reconciler consumes the
 same package bytes through an independent artifact input pair. Publication
-rejects a ZIP missing any Lambda handler module configured by this root and
-records the SHA-256 of the lexically ordered, null-framed handler names in
-`runtime-entrypoints-sha256` object metadata. Terraform reads each selected
-exact object version and refuses a plan whose digest or handler-contract
-metadata differs. Legacy retained packages without that contract are not valid
-rollback selections for this five-function boundary.
+rejects an unsafe ZIP, source bytes or members that differ from the tracked
+package tree, a missing canonical ADR-029 manifest, and a configured handler
+without the supported synchronous two-argument declaration. It records the
+SHA-256 of the lexically ordered, null-framed handler names in
+`runtime-entrypoints-sha256` object metadata and uploads with an S3 SHA-256
+checksum. The Linux Python 3.12 quality gate builds the installed package,
+extracts it in an isolated environment, imports every configured module, and
+checks its resolved handler. Terraform reads each selected exact object
+version and verifies the S3 checksum when one is supplied. L-53 owns universal
+checksum enforcement and the exact compatibility treatment for the retained
+checksum-less five-handler package.
 
 Terraform separates deployment from event-source activation. Artifact pairs
 create the Lambda functions and their trigger resources. The Boolean
@@ -478,12 +483,16 @@ the preflight configuration bucket, applies the unchanged destroy plan, and
 requires an empty preflight state afterward.
 
 The package builder uses a complete exact dependency lock and deterministic ZIP
-metadata. Publication conditionally creates
+metadata. Each new package contains ADR-029's canonical manifest for the
+packaged source tree, lock, builder contract, handler set, and target. Volatile
+commit and observed-tool attestations stay outside the ZIP. Publication
+conditionally creates
 `<top-prefix>/application-artifacts/<sha256>.zip` in the versioned deployment
-bucket, reads the returned S3 version back, verifies its bytes against the
-digest, and records that version. Terraform deploys that exact key and version
-and injects `sha256:<digest>` into the composition root. Publication has no
-delete grant. No lifecycle rule covers this prefix. The ADR-022 operator tool
+bucket with `If-None-Match: *` and S3 SHA-256 validation, reads the returned S3
+version back, verifies its bytes, checksum, manifest, and byte-derived metadata,
+and records that version. Terraform deploys that exact key and version and
+injects `sha256:<digest>` into the composition root. Publication has no delete
+grant. No lifecycle rule covers this prefix. The ADR-022 operator tool
 instead binds a complete bounded inventory to a canonical preview plan, proves
 the 400-day and newest-10 floors plus exact protected references, and applies
 only after the inventory and plan digest still match. Each deletion names the

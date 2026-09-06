@@ -32,6 +32,12 @@ jobs:
       - name: Install development dependencies
         run: python -m pip install --requirement requirements-dev.txt
 
+      - name: Build and import the Lambda target package
+        run: |
+          python scripts/build_lambda_package.py --output build/lambda-target.zip
+          python -m venv --without-pip build/lambda-import-venv
+          build/lambda-import-venv/bin/python scripts/verify_lambda_package_imports.py --package build/lambda-target.zip
+
       # Without terraform on the runner, make check's terraform-check target
       # skips and the Terraform roots get no CI coverage at all.
       # terraform_wrapper adds a shim around the binary; the Makefile reads exit
