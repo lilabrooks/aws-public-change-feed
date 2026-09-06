@@ -127,9 +127,11 @@ VersionId, update status, and stopped-state control. Three separately authorized
 identity inversions then reached that handler and returned the exact release,
 application, and feed-set refusal codes. The 631 source-state items, 31 delivery
 items, and 635 raw-snapshot versions remained unchanged, with no delete markers.
-The runtimes remain stopped for a fresh, separately authorized valid sample. No
-configuration or application rollback has run, so L-42 and production readiness
-remain open.
+The following single valid sample fetched all four feeds, normalized 240 items,
+matched 8 route-scoped candidates, and returned `passed` under invocation ID
+`eff3c045-1959-477e-b5be-ade9c176a69d`; a second complete read-back was also
+unchanged. The runtimes remain stopped. No configuration or application rollback
+has run, so L-42 and production readiness remain open.
 
 **M3 data recovery.** The owner selected PITR for both DynamoDB tables with a
 35-day recovery period, a 5-minute recovery-point target, and a 4-hour operator
