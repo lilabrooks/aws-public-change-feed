@@ -745,6 +745,27 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn("values   = [aws_cloudwatch_event_rule.dispatcher[0].arn]", statement)
         self.assertIn('variable = "aws:SourceAccount"', statement)
 
+    def test_exact_runtime_artifacts_must_carry_the_configured_handler_contract(self):
+        artifacts = (ROOT / "infra/central/artifacts.tf").read_text(encoding="utf-8")
+        lambda_source = (ROOT / "infra/central/lambda.tf").read_text(encoding="utf-8")
+        locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
+
+        for selection in ("shared", "reconciler"):
+            with self.subTest(selection=selection):
+                self.assertIn(f'data "aws_s3_object" "{selection}_runtime_artifact"', artifacts)
+                self.assertIn(f'resource "terraform_data" "{selection}_runtime_artifact_guard"', artifacts)
+        self.assertEqual(artifacts.count("lookup(data.aws_s3_object."), 4)
+        self.assertEqual(artifacts.count('"runtime-entrypoints-sha256"'), 2)
+        self.assertEqual(artifacts.count("== local.runtime_entrypoints_sha256"), 2)
+        self.assertIn("version_id = var.worker_artifact_version_id", artifacts)
+        self.assertIn("version_id = var.reconciler_artifact_version_id", artifacts)
+        self.assertIn(
+            'runtime_entrypoints_sha256 = sha256(join("\\u0000", local.runtime_entrypoints))',
+            locals_source,
+        )
+        self.assertEqual(lambda_source.count("terraform_data.shared_runtime_artifact_guard"), 4)
+        self.assertEqual(lambda_source.count("terraform_data.reconciler_runtime_artifact_guard"), 1)
+
     def test_dispatcher_artifact_validations_execute_in_provider_free_plans(self):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
         artifact_variables = "\n\n".join(

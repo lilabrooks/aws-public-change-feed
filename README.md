@@ -64,8 +64,8 @@ M3 decides whether the current service and deployment are ready for production.
 
 - [L-40](https://github.com/lilabrooks/aws-public-change-feed/issues/145) selected the current 4-feed, 3-service, 4-risk-rule policy unchanged for production preflight. Its [evidence record](docs/evidence/production-policy.md) retains all 12 service and risk-type pairs, including 6 with no historical positive, and keeps the global thresholds without inventing pair-specific floors.
 - [L-41](https://github.com/lilabrooks/aws-public-change-feed/issues/146) has complete operational evidence for ADR-027 and ADR-028. The successful dev proof restored both DynamoDB tables from one evidence-bound point, measured a 298-second recovery point against the 5-minute target, verified both complete inventories and required settings, moved every runtime reference to the restored pair with triggers disabled, rolled back to the primary pair, and restored all four triggers within the 4-hour recovery-time boundary. All seven relevant alarms returned to `OK`, the final Terraform plan reported no changes, and all four disposable restore tables from both attempts were deleted and confirmed absent. M3 remains open for the L-42 proof and the later production gate.
-- [L-42](https://github.com/lilabrooks/aws-public-change-feed/issues/147) now has a source-defined, direct-invocation shadow evaluator with no durable-state authority, a scoped invoker, fixed refusal codes, and an exact preview/apply command for configuration rollback and forward restoration. Proposed ADR-026 requires all durable runtimes to stop before rollback and records the five-function application boundary. The live shadow run, both configuration promotions, application rollback and restoration, and historical-reference proof have not run yet.
-- [L-43](https://github.com/lilabrooks/aws-public-change-feed/issues/148) will map every M2 change to the M1 evidence it could affect. It will reuse evidence only for unchanged mechanisms, rerun affected or missing checks, and record the result as passed, failed, or incomplete.
+- [L-42](https://github.com/lilabrooks/aws-public-change-feed/issues/147) ended with the bounded `incomplete` disposition permitted by its issue contract. Its [public evidence record](docs/evidence/l42-shadow-and-rollback-2026-09-06.md) binds the reviewed plans, invocations, state comparisons, and restricted evidence manifest. The shadow evaluator passed three identity refusals and three valid samples across the forward, rolled-back, and restored configurations. Each valid sample normalized 240 items and produced the same 8 candidates and candidate digest without changing source-state, delivery, or raw-snapshot state. Configuration rollback and restoration passed. Normal operation then resumed with all four triggers enabled, watcher concurrency at one, the exact 28-alarm set at `OK`, and a final Terraform plan reporting no changes. Application rollback was not attempted because the retained artifact audit found no distinct predecessor satisfying ADR-026's accepted five-function boundary. [L-52](https://github.com/lilabrooks/aws-public-change-feed/issues/189), [L-53](https://github.com/lilabrooks/aws-public-change-feed/issues/190), and [L-54](https://github.com/lilabrooks/aws-public-change-feed/issues/191) own the provenance repair, boundary decision, and genuine-successor proof.
+- [L-43](https://github.com/lilabrooks/aws-public-change-feed/issues/148) will follow L-54, map every M2 change to the M1 evidence it could affect, reuse evidence only for unchanged mechanisms, rerun affected or missing checks, and record the result as passed, failed, or incomplete.
 - [L-44](https://github.com/lilabrooks/aws-public-change-feed/issues/149) will update the goal, architecture status, README, and public site after the production gate so every completion claim matches the recorded result.
 
 See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issues) for the current work queue. The [goal](docs/GOAL.md) defines product scope and completion criteria; its long-form status will be reconciled after the production gate.
@@ -110,7 +110,7 @@ A direct SQS-to-Lambda-to-Slack path is a smaller design for notifications that 
 | Slack uncertainty stays visible | A timeout becomes `delivery_unknown`. An operator checks Slack before closure or one audited retry. |
 | Credentials stay with the worker | Feed content, configuration, candidates, fixtures, and logs contain no Slack secret values. |
 
-The [numbered specification and 23 accepted ADRs](docs/architecture/README.md) define these rules in full.
+The [numbered specification and 24 accepted ADRs](docs/architecture/README.md) define these rules in full.
 
 ## Run locally
 
@@ -158,13 +158,14 @@ Terraform cleanup is event-driven. Use `make terraform-clean` after a backend or
 
 - [Public system page](https://lilabrooks.github.io/aws-public-change-feed/): system diagram, processing summary, contract checks, and generated Slack output.
 - [Product goal](docs/GOAL.md): scope, exclusions, quality bar, and completion criteria.
-- [Architecture index](docs/architecture/README.md): 6 specification chapters, 23 accepted ADRs, and the schema-to-example map.
+- [Architecture index](docs/architecture/README.md): 6 specification chapters, 24 accepted ADRs, and the schema-to-example map.
 - [Repository checks](docs/repository-file-checks.md): local, CI, security, and operator-only checks, plus a diagram of the 4 CI workflows.
 - [DynamoDB PITR recovery decision](docs/adr/027-dynamodb-point-in-time-recovery.md): the 35-day two-table mechanism, safety boundaries, staged proof, implemented checks, and completed L-41 evidence.
 - [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
 - [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
 - [Dev MVP walkthrough](docs/evidence/mvp-walkthrough.md): narrated video, slides, captions, transcript, recorded results, and artifact hashes.
 - [Production policy evidence](docs/evidence/production-policy.md): exact policy inputs, corpus results, pair-level sample limits, and revisit conditions.
+- [L-42 shadow and rollback evidence](docs/evidence/l42-shadow-and-rollback-2026-09-06.md): live shadow results, configuration rollback and restoration, runtime recovery, retained artifact audit, evidence limits, and successor issues.
 
 Changes to product scope, trust boundaries, identity, state ownership, delivery guarantees, or version policy require an ADR. Run `make check` before opening a pull request.
 

@@ -107,15 +107,58 @@ fetch, parse, normalize, match, route, candidate, and durability orchestration
 against fresh in-memory stores. Terraform gives it the watcher's exact package
 and network policy but only release-read and log permissions. A separate role
 can invoke only that function, and fixed refusal codes survive the Lambda
-boundary. Proposed ADR-026 stops all durable runtimes and sets watcher reserved
+boundary. Accepted ADR-026 stops all durable runtimes and sets watcher reserved
 concurrency to zero before either rollback path. The release
 publisher command now previews and applies an exact retained-pointer rollback,
 then supports forward restoration from the former active VersionId through the
 same path. Local tests cover identity inversion, no durable client construction,
 stale rollback plans, rollback, forward restoration, and compatibility probing.
-ADR-026 still needs owner acceptance. No live shadow invocation, configuration
-rollback, or application rollback has run, so L-42 and production readiness
-remain open.
+The owner accepted ADR-026 on 2026-09-05. The first live shadow invocation that
+day reached the scoped invoker but failed before handler entry: the deployed
+exact package predated `shadow_runtime.py`. Read-back found no source-state,
+delivery, or raw-snapshot change, and the fixed attempt was not repeated. The
+exercise stopped with a failed disposition. Package publication and Terraform
+now define a configured-handler metadata guard. On 2026-09-06 an exact reviewed
+plan disabled all four triggers and set watcher concurrency to zero, the full
+300-second quiescence window elapsed, and a second exact reviewed plan deployed
+one verified handler-complete package to all five Lambdas with both artifact
+guards. Independent read-back matched every handler, code digest, object
+VersionId, update status, and stopped-state control. Three separately authorized
+identity inversions then reached that handler and returned the exact release,
+application, and feed-set refusal codes. The 631 source-state items, 31 delivery
+items, and 635 raw-snapshot versions remained unchanged, with no delete markers.
+The following single valid sample fetched all four feeds, normalized 240 items,
+matched 8 route-scoped candidates, and returned `passed` under invocation ID
+`eff3c045-1959-477e-b5be-ade9c176a69d`; a second complete read-back was also
+unchanged. Configuration rollback then promoted retained release
+`0ffc94ed3c5a16d55561aa00f018c6cf6f1e81ec58539ce002f42c6e45eb7225`
+through a new exact pointer version and passed its compatibility probe. Its one
+shadow sample again normalized 240 items and produced the same 8 candidates and
+candidate-identity digest. A preview-only retained-source replay resolved a
+pre-exercise snapshot, pointer VersionId, exact release objects, and all four
+existing candidate and delivery records without applying replay.
+
+Forward restoration then returned the pointer to release
+`8527e2b44432e565b968d869f941cc4a90ce33fbe7376401f5489306e6027ef8`
+through VersionId `HJbvljTXyq.N1mExbfOiNn2Sv3vQnm5s`. A third shadow sample,
+invocation ID `81a39324-9062-4b80-b3aa-d52c9454b430`, reproduced the same 240
+items, 8 candidates, and candidate digest while another complete durable-state
+comparison remained unchanged. The reviewed resume plan restored all four
+triggers and watcher concurrency, created the seven missing alarms, and kept
+the remediated application package on every Lambda. All 28 alarms reached
+`OK`, and the final Terraform plan reported no changes.
+
+The exact-version audit found nine retained application packages. Eight lacked
+the shadow module and configured-handler metadata; only the currently deployed
+package satisfied ADR-026's accepted five-function boundary. No distinct
+eligible predecessor therefore existed at preflight, so application rollback
+was not attempted. L-42 ends with the bounded `incomplete` disposition allowed
+by its issue contract. The [public evidence
+record](evidence/l42-shadow-and-rollback-2026-09-06.md) binds the public facts to
+the restricted evidence manifest. L-52 owns artifact provenance and callable
+entrypoint proof, L-53 owns the application rollback boundary decision, and
+L-54 owns the live proof with a genuine successor. M3 remains open through
+those successors, the post-M2 gate, and final status reconciliation.
 
 **M3 data recovery.** The owner selected PITR for both DynamoDB tables with a
 35-day recovery period, a 5-minute recovery-point target, and a 4-hour operator

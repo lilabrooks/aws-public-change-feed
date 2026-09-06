@@ -412,7 +412,13 @@ deployable bytes. Retain them for at least 400 days and keep at least the newest
 actionable work from the current package, record any remaining package versions,
 deploy the watcher, regular dispatcher, and worker roots with one identical
 digest and exact S3 object version, and then resume. The reconciler consumes the
-same package bytes through an independent artifact input pair.
+same package bytes through an independent artifact input pair. Publication
+rejects a ZIP missing any Lambda handler module configured by this root and
+records the SHA-256 of the lexically ordered, null-framed handler names in
+`runtime-entrypoints-sha256` object metadata. Terraform reads each selected
+exact object version and refuses a plan whose digest or handler-contract
+metadata differs. Legacy retained packages without that contract are not valid
+rollback selections for this five-function boundary.
 
 Terraform separates deployment from event-source activation. Artifact pairs
 create the Lambda functions and their trigger resources. The Boolean
