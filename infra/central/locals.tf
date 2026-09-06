@@ -21,6 +21,14 @@ locals {
   runtime_artifact_bucket_name = (
     var.runtime_artifact_bucket_name == null ? aws_s3_bucket.config.id : var.runtime_artifact_bucket_name
   )
+  runtime_entrypoints = [
+    "aws_public_change_feed.dispatcher_runtime.lambda_handler",
+    "aws_public_change_feed.recovery_runtime.lambda_handler",
+    "aws_public_change_feed.shadow_runtime.lambda_handler",
+    "aws_public_change_feed.slack_worker_runtime.lambda_handler",
+    "aws_public_change_feed.watcher_runtime.lambda_handler",
+  ]
+  runtime_entrypoints_sha256 = sha256(join("\u0000", local.runtime_entrypoints))
 
   secret_store = local.deployment.secret_store
 

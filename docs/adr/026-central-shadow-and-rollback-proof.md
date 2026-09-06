@@ -29,7 +29,7 @@ still permits an in-flight invocation or an EventBridge retry to finish.
 - Preserve ADR-019 promotion outcomes, including unattributed `409`
   convergence.
 
-## Proposed decision
+## Decision
 
 Deploy the L-42 shadow evaluator in the central root. It has no event source,
 uses fresh in-memory state, reads only the active pointer and its pinned release

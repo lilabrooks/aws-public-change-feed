@@ -2,6 +2,7 @@
 
 import hashlib
 import io
+import re
 import sys
 import tempfile
 import unittest
@@ -16,7 +17,22 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 from build_lambda_package import FIXED_ZIP_TIME, _archive_tree, _require_exact_lock, build  # noqa: E402
-from publish_lambda_artifact import publish  # noqa: E402
+from publish_lambda_artifact import (  # noqa: E402
+    RUNTIME_ENTRYPOINTS_METADATA_KEY,
+    RUNTIME_HANDLERS,
+    publish,
+    runtime_entrypoints_sha256,
+)
+
+
+def runtime_package_bytes(*, omit: str | None = None) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for handler in RUNTIME_HANDLERS:
+            path = f"{handler.rpartition('.')[0].replace('.', '/')}.py"
+            if path != omit:
+                archive.writestr(path, b"def lambda_handler(event, context):\n    return {}\n")
+    return buffer.getvalue()
 
 
 class FakePreconditionError(Exception):
@@ -25,9 +41,10 @@ class FakePreconditionError(Exception):
 
 
 class FakeS3:
-    def __init__(self, existing=False, metadata_digest=None, stored_body=None):
+    def __init__(self, existing=False, metadata_digest=None, metadata_entrypoints=None, stored_body=None):
         self.existing = existing
         self.metadata_digest = metadata_digest
+        self.metadata_entrypoints = metadata_entrypoints or runtime_entrypoints_sha256()
         self.stored_body = stored_body
         self.puts = []
 
@@ -38,13 +55,28 @@ class FakeS3:
         return {"VersionId": "new-version"}
 
     def head_object(self, **arguments):
-        return {"VersionId": "existing-version", "Metadata": {"sha256": self.metadata_digest}}
+        return {
+            "VersionId": "existing-version",
+            "Metadata": {
+                "sha256": self.metadata_digest,
+                RUNTIME_ENTRYPOINTS_METADATA_KEY: self.metadata_entrypoints,
+            },
+        }
 
     def get_object(self, **arguments):
         body = self.stored_body if self.existing and self.stored_body is not None else self.puts[0]["Body"]
         digest = hashlib.sha256(body).hexdigest()
         metadata = self.metadata_digest if self.existing else digest
-        return {"Body": io.BytesIO(body), "Metadata": {"sha256": metadata}}
+        entrypoints = (
+            self.metadata_entrypoints if self.existing else self.puts[0]["Metadata"][RUNTIME_ENTRYPOINTS_METADATA_KEY]
+        )
+        return {
+            "Body": io.BytesIO(body),
+            "Metadata": {
+                "sha256": metadata,
+                RUNTIME_ENTRYPOINTS_METADATA_KEY: entrypoints,
+            },
+        }
 
 
 class LambdaPackageTests(unittest.TestCase):
@@ -126,12 +158,23 @@ class LambdaPackageTests(unittest.TestCase):
                 with self.subTest(schema=schema):
                     self.assertIn(f"aws_public_change_feed/schemas/{schema}", names)
 
+    def test_publisher_and_terraform_bind_the_same_null_framed_handler_contract(self):
+        locals_source = (ROOT / "infra/central/locals.tf").read_text(encoding="utf-8")
+        block = locals_source.split("  runtime_entrypoints = [\n", 1)[1].split("\n  ]", 1)[0]
+        terraform_handlers = tuple(re.findall(r'^    "([^"]+)",$', block, flags=re.MULTILINE))
+
+        self.assertEqual(terraform_handlers, RUNTIME_HANDLERS)
+        self.assertIn('runtime_entrypoints_sha256 = sha256(join("\\u0000", local.runtime_entrypoints))', locals_source)
+        self.assertEqual(
+            runtime_entrypoints_sha256(), "8d934863e4305f466c8e4982215f37b48222fee3cb18635509fae7163156cf29"
+        )
+
 
 class ArtifactPublicationTests(unittest.TestCase):
     def test_new_package_uses_digest_key_and_if_none_match(self):
         with tempfile.TemporaryDirectory() as raw:
             package = Path(raw) / "worker.zip"
-            package.write_bytes(b"exact deployable bytes")
+            package.write_bytes(runtime_package_bytes())
             client = FakeS3()
 
             digest, key, version = publish(
@@ -145,12 +188,18 @@ class ArtifactPublicationTests(unittest.TestCase):
             self.assertEqual(key, f"apcf/application-artifacts/{digest}.zip")
             self.assertEqual(version, "new-version")
             self.assertEqual(client.puts[0]["IfNoneMatch"], "*")
-            self.assertEqual(client.puts[0]["Metadata"], {"sha256": digest})
+            self.assertEqual(
+                client.puts[0]["Metadata"],
+                {
+                    "sha256": digest,
+                    RUNTIME_ENTRYPOINTS_METADATA_KEY: runtime_entrypoints_sha256(),
+                },
+            )
 
     def test_existing_matching_package_is_adopted_without_replacement(self):
         with tempfile.TemporaryDirectory() as raw:
             package = Path(raw) / "worker.zip"
-            package.write_bytes(b"same bytes")
+            package.write_bytes(runtime_package_bytes())
             digest = hashlib.sha256(package.read_bytes()).hexdigest()
             client = FakeS3(existing=True, metadata_digest=digest)
 
@@ -167,10 +216,10 @@ class ArtifactPublicationTests(unittest.TestCase):
     def test_existing_key_without_matching_digest_metadata_is_refused(self):
         with tempfile.TemporaryDirectory() as raw:
             package = Path(raw) / "worker.zip"
-            package.write_bytes(b"same bytes")
+            package.write_bytes(runtime_package_bytes())
             client = FakeS3(existing=True, metadata_digest="0" * 64)
 
-            with self.assertRaisesRegex(RuntimeError, "matching package bytes"):
+            with self.assertRaisesRegex(RuntimeError, "matching package contract"):
                 publish(
                     client,
                     bucket="artifacts",
@@ -181,11 +230,42 @@ class ArtifactPublicationTests(unittest.TestCase):
     def test_existing_key_with_forged_metadata_but_other_bytes_is_refused(self):
         with tempfile.TemporaryDirectory() as raw:
             package = Path(raw) / "worker.zip"
-            package.write_bytes(b"expected bytes")
+            package.write_bytes(runtime_package_bytes())
             digest = hashlib.sha256(package.read_bytes()).hexdigest()
             client = FakeS3(existing=True, metadata_digest=digest, stored_body=b"other bytes")
 
-            with self.assertRaisesRegex(RuntimeError, "matching package bytes"):
+            with self.assertRaisesRegex(RuntimeError, "matching package contract"):
+                publish(
+                    client,
+                    bucket="artifacts",
+                    prefix="application-artifacts",
+                    package=package,
+                )
+
+    def test_package_missing_a_configured_handler_is_refused_before_upload(self):
+        with tempfile.TemporaryDirectory() as raw:
+            package = Path(raw) / "worker.zip"
+            package.write_bytes(runtime_package_bytes(omit="aws_public_change_feed/shadow_runtime.py"))
+            client = FakeS3()
+
+            with self.assertRaisesRegex(ValueError, "shadow_runtime.py"):
+                publish(
+                    client,
+                    bucket="artifacts",
+                    prefix="application-artifacts",
+                    package=package,
+                )
+
+            self.assertEqual(client.puts, [])
+
+    def test_existing_package_without_the_entrypoint_contract_is_refused(self):
+        with tempfile.TemporaryDirectory() as raw:
+            package = Path(raw) / "worker.zip"
+            package.write_bytes(runtime_package_bytes())
+            digest = hashlib.sha256(package.read_bytes()).hexdigest()
+            client = FakeS3(existing=True, metadata_digest=digest, metadata_entrypoints="missing")
+
+            with self.assertRaisesRegex(RuntimeError, "matching package contract"):
                 publish(
                     client,
                     bucket="artifacts",
@@ -210,7 +290,7 @@ class MotoArtifactPublicationTests(unittest.TestCase):
     def test_real_request_shape_creates_then_adopts_one_exact_version(self):
         with tempfile.TemporaryDirectory() as raw:
             package = Path(raw) / "worker.zip"
-            package.write_bytes(b"deployable package")
+            package.write_bytes(runtime_package_bytes())
 
             first = publish(
                 self.client,

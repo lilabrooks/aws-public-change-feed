@@ -41,6 +41,7 @@ resource "aws_lambda_function" "watcher" {
     aws_cloudwatch_log_group.watcher,
     aws_iam_role_policy.feed_watcher,
     aws_iam_role_policy.watcher_logs,
+    terraform_data.shared_runtime_artifact_guard,
   ]
 
   tags = local.tags
@@ -84,6 +85,7 @@ resource "aws_lambda_function" "shadow_evaluator" {
     aws_cloudwatch_log_group.shadow,
     aws_iam_role_policy.shadow_evaluator,
     aws_iam_role_policy.shadow_logs,
+    terraform_data.shared_runtime_artifact_guard,
   ]
 
   tags = local.tags
@@ -166,6 +168,7 @@ resource "aws_lambda_function" "dispatcher" {
     aws_cloudwatch_log_group.dispatcher,
     aws_iam_role_policy.outbox_dispatcher,
     aws_iam_role_policy.dispatcher_logs,
+    terraform_data.shared_runtime_artifact_guard,
   ]
 
   tags = local.tags
@@ -247,6 +250,7 @@ resource "aws_lambda_function" "slack_worker" {
     aws_cloudwatch_log_group.worker,
     aws_iam_role_policy.slack_worker,
     aws_iam_role_policy.worker_logs,
+    terraform_data.shared_runtime_artifact_guard,
   ]
 
   tags = local.tags
@@ -302,6 +306,7 @@ resource "aws_lambda_function" "reconciler" {
     aws_cloudwatch_log_group.reconciler,
     aws_iam_role_policy.recovery_reconciler,
     aws_iam_role_policy.reconciler_logs,
+    terraform_data.reconciler_runtime_artifact_guard,
   ]
 
   tags = local.tags

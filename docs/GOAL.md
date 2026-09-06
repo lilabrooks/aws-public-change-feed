@@ -113,9 +113,15 @@ publisher command now previews and applies an exact retained-pointer rollback,
 then supports forward restoration from the former active VersionId through the
 same path. Local tests cover identity inversion, no durable client construction,
 stale rollback plans, rollback, forward restoration, and compatibility probing.
-The owner accepted ADR-026 on 2026-09-05. No live shadow invocation,
-configuration rollback, or application rollback has run, so L-42 and
-production readiness remain open.
+The owner accepted ADR-026 on 2026-09-05. The first live shadow invocation that
+day reached the scoped invoker but failed before handler entry: the deployed
+exact package predated `shadow_runtime.py`. Read-back found no source-state,
+delivery, or raw-snapshot change, and the fixed attempt was not repeated. The
+exercise stopped with a failed disposition. Package publication and Terraform
+now define a configured-handler metadata guard; that remediation still needs a
+reviewed deployment and a fresh, separately authorized exercise. No
+configuration or application rollback has run, so L-42 and production
+readiness remain open.
 
 **M3 data recovery.** The owner selected PITR for both DynamoDB tables with a
 35-day recovery period, a 5-minute recovery-point target, and a 4-hour operator
