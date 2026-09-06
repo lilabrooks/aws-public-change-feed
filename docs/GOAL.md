@@ -136,10 +136,29 @@ through a new exact pointer version and passed its compatibility probe. Its one
 shadow sample again normalized 240 items and produced the same 8 candidates and
 candidate-identity digest. A preview-only retained-source replay resolved a
 pre-exercise snapshot, pointer VersionId, exact release objects, and all four
-existing candidate and delivery records without applying replay. The pointer
-currently names the retained release, all runtimes remain stopped, and exact
-forward restoration is previewed but unrun. Application rollback has not run,
-so L-42 and production readiness remain open.
+existing candidate and delivery records without applying replay.
+
+Forward restoration then returned the pointer to release
+`8527e2b44432e565b968d869f941cc4a90ce33fbe7376401f5489306e6027ef8`
+through VersionId `HJbvljTXyq.N1mExbfOiNn2Sv3vQnm5s`. A third shadow sample,
+invocation ID `81a39324-9062-4b80-b3aa-d52c9454b430`, reproduced the same 240
+items, 8 candidates, and candidate digest while another complete durable-state
+comparison remained unchanged. The reviewed resume plan restored all four
+triggers and watcher concurrency, created the seven missing alarms, and kept
+the remediated application package on every Lambda. All 28 alarms reached
+`OK`, and the final Terraform plan reported no changes.
+
+The exact-version audit found nine retained application packages. Eight lacked
+the shadow module and configured-handler metadata; only the currently deployed
+package satisfied ADR-026's accepted five-function boundary. No distinct
+eligible predecessor therefore existed at preflight, so application rollback
+was not attempted. L-42 ends with the bounded `incomplete` disposition allowed
+by its issue contract. The [public evidence
+record](evidence/l42-shadow-and-rollback-2026-09-06.md) binds the public facts to
+the restricted evidence manifest. L-52 owns artifact provenance and callable
+entrypoint proof, L-53 owns the application rollback boundary decision, and
+L-54 owns the live proof with a genuine successor. M3 remains open through
+those successors, the post-M2 gate, and final status reconciliation.
 
 **M3 data recovery.** The owner selected PITR for both DynamoDB tables with a
 35-day recovery period, a 5-minute recovery-point target, and a 4-hour operator
