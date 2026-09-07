@@ -72,7 +72,7 @@ variable "enable_dynamodb_point_in_time_recovery" {
 }
 
 variable "tags" {
-  description = "Tags applied to isolated resources."
+  description = "Supplementary isolated-resource tags. The central module fixes project, deployment_id, managed_by, and component."
   type        = map(string)
   default = {
     project   = "aws-public-change-feed"

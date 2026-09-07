@@ -1,9 +1,3 @@
-locals {
-  common_alarm_tags = {
-    deployment_id = local.deployment_id
-  }
-}
-
 resource "aws_cloudwatch_metric_alarm" "delivery_queue_age" {
   count = local.monitoring_enabled ? 1 : 0
 

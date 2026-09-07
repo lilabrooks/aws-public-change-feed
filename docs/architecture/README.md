@@ -88,6 +88,13 @@ plans. The [runbook deployment record](../runbooks/live-window.md#initial-deploy
 states the exact evidence boundary. Live interruption/cleanup, build-role
 execution, notification receipt, and eligible closeout remain unproved.
 
+The [resource-tag policy](specification/05-security-and-operations.md#resource-ownership-and-cost-tags)
+groups supported Terraform resources by project, deployment, management, and
+component. Static tags cover retained infrastructure and recreated alarms;
+provider exceptions are schema-checked. Tagging maintenance and billing
+activation are separate from park/unpark and do not establish shutdown or
+complete cost attribution.
+
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 
 ## Machine-readable architecture

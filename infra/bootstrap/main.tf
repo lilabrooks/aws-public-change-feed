@@ -10,7 +10,7 @@ locals {
 resource "aws_s3_bucket" "state" {
   bucket        = local.bucket_name
   force_destroy = false
-  tags          = var.tags
+  tags          = local.tags
 }
 
 resource "aws_s3_bucket_versioning" "state" {

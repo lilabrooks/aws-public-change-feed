@@ -2,7 +2,7 @@ resource "aws_secretsmanager_secret" "slack_credentials" {
   count = local.secret_store == "secrets_manager" ? length(local.slack_secret_ids) : 0
 
   name = local.slack_secret_ids[count.index]
-  tags = local.tags
+  tags = local.storage_tags
 }
 
 resource "aws_ssm_parameter" "slack_credentials" {
@@ -16,5 +16,5 @@ resource "aws_ssm_parameter" "slack_credentials" {
     ignore_changes = [value]
   }
 
-  tags = local.tags
+  tags = local.storage_tags
 }

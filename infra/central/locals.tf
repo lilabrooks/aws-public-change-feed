@@ -4,8 +4,6 @@ locals {
   deployment_id = local.deployment.deployment_id
   region        = local.deployment.deployment_region
 
-  tags = merge(var.tags, { deployment_id = local.deployment_id })
-
   config_bucket_name  = local.deployment.config_bucket_name
   release_prefix      = local.deployment.release_prefix
   active_versions_key = local.deployment.active_versions_object_key

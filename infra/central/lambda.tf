@@ -264,6 +264,7 @@ resource "aws_lambda_event_source_mapping" "slack_worker" {
   batch_size                         = local.worker_batch_size
   maximum_batching_window_in_seconds = local.worker_batch_window_seconds
   enabled                            = local.worker_trigger_enabled
+  tags                               = local.tags
 
   function_response_types = ["ReportBatchItemFailures"]
 
