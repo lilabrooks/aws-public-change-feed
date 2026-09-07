@@ -58,20 +58,24 @@ Slack carries the generated feed. It is not the source of truth for candidates o
 
 - [x] Define product scope, decisions, schemas, examples, semantic validation, and regression tests.
 - [x] Build a historical announcement corpus and matching evaluation harness. Verify precision and recall targets per service and risk type, negative examples, edited announcements, overlapping feeds, missing publication dates, and deterministic replay.
-- [ ] Implement immutable release publishing and promotion. Verify hashes, exact object versions, compare-and-swap promotion, rollback, concurrent publishers, retention, and incompatible-version rejection.
-- [ ] Implement safe feed acquisition and source state. Verify host allowlisting, DNS/IP controls, TLS, no redirects, response and parser limits, validators, partial feed failures, provenance coalescing, raw snapshots, checkpoints, and per-feed freshness alarms.
-- [ ] Implement matching, profile mapping, candidate construction, and the durable outbox. Verify route isolation, sorted environment IDs, distinct service/risk evidence, revisions, provenance-only updates, identity vectors, candidate limits, and atomic checkpoint rules.
-- [ ] Implement dispatch, SQS FIFO transport, Slack delivery, and reconciliation. Verify message groups, dispatch dedupe, leases, destination pacing, retry classes, `Retry-After`, network-attempt accounting, every delivery state, crash boundaries, unknown outcomes, manual replay, and DLQ recovery. Publish the rendered sample named in the deliverables from that same renderer, so the documented message cannot drift from the one Slack receives.
-- [ ] Implement `infra/bootstrap` and `infra/central`. Verify remote-state permissions, native lockfile use, provider locks, encryption, IAM boundaries, schedules, indexes, TTL, alarms, and reproducible packages.
-- [ ] Complete production preflight and operational validation. Verify every destination, notification subscription, corpus quality, feed freshness, declared load envelope, dashboards, backup and restore where configured, shadow mode, rollback, and runbook exercises.
+- [x] Implement immutable release publishing and promotion. Verify hashes, exact object versions, compare-and-swap promotion, rollback, concurrent publishers, retention, and incompatible-version rejection.
+- [x] Implement safe feed acquisition and source state. Verify host allowlisting, DNS/IP controls, TLS, no redirects, response and parser limits, validators, partial feed failures, provenance coalescing, raw snapshots, checkpoints, and per-feed freshness alarms.
+- [x] Implement matching, profile mapping, candidate construction, and the durable outbox. Verify route isolation, sorted environment IDs, distinct service/risk evidence, revisions, provenance-only updates, identity vectors, candidate limits, and atomic checkpoint rules.
+- [x] Implement dispatch, SQS FIFO transport, Slack delivery, and reconciliation. Verify message groups, dispatch dedupe, leases, destination pacing, retry classes, `Retry-After`, network-attempt accounting, every delivery state, crash boundaries, unknown outcomes, manual replay, and DLQ recovery. Publish the rendered sample named in the deliverables from that same renderer, so the documented message cannot drift from the one Slack receives.
+- [x] Implement `infra/bootstrap` and `infra/central`. Verify remote-state permissions, native lockfile use, provider locks, encryption, IAM boundaries, schedules, indexes, TTL, alarms, and reproducible packages.
+- [x] Complete production preflight and operational validation. Verify every destination, notification subscription, corpus quality, feed freshness, declared load envelope, dashboards, backup and restore where configured, shadow mode, rollback, and runbook exercises.
 
 ## Current state
 
-A milestone is checked only when its whole verification list holds. Several unchecked milestones carry substantial working code, so this section records where each one actually stands. The repository's full check target runs the test suite, and the committed corpus scores precision 1.000 and recall 1.000 across 29 true positives.
+A milestone is checked only when its whole verification list holds. All eight
+implementation milestones now have their required source, deployment, and
+evidence at the exact boundaries stated below. The repository's full check
+target runs the test suite, and the committed corpus scores precision 1.000
+and recall 1.000 across 29 true positives.
 
 **Corpus and evaluation harness.** Complete. `corpus/announcements.json` holds 47 labeled announcements, 26 of them negative examples, with 29 expected positive matches. `src/evaluation.py` reports precision and recall per service and risk type. Edited announcements, overlapping feeds, missing publication dates, and deterministic replay are covered by tests. `corpus/thresholds.json` sets global floors only, and the harness already supports per-pair overrides. The observed counts do not justify those overrides: four of the ten pairs with any positive carry only one or two true positives. ADR-018's accepted 2026-09-06 revision requires a reviewed disposition for every enabled pair, reports recall as undefined where no labeled positive exists, and retains the global floors and explicit revisit triggers. It does not extend the sample merely to obtain a positive.
 
-The repository owner selected the current 4-feed, 3-service, 4-risk-rule policy unchanged for production preflight on 2026-09-01. The [production policy evidence](evidence/production-policy.md) expands the review to all 12 configured service and risk-type pairs: 6 have no historical positive, 4 have one, and the remaining 2 have two and seven. Those limits remain explicit, the global floors still govern promotion, and production readiness remains open for the rest of M3.
+The repository owner selected the current 4-feed, 3-service, 4-risk-rule policy unchanged for production preflight on 2026-09-01. The [production policy evidence](evidence/production-policy.md) expands the review to all 12 configured service and risk-type pairs: 6 have no historical positive, 4 have one, and the remaining 2 have two and seven. Those limits remain explicit, the global floors still govern promotion, and L-43 accepted them within the passing M3 result.
 
 **Immutable release publishing and promotion.** The write half is implemented. `src/releases.py` publishes both release objects with `If-None-Match: *`, verifies each by exact-version read-back, and compare-and-swaps the active pointer with `If-Match`, keeping ADR-019's 412, 409, and 404 outcomes distinct. A test rebuilds `examples/active-versions.json` from the committed configuration and inventory bytes, so the publisher is bound to the contract rather than to itself. `scripts/publish_release.py` supplies the clean-checkout operator boundary: it generates inventory version 3 from reviewed deployment input, checks captured Terraform bucket and prefix outputs, validates the deployment/configuration/inventory bundle before any S3 write, previews one canonical plan, applies only unchanged plan bytes and pointer state, and requires the compatibility probe before reporting completion. Injected-store and moto tests cover first promotion, matching adoption, stale inputs and pointer state, 412, both 409 results, 404, and failed probing. The command has now run against the dev bucket under the exact release-publisher role. It promoted release `6188e8d27ca14a9dbe898f8551f69a4813162cf8af9aef1d09461560cd8f4a9e`, read the active pointer and both release objects back by exact version, and passed the runtime compatibility probe. That step proved the first active dev release. The later D0 evidence below proves the watcher, dispatcher, and worker deployment plus one controlled real delivery. The read half loads the pointer, fetches the exact versions it pins, verifies their hashes, recomputes the release ID from those hashes, validates the fetched bodies against their owned schemas, and binds each document's internal version to the pointer claim. That is chapter 03's step-8 compatibility probe and the milestone's incompatible-version rejection. Rollback verifies a retained pointer version and writes its references forward through the same `If-Match` path, and every proposed promotion must record a parseable time after the pointer it replaces, which is what keeps a later write from reproducing a retained version's ETag. The forward-time revision is accepted as of 2026-08-09; an observed malformed timestamp remains replaceable so corrupt state can be repaired. Manifest retention is handled by the lifecycle rule on `infra/central`'s config bucket, which keeps `minimum_retained_releases` noncurrent versions of `active-versions.json` past `manifest_noncurrent_version_expiration_days`. `scripts/retire_config_releases.py` now supplies the missing retirement step. It binds a complete exact-version inventory and all retained manifest references into one canonical plan, protects additional release IDs declared for retained evidence, applies the 400-day and newest-10 floors, and deletes only exact ETag-bound versions after an unchanged recheck. A partial two-object deletion can resume only from that same plan when the fresh inventory proves no other drift. The release-publisher role can list versions for the exact manifest key and release prefix and delete versions only under the release prefix. The command has local simulated coverage; no live release retirement has run. The concurrent-promotion suite is now built and has run against the real bucket. ADR-019's testing revision, accepted 2026-08-07, puts the suite's bucket (`apcf-concurrency-dev`), its scoped identity (`apcf_concurrency_test`), and the prefix-expiring lifecycle rule in `infra/bootstrap`; `tests/test_s3_real_bucket.py` then runs the ADR-019 clauses a single request can express against S3 through the real `S3ObjectStore`, plus the headline assertion twelve publishers released against one observed ETag produce exactly one winner and eleven `412`s`. It passed four runs under the scoped identity on 2026-08-07, so milestone 2's "concurrent publishers" item now carries real-bucket evidence; the `409` branch remains unverified, which is a property of the outcome rather than a gap in effort. Access keys for the identity are created per run and deleted afterward, never committed.
 
@@ -99,7 +103,8 @@ The watcher, dispatcher, worker, and recovery reconciler are deployed with the
 exact package and their source-defined triggers are enabled. The 12-message
 public-feed cohort reached Slack and durable `posted`; the isolated recovery and
 fixed-load exercises passed; and the owner confirmed the alarm notification.
-Production preflight and separately authorized retirement exercises remain open.
+The L-43 production preflight has passed. Retirement commands remain
+separately authorized operator actions and were not required for that result.
 
 **M3 shadow and rollback proof.** The source now contains a direct-invocation
 shadow evaluator that loads the exact active release and runs the production
@@ -107,8 +112,9 @@ fetch, parse, normalize, match, route, candidate, and durability orchestration
 against fresh in-memory stores. Terraform gives it the watcher's exact package
 and network policy but only release-read and log permissions. A separate role
 can invoke only that function, and fixed refusal codes survive the Lambda
-boundary. Accepted ADR-026 stops all durable runtimes and sets watcher reserved
-concurrency to zero before either rollback path. The release
+boundary. Accepted ADR-026 stops all durable runtimes and sets reserved
+concurrency to zero for watcher, dispatcher, worker, and reconciler before
+either rollback path. The release
 publisher command now previews and applies an exact retained-pointer rollback,
 then supports forward restoration from the former active VersionId through the
 same path. Local tests cover identity inversion, no durable client construction,
@@ -192,11 +198,13 @@ Terraform plan had no changes.
 
 The [M3 readiness assessment](evidence/m3-production-readiness-assessment-2026-09-06.md)
 uses that result for the actual one-environment, one-destination, four-feed,
-three-service, four-rule deployment and its 300-delivery/hour envelope. It
-remains `incomplete` until the final source candidate is published, required CI
-passes, and the authorized L-43 and L-44 status records are reconciled. M3 can
-close successfully only after L-43 records `passed`; a completed `failed` or
-`incomplete` attempt is evidence, not production readiness.
+three-service, four-rule deployment and its 300-delivery/hour envelope. Final
+candidate `91f8db0e9b1f6cd6a1889face54589feaef295c0` passed every required
+check in PR #196 and merged to `main` as
+`5fc0dd2809fd6e256ee70508b52e8399fce803a3`. The owner accepted L-43's
+terminal `passed` disposition on 2026-09-07. M3 is production-ready within the
+assessment's recorded limits; L-42 remains a completed `incomplete` attempt
+rather than being rewritten as a pass.
 
 **M3 data recovery.** The owner selected PITR for both DynamoDB tables with a
 35-day recovery period, a 5-minute recovery-point target, and a 4-hour operator
@@ -220,8 +228,8 @@ restored pair; rollback returned them to the primary pair with no inventory
 change. All four triggers, watcher concurrency, and seven relevant alarms were
 restored inside the 4-hour boundary, and the final Terraform plan
 reported no changes. The four disposable restore tables from the successful
-and superseded attempts were deleted and confirmed absent. L-41 is complete;
-this dev proof does not complete the later production gate.
+and superseded attempts were deleted and confirmed absent. L-41 is complete,
+and L-43 accepted this bounded result as the recovery evidence for M3.
 
 L-49 now binds recovery plan, evidence, and inventory digests to independent
 known-answer tests. L-50 is also complete. The owner authorized saved central
@@ -232,9 +240,20 @@ both tables `ACTIVE` with protection enabled, and a fresh central plan reported
 no changes. The isolated preflight plan still creates both tables with
 protection disabled, preserving reviewed teardown.
 
-**Production preflight.** Not started, and blocked on the milestones above.
+**Production preflight.** Complete. L-43's evidence matrix compares every
+applicable criterion with its baseline and intervening changes. The exact
+reviewed dev deployment passed its targeted live checks, evidence-reuse
+decisions, final source validation, and required CI. This is not evidence for
+repository-supported ceilings, another deployment, service on restored tables,
+historical positives that do not exist, or exactly-once Slack delivery.
 
-No box is one edit away. The corpus one looks closest and is not: its remaining gap is labelled depth in the thin pairs rather than a threshold setting. The watcher, dispatcher, worker, and reconciler slices now have source-defined handlers, metrics, packaging, and conditional Terraform resources. Found-post reconciliation, unknown-outcome replay, exact terminal replay, and native delivery-DLQ redrive have preview-first operator commands. The canonical Slack sample now comes from the delivery renderer. Persistent feed and delivery operation, recovery, load, and alarm evidence are complete; production preflight remains open.
+The watcher, dispatcher, worker, and reconciler have source-defined handlers,
+metrics, packaging, and Terraform resources. Found-post reconciliation,
+unknown-outcome replay, exact terminal replay, and native delivery-DLQ redrive
+have preview-first operator commands. The canonical Slack sample comes from
+the delivery renderer. Persistent feed and delivery operation, recovery, load,
+alarm, rollback, and final production-readiness evidence are complete at their
+recorded boundaries.
 
 ## Completion criteria
 

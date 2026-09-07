@@ -26,8 +26,8 @@ is complete. Independent recovery digest vectors are now covered by tests, and
 the central source enables deletion protection on both primary tables while
 leaving preflight tables disposable. The exact L-50 plan changed only those two
 tables in place; owner-authorized apply, direct enabled readback, and a no-change
-central plan completed on 2026-09-05. M3 and its later production gate remain
-open pending the final source candidate and required CI.
+central plan completed on 2026-09-05. The later M3 gate accepted that bounded
+recovery claim; it does not claim service operation on restored tables.
 
 Accepted ADR-029 defines L-52's package-provenance repair. It keeps volatile
 build attestations outside package identity, adds a stable in-archive input
@@ -39,8 +39,12 @@ all four durable executors. The L-54 application-only exercise passed the exact
 five-function rollback and forward restoration, stopped-state comparison,
 normal scheduled observation, and final Terraform convergence. Its [public
 record](../evidence/l54-application-rollback-2026-09-07.md) binds that result.
-M3 remains open until the L-43 final source and CI gate passes and L-44 records
-the resulting status consistently.
+Final candidate `91f8db0e9b1f6cd6a1889face54589feaef295c0`
+passed every required check in PR #196. The repository owner accepted L-43's
+terminal `passed` disposition on 2026-09-07. M3 is production-ready for the
+exact one-environment, one-destination, four-feed, three-service, four-rule dev
+deployment and its 300-delivery/hour envelope, subject to the limits retained
+in the readiness assessment.
 
 ## Architecture decision records
 

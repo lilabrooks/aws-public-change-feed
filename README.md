@@ -22,7 +22,7 @@ GitHub Issues and milestones hold the current backlog state.
 | [D0: first live Slack delivery](https://github.com/lilabrooks/aws-public-change-feed/milestone/1) | Closed | Send one real public AWS announcement through the deployed dev service and record the Slack result. |
 | [M1: dev MVP](https://github.com/lilabrooks/aws-public-change-feed/milestone/2) | Closed | Run the dev service on schedule and exercise delivery, recovery, the fixed load case, and alarm notification. |
 | [M2: lifecycle and replay](https://github.com/lilabrooks/aws-public-change-feed/milestone/3) | Closed | Set expiry and retirement rules for feed state and releases, add saved-response replay, and fix named recovery failures. |
-| [M3: production-readiness proof](https://github.com/lilabrooks/aws-public-change-feed/milestone/4) | Open | Choose production policy and recovery targets, prove rollback, then run the production-readiness gate. |
+| [M3: production-readiness proof](https://github.com/lilabrooks/aws-public-change-feed/milestone/4) | Closed | The exact reviewed dev deployment passed its production-readiness gate for one environment, one destination, four feeds, three services, four risk rules, and the 300-delivery/hour envelope. |
 
 ### D0: first live Slack delivery
 
@@ -60,16 +60,18 @@ M2 set rules for old feed data, removed feeds, saved responses, and known recove
 
 ### M3: production-readiness proof
 
-M3 decides whether the current service and deployment are ready for production.
+M3 established production readiness for the exact reviewed service and dev
+deployment. Repository-supported ceilings and a different deployment remain
+outside this evidence claim.
 
 - [L-40](https://github.com/lilabrooks/aws-public-change-feed/issues/145) selected the current 4-feed, 3-service, 4-risk-rule policy unchanged for production preflight. Its [evidence record](docs/evidence/production-policy.md) retains all 12 service and risk-type pairs, including 6 with no historical positive, and keeps the global thresholds without inventing pair-specific floors.
 - [L-41](https://github.com/lilabrooks/aws-public-change-feed/issues/146) has complete operational evidence for ADR-027 and ADR-028. The successful dev proof restored both DynamoDB tables from one evidence-bound point, measured a 298-second recovery point against the 5-minute target, verified both complete inventories and required settings, moved every runtime reference to the restored pair with triggers disabled, rolled back to the primary pair, and restored all four triggers within the 4-hour recovery-time boundary. All seven relevant alarms returned to `OK`, the final Terraform plan reported no changes, and all four disposable restore tables from both attempts were deleted and confirmed absent. Its accepted limit is stopped restore and primary-table restart, not service operation on restored tables.
 - [L-42](https://github.com/lilabrooks/aws-public-change-feed/issues/147) ended with the bounded `incomplete` disposition permitted by its issue contract. Its [public evidence record](docs/evidence/l42-shadow-and-rollback-2026-09-06.md) binds the reviewed plans, invocations, state comparisons, and restricted evidence manifest. The shadow evaluator passed three identity refusals and three valid samples across the forward, rolled-back, and restored configurations. Each valid sample normalized 240 items and produced the same 8 candidates and candidate digest without changing source-state, delivery, or raw-snapshot state. Configuration rollback and restoration passed. Application rollback did not run because no distinct eligible predecessor existed at that point.
 - [L-54](https://github.com/lilabrooks/aws-public-change-feed/issues/191) now has a [passing application-rollback record](docs/evidence/l54-application-rollback-2026-09-07.md). The qualified `c88b49c8…` predecessor and genuine `1ae996ca…` successor each passed an exact five-function transition and bounded shadow check while all durable execution was stopped. The stopped-state comparison matched, the original concurrency and four triggers were restored, one fixed natural scheduled window passed, all 28 alarms reached `OK`, and Terraform converged with no changes.
-- [L-43](https://github.com/lilabrooks/aws-public-change-feed/issues/148) has resolved the live evidence checks for the exact reviewed dev deployment and reused earlier notification, Slack, capacity, corpus, and recovery evidence only where the mechanism comparison supported it. Its disposition remains `incomplete` until the final source candidate is published and required CI passes.
-- [L-44](https://github.com/lilabrooks/aws-public-change-feed/issues/149) keeps M3 open until that final L-43 gate passes and the goal, architecture status, README, public site, and GitHub records all report the same result.
+- [L-43](https://github.com/lilabrooks/aws-public-change-feed/issues/148) resolved every applicable criterion for the exact reviewed dev deployment and reused earlier notification, Slack, capacity, corpus, and recovery evidence only where the mechanism comparison supported it. Final candidate `91f8db0e9b1f6cd6a1889face54589feaef295c0` passed all required checks in [PR #196](https://github.com/lilabrooks/aws-public-change-feed/pull/196), and the owner accepted the terminal disposition `passed`.
+- [L-44](https://github.com/lilabrooks/aws-public-change-feed/issues/149) reconciles that result across the goal, architecture status, README, public site, evidence record, GitHub issues, and M3 milestone. The recorded limits remain part of the passing result.
 
-See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issues) for the current work queue. The [goal](docs/GOAL.md) defines product scope and completion criteria; its long-form status will be reconciled after the production gate.
+See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issues) for the current work queue. The [goal](docs/GOAL.md) defines product scope, completion criteria, evidence, and the limits of the passing production-readiness result.
 
 ## MVP walkthrough
 

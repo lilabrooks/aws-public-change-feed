@@ -85,4 +85,18 @@ The canonical deployment declares 100 accounts as metadata, 500 environments, 25
 
 ## Current status
 
-The architecture, contracts, examples, validators, and tests are present. The Terraform data plane is provisioned. The watcher, regular dispatcher, Slack worker, and recovery reconciler have conditional Lambda composition roots and service-mock coverage; none of those new runtimes has been applied from this source. Operator recovery tools, load evidence, and production preflight remain implementation milestones. Acceptance language distinguishes source validation from deployed evidence.
+The architecture, contracts, examples, validators, tests, and both Terraform
+roots are implemented. The watcher, dispatcher, Slack worker, recovery
+reconciler, and isolated shadow evaluator are deployed in the persistent dev
+environment with their source-defined controls. D0, M1, M2, and M3 are
+complete. L-43 records production readiness for the exact reviewed
+one-environment, one-destination, four-feed, three-service, four-rule deployment
+and its 300-delivery/hour envelope.
+
+That result retains its evidence limits. Six of 12 enabled service and risk
+pairs have no historical positive. Slack delivery remains at-least-once with
+an explicit `delivery_unknown` state. The recovery proof covers stopped restore,
+rollback, and restart on the primary tables, not live service on restored data.
+Only the fixed qualified predecessor and current successor are established
+application rollback targets. Repository-supported scale ceilings and another
+deployment require their own evidence.
