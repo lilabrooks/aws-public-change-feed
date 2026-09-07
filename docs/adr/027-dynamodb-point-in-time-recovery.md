@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-03
 - Owner: Lila Brooks
+- Revision accepted: 2026-09-06
 - Relates to: [ADR-007](007-central-slack-delivery-queue-and-worker.md), [ADR-016](016-production-preflight-and-event-contracts.md), [ADR-025](025-source-state-and-response-page-retirement.md)
 
 [ADR-028](028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md)
@@ -210,6 +211,24 @@ topology: every trigger request remains disabled while a recovery input is
 selected. Promoting a restored pair to live incident service would require a
 separate accepted decision and a guard change; ADR-027 does not authorize that
 transition.
+
+## Accepted 2026-09-06 revision: production-readiness recovery claim
+
+The repository owner accepted this revision on 2026-09-06.
+
+For the exact production-like dev deployment, M3 may count the completed L-41
+proof as evidence of data restoration, verified disabled runtime binding,
+rollback to the primary pair, and service restart on the primary pair. The
+readiness claim must name that boundary. It cannot claim that service resumed
+on restored data or that primary-table corruption was repaired within four
+hours.
+
+Live service on a restored pair remains outside M3. Adding that promise needs a
+separate accepted incident-promotion decision covering ownership of the
+restored tables, review of `queued`, `sending`, and `delivery_unknown` records,
+transport reconstruction, the resume boundary, and reconciliation before any
+return to the original pair. The existing L-41 exercise should not be repeated
+to prove its same stopped topology.
 
 ## Failure semantics
 

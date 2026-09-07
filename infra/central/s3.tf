@@ -14,12 +14,15 @@ resource "aws_s3_bucket" "config" {
             var.worker_trigger_enabled_override == null
             ) || (
             var.enable_dynamodb_point_in_time_recovery &&
-            var.watcher_execution_paused &&
             !var.delivery_triggers_enabled &&
             !var.reconciler_trigger_enabled &&
             var.watcher_trigger_enabled_override == false &&
             var.dispatcher_trigger_enabled_override == false &&
-            var.worker_trigger_enabled_override != null
+            var.worker_trigger_enabled_override != null &&
+            (
+              (var.worker_trigger_enabled_override && !var.watcher_execution_paused) ||
+              (!var.worker_trigger_enabled_override && var.watcher_execution_paused)
+            )
           )
         )
       )
@@ -33,9 +36,16 @@ resource "aws_s3_bucket" "config" {
 
     precondition {
       condition = !var.watcher_execution_paused || (
-        local.watcher_runtime_enabled && !local.watcher_trigger_enabled
+        local.watcher_runtime_enabled &&
+        local.dispatcher_runtime_enabled &&
+        local.worker_runtime_enabled &&
+        local.reconciler_runtime_enabled &&
+        !local.watcher_trigger_enabled &&
+        !local.dispatcher_trigger_enabled &&
+        !local.worker_trigger_enabled &&
+        !local.reconciler_trigger_enabled
       )
-      error_message = "watcher_execution_paused requires a deployed watcher with its trigger disabled."
+      error_message = "watcher_execution_paused requires all four durable executors deployed with their triggers disabled."
     }
   }
 }

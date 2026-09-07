@@ -3,6 +3,8 @@
 - Status: Accepted
 - Date: 2026-09-05
 - Owner: Lila Brooks
+- Revision accepted: 2026-09-06
+- Application-only revision accepted: 2026-09-06
 - Relates to: [ADR-019](019-s3-preconditions-for-release-publication-and-promotion.md), [ADR-020](020-exact-application-version-gate-for-delivery.md), [ADR-024](024-isolated-live-runtime-exercises.md)
 
 ## Context
@@ -142,6 +144,123 @@ ADR-029 now governs package provenance and target handler evidence for new
 packages. L-53 still decides how that evidence changes rollback eligibility and
 whether the exact checksum-less `c88b49c8...` package receives a bounded legacy
 exception. This decision does not grant that exception.
+
+## Accepted 2026-09-06 revision: L-53 rollback eligibility and quiescence
+
+The repository owner accepted this revision on 2026-09-06. Live rollout and
+rollback still require their separate exact-action authorizations.
+
+Keep the five-function package boundary for the current handlers. Grant a
+legacy checksum exception only to package digest
+`c88b49c8f070f1cb808ac005cbe28b484c14be7b29f50a34e21ef3a7ca85ccbd`
+at S3 VersionId `QXNwt_NBIqp0pNKVFalwbZ72587h.GCc`. Before downtime, read
+those exact object bytes, recompute the digest, reject unsafe archive members,
+match the complete owned source tree to revision
+`bb6add6e881249d75b4b7243e4def9528be23a47`, validate all five handler
+declarations, and pass the existing Linux Python 3.12 x86_64 import gate
+without changing the ZIP. The L-42 record supplies prior-deployment evidence;
+current Lambda read-back must confirm the same package pair. Any failure stops
+before service pause.
+
+Every other worker/shared-runtime or reconciler selection must provide the S3
+SHA-256 checksum and pass exact checksum read-back. There is no nullable general
+exception, handler-digest allowlist, or legacy publisher. The retirement role
+must carry an explicit deny for the fixed legacy digest key. The old VersionId
+is non-restorable after deletion; separately authorized recovery of identical
+bytes would create a different VersionId and would require a new decision.
+
+After acquisition and scheduling stop and the worker drains, disable its event
+source and set reserved concurrency to zero for watcher, dispatcher, worker,
+and reconciler. Read back all four disabled triggers and all four zero
+concurrency values, then wait the longest active-invocation timeout. Keep the
+shadow evaluator callable at concurrency one. Preserve this state through
+rollback and forward restoration. Restore the original concurrency values and
+trigger states only after the forward package and references pass read-back.
+
+Rollback eligibility is distinct from historical replay availability. The
+archived L-42 snapshot records 15 posted deliveries and no actionable work, so
+its three older package references do not prove stranded delivery. It also
+does not qualify those packages for current Terraform deployment. L-53 does
+not grant blanket replay support to old packages. A current actionable record
+whose exact package is unavailable remains unchanged under ADR-020's
+`artifact_unavailable` path and needs an explicit restoration or manual-closure
+decision.
+
+The alternatives were a four-durable-function rollback with shadow still on
+forward code, an independent shadow artifact pair, or making the old package
+ineligible. Forward shadow code would not evaluate the package selected for
+rollback. An independent pair adds another package contract and still needs a
+compatible historical shadow handler. Refusing the old package avoids a legacy
+exception but leaves no genuine predecessor for the accepted five-function
+exercise. A general legacy republisher was also rejected because it would turn
+one reviewed exception into an open compatibility surface.
+
+If exact-byte or target-import qualification fails, withdraw the exception and
+stop L-54 before downtime. Reverting the implementation restores the existing
+watcher-only pause and optional-checksum behavior, so that revert is safe only
+while triggers remain disabled and no plan has selected a package under this
+revision.
+
+## Accepted 2026-09-06 revision: application-only L-54 follow-up
+
+The repository owner accepted this revision on 2026-09-06 after correcting its
+evidence-invalidation rule, stopped-interval boundary, and fallback language.
+Live plans and invocations still require separate exact-action authorization.
+
+L-54 may close only the application-proof gap left by L-42, without writing
+new configuration pointer versions, when every one of these preconditions is
+proved before the maintenance pause:
+
+- The checked-in L-42 evidence record still has SHA-256
+  `80ef235d43891895fdb92f90975c9c285001363dbbefe042fb1ebfb0cd3b7fcf`,
+  and its restricted evidence manifest is available and recomputes to
+  `ffdf5cfade61eee19efeabccbc8c62035359607535b7a0a03ae2910a66994854`.
+- A recorded comparison from the L-42 implementation and evidence baseline to
+  the current exercise identifies intervening changes and explains whether
+  each can affect the configuration claims being reused: exact retained-version
+  reads, release identity and integrity, pointer compare-and-swap promotion,
+  compatibility probing, and exact pointer read-back. An unresolved material
+  difference blocks reuse. A recorded unrelated change does not by itself
+  require another live configuration exercise.
+- The active pointer and one retained pointer resolve read-only to their exact
+  configuration and inventory objects, both releases pass the application
+  compatibility probe for the package being evaluated, and a retained-source
+  replay preview resolves its historical application and release references
+  without apply.
+- The current active release remains selected throughout the stopped proof
+  interval. No release publication, pointer promotion, replay apply, delivery
+  manufacture, Slack post, or unexpected application write may occur during
+  that interval.
+
+After those checks, L-54 uses the accepted drain, four-executor pause, and
+five-function package boundary. One unchanged saved Terraform plan selects the
+qualified `c88b49c8...` predecessor across all five functions. Read-back binds
+the exact package and references, and one bounded shadow invocation evaluates
+that package against the still-active release. A second saved plan restores
+the exact `1ae996ca...` successor. Read-back and one bounded shadow invocation
+must pass again before the recorded concurrency and triggers resume.
+
+Capture the durable-state baseline after drain, confirmed full execution
+pause, and the required timeout. Compare it after forward-package verification
+and before resumption. The prohibition on Slack posts and unexpected
+application writes applies to this stopped proof interval. Verify restored
+controls, alarms, and normal operation separately after resumption. Those
+post-resumption checks may legitimately create state or send a Slack message;
+they do not alter the stopped-interval no-write result. A quiet public-feed
+result remains valid evidence.
+
+The application-only result is `passed` only when L-42's configuration proof
+passes the reuse preconditions and the backward and forward application proof
+passes in full. A missing evidence bundle, unresolved material difference,
+failed reference resolution, pointer change, unexpected stopped-interval
+write, failed restoration, or incomplete read-back refuses reuse. The result
+then remains `failed` or `incomplete`.
+
+L-42's combined procedure and evidence remain historical fact. The combined
+procedure is not an automatic fallback. Changes or unavailable evidence
+require reassessing the affected claim. Perform only the targeted checks or
+separately accepted live transition needed to establish that claim.
+Configuration mutation is never an automatic fallback.
 
 ## References
 

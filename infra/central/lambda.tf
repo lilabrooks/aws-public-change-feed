@@ -227,7 +227,7 @@ resource "aws_lambda_function" "slack_worker" {
   s3_object_version = var.worker_artifact_version_id
 
   timeout                        = local.worker_timeout_seconds
-  reserved_concurrent_executions = local.rate_control.worker_reserved_concurrency
+  reserved_concurrent_executions = local.worker_reserved_concurrency
   memory_size                    = 256
 
   environment {

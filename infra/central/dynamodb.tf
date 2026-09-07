@@ -97,7 +97,7 @@ resource "terraform_data" "dynamodb_recovery_cutover_guard" {
         !local.worker_trigger_requested &&
         !var.reconciler_trigger_enabled
       )
-      error_message = "ADR-027 recovery cutover requires PITR, all four requested trigger states disabled, and watcher execution paused."
+      error_message = "ADR-027 recovery cutover requires PITR, all four requested trigger states disabled, and all durable executors paused."
     }
 
     precondition {

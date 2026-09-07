@@ -247,11 +247,19 @@ not delivery requests. Never redrive it into the delivery FIFO queue.
 
 ## M3 shadow and rollback proof
 
-Use this fixed evidence exercise for M3. Incident response keeps its existing path. Run the exercise from a clean checkout after capturing fresh central Terraform outputs. Record the Git SHA, deployment ID, AWS account and Region, Terraform state VersionId, saved-plan hashes, active release and pointer VersionId, application digest and VersionId, and every trigger state before the first action. A quiet public-feed result is evidence of that sample; do not invoke the shadow evaluator repeatedly to obtain a match.
+ADR-026 now separates the completed L-42 configuration proof from L-54's
+application-only follow-up. Incident response keeps its existing path. A quiet
+public-feed result is evidence of its sample; do not invoke the shadow evaluator repeatedly to obtain a match.
+
+### Historical L-42 combined procedure
+
+The following nine steps preserve the combined procedure L-42 used. They are
+historical evidence, not a requirement that L-54 repeat configuration
+promotion.
 
 1. Confirm ADR-026 is accepted before the live exercise. Build and publish the source-defined package, then require the central Terraform plan to read the selected exact S3 versions and match both `sha256` and `runtime-entrypoints-sha256` metadata. The publisher computes the latter from the lexically ordered, null-framed configured handler names only after verifying every handler module is present in the ZIP. A retained object without this metadata is incompatible with the five-function boundary. Deploy the shadow evaluator through a separately reviewed plan. It uses the watcher's exact package pair and fetch policy, has no event source, and its execution role has release-read and dedicated-log permissions only. Read back its handler, role, timeout, reserved concurrency, environment, zero asynchronous retries, and absence of DynamoDB, S3 write or delete, queue, and secret actions. Read every policy attached to the execution role. Assume the separate `apcf-<deployment>-shadow-invoker` role and verify that it grants only `lambda:InvokeFunction` on this function. Before the fixed feed sample, separately authorize bounded refusal invocations that invert the expected release ID, application digest, and feed-name set one at a time; each must reach the handler and return its matching fixed identity-refusal code before feed work.
 2. Invoke `apcf-<deployment>-shadow-evaluator` synchronously with `--invocation-type RequestResponse` and a strict event containing only `operation: shadow_evaluate`, the exact expected release ID, the exact `sha256:<digest>` application version, and the complete lexically sorted feed-name list. Preserve the CLI response, payload, and invocation ID returned inside the bounded JSON result. Fixed refusal codes distinguish expected-identity mismatch, incompatible or damaged release data, a missing release, and an incomplete run. Treat `failed`, a fixed refusal, or a generic invocation error as that fixed attempt's result. The no-write claim rests on the in-memory composition, attached-role read-back, and unchanged durable-state read-back.
-3. Create and review one central Terraform plan with `delivery_triggers_enabled=false`, `reconciler_trigger_enabled=false`, and `watcher_execution_paused=true`. Record its hash and authorize only those plan bytes. After apply, read back all four disabled triggers and watcher reserved concurrency zero, then wait the full 300-second watcher timeout. Keep this stopped state through step 7. Select one retained historical `active-versions.json` VersionId and verify its exact configuration and inventory objects. Keep the current pointer VersionId reported by rollback preview; it is the forward-restoration target.
+3. Create and review a central Terraform drain plan with `delivery_triggers_enabled=false`, `reconciler_trigger_enabled=false`, explicit false watcher and dispatcher overrides, a true worker override, and `watcher_execution_paused=false`. Record its hash and authorize only those plan bytes. After apply, let accepted worker traffic drain and prove there is no actionable delivery work. Create a second reviewed plan that sets the worker override false and `watcher_execution_paused=true`. After apply, read back all four disabled triggers, zero reserved concurrency for watcher, dispatcher, worker, and reconciler, and shadow concurrency one. Wait the full 300-second longest active-invocation timeout. Keep this stopped state through step 7. Select one retained historical `active-versions.json` VersionId and verify its exact configuration and inventory objects. Keep the current pointer VersionId reported by rollback preview; it is the forward-restoration target.
 4. Build the configuration rollback plan without writing S3:
 
    ```bash
@@ -274,10 +282,89 @@ Use this fixed evidence exercise for M3. Incident response keeps its existing pa
 
    Apply rebuilds the plan, writes the retained references forward through the normal ETag compare-and-swap path, runs the compatibility probe, and returns the exact current pointer identity. `completed` is the only successful result. Read that VersionId back independently and compare its body hash with the command result. A converged `409` is unattributed even when the selected release is active, so retain its independently read pointer VersionId and hash. A stale plan, `412`, `409` to another release, `404`, provider ambiguity, or failed probe is retained as non-passing evidence and is not retried from the old plan.
 5. Invoke the shadow evaluator once against the restored release. Fresh in-memory feed state makes this an unconditional fetch, and fresh announcement state sets `is_update=false`; compare candidate identities and counts rather than that payload field. Preview one retained-source replay against a snapshot and pointer VersionId that predate the exercise, and verify its exact release and application references still resolve; do not apply source replay or create delivery work for this proof.
-6. Create a second rollback preview whose historical pointer VersionId is the original current pointer from step 3 and whose promotion time follows the rollback. Review and separately authorize its exact apply. Independently read back the forward-restored pointer identity, probe the release, invoke shadow once more, and verify the retained historical references again. Keep all four triggers disabled and watcher reserved concurrency at zero.
+6. Create a second rollback preview whose historical pointer VersionId is the original current pointer from step 3 and whose promotion time follows the rollback. Review and separately authorize its exact apply. Independently read back the forward-restored pointer identity, probe the release, invoke shadow once more, and verify the retained historical references again. Keep all four triggers disabled, all four durable executors at zero reserved concurrency, and the shadow evaluator at one.
 7. For application rollback, follow the package rollout procedure below with the stopped runtime state from step 3. Select only a retained package whose exact object version carries the same configured-handler contract; packages predating that metadata are incompatible even if their older handlers still run. Produce a saved Terraform plan that selects that digest and VersionId for watcher, shadow evaluator, dispatcher, and worker and the same retained package bytes through the reconciler's independent pair. The plan changes five Lambda configurations and resumes none of the four triggers. Review and separately authorize only those unchanged plan bytes. Read all five Lambda configurations and four trigger states back, verify the selected artifact and historical release references, then produce and separately authorize a second saved plan restoring the original package pairs while the stopped state remains. The shadow evaluator runs the package selected by the watcher pair and has no trigger to resume.
-8. Create and review a final Terraform plan that restores `watcher_execution_paused=false` and the four trigger states recorded before step 3. Apply only those plan bytes after the forward package, release, configuration, inventory, and credential composition pass their existing preflights. Read back watcher reserved concurrency and all four trigger states.
-9. Record a terminal `passed`, `failed`, or `incomplete` disposition. A pass requires all three shadow invocations, both configuration promotions, both application deployments, both forward restorations, exact historical-reference checks before/during/after, and unchanged durable state from shadow evaluation. Missing operator authorization or credentials makes the exercise incomplete, not passed. A failed restoration leaves all four triggers disabled and watcher reserved concurrency at zero.
+8. Create and review a final Terraform plan that restores `watcher_execution_paused=false` and the four trigger states recorded before step 3. Apply only those plan bytes after the forward package, release, configuration, inventory, and credential composition pass their existing preflights. Read back all five concurrency values and all four trigger states.
+9. Record a terminal `passed`, `failed`, or `incomplete` disposition. A pass requires all three shadow invocations, both configuration promotions, both application deployments, both forward restorations, exact historical-reference checks before/during/after, and unchanged durable state from shadow evaluation. Missing operator authorization or credentials makes the exercise incomplete, not passed. A failed restoration leaves all four triggers disabled and all four durable executors at zero reserved concurrency.
+
+### Accepted L-54 application-only follow-up
+
+Run this procedure from a fully recorded source state after capturing fresh
+central Terraform outputs. A clean checkout is preferred. If the exercised
+implementation contains uncommitted changes, record the base Git SHA and a
+complete digest of those changes, bind the built artifact and Terraform plans
+to that source record, and state that the live evidence applies to the recorded
+source state rather than a later commit. Do not repeat an otherwise complete
+exercise solely to attach it to that later commit. Record the deployment ID,
+AWS account and Region, Terraform state VersionId, saved-plan hashes, active
+release and pointer VersionId, predecessor and successor digest and VersionId
+pairs, and every trigger and concurrency state before the first action.
+
+1. Recompute the checked-in L-42 evidence-record hash and its restricted
+   manifest hash, then verify every file listed by that manifest. Record a
+   comparison from the L-42 implementation and evidence baseline to the
+   current exercise. Classify whether each intervening change can affect exact
+   retained-version reads, release identity or integrity, pointer
+   compare-and-swap promotion, compatibility probing, or exact pointer
+   read-back. An unresolved material difference blocks reuse; an unrelated
+   change does not require another live transition.
+2. Read the current active pointer and one retained pointer by exact VersionId.
+   Resolve their exact configuration and inventory objects, run the compatible
+   read-only probes, and preview one retained-source replay without apply.
+   Record all resolved identities. Do not publish a release, promote the
+   pointer, apply replay, manufacture delivery work, or send a Slack message.
+   Changes or unavailable evidence require reassessing only the affected
+   claim. Configuration mutation is never an automatic fallback.
+3. Confirm the successor and predecessor package qualifications, historical
+   deployment evidence, current actionable-record disposition, and the exact
+   forward-restoration inputs. Create and separately authorize a drain plan
+   from actual state: disable watcher, dispatcher, and reconciler schedules
+   while leaving the worker trigger and recorded concurrency available. Drain
+   accepted work and prove the queues and actionable states are empty.
+4. From that actual state, create and separately authorize a full-pause plan.
+   Disable the worker event-source mapping, set watcher, dispatcher, worker,
+   and reconciler reserved concurrency to zero, and keep shadow concurrency at
+   one. Read all controls back and wait the full 300-second longest invocation
+   timeout. Only then capture the durable-state, queue, active-pointer, and
+   package baseline for the stopped proof interval.
+5. Create a saved predecessor plan from the paused actual state. It may select
+   only the qualified `c88b49c8...` digest and exact accepted VersionId across
+   all five functions, change no trigger or concurrency control, and contain no
+   other resource action. Review and separately authorize only those unchanged
+   plan bytes. Read all five Lambda configurations and every stopped control
+   back, resolve the required historical references, and perform the separately
+   authorized bounded shadow invocation against the still-active release.
+6. From the predecessor actual state, create a saved forward-restoration plan
+   selecting the exact `1ae996ca...` successor digest, VersionId, and checksum
+   across all five functions. It must resume no control and change nothing
+   else. Review and separately authorize only those unchanged plan bytes. Read
+   all five configurations and stopped controls back, resolve the references,
+   and perform the separately authorized bounded forward shadow invocation.
+7. While execution remains fully paused, compare durable state, queues, active
+   pointer, and prohibited-write evidence with the baseline captured in step
+   4. No Slack post or unexpected application write may occur between that
+   baseline and this comparison. A mismatch stops the procedure before
+   resumption and follows the accepted restoration path.
+8. Create the resume plan from its actual predecessor state. A single saved
+   plan may restore the recorded concurrency, worker mapping, schedules, and
+   trigger-dependent alarms when its reviewed actions contain only that full
+   restoration. Split the restoration into a controls-first plan and a later
+   schedules-and-alarms plan only when the actual plan or a concrete dependency
+   finding requires the stages. Verify all five concurrency values, all four
+   trigger states, the complete alarm set and actions, producer eligibility,
+   queues, and actionable states after the applied plan or plans. Establish
+   normal scheduled operation separately after resumption. That observation
+   may legitimately write application state or send Slack traffic and is not
+   part of the stopped-interval no-write comparison. Finish with a no-change
+   Terraform plan.
+9. Record `passed` only when the configuration claim satisfies step 1, all
+   read-only references resolve, both five-function package transitions and
+   bounded shadow checks pass, stopped-interval state is unchanged, the exact
+   successor and recorded controls are restored, normal operation passes, and
+   Terraform converges. Missing authorization or credentials is `incomplete`.
+   A failed or unproved restoration leaves schedules and the worker trigger
+   disabled and all four durable executors at zero concurrency until the
+   forward state is proved or an incident decision chooses another action.
 
 ## Terraform output capture and recovery
 
@@ -370,7 +457,7 @@ plan reported no changes. A separate, unapplied preflight plan showed
    creates the scoped `dynamodb_recovery` role and separate read-only
    `dynamodb_recovery_evidence` role, disables watcher, dispatcher, and
    reconciler trigger requests, keeps the worker's recorded trigger state, and
-   sets `watcher_execution_paused=true`. For the enabled worker drain,
+   leaves `watcher_execution_paused=false`. For the enabled worker drain,
    supply `delivery_triggers_enabled=false`,
    `watcher_trigger_enabled_override=false`,
    `dispatcher_trigger_enabled_override=false`,
@@ -384,8 +471,11 @@ plan reported no changes. A separate, unapplied preflight plan showed
 2. Let already accepted worker traffic drain. Confirm all three SQS counters
    are zero and the delivery table has no `pending_queue`, `queued`, `sending`,
    or `failed_retryable` item. Create and separately authorize a second saved
-   plan that disables the worker event-source mapping. Read back all four
-   disabled triggers. Keep them disabled through step 8. Wait until both
+   plan that disables the worker event-source mapping and sets
+   `watcher_execution_paused=true`. Read back all four disabled triggers, zero
+   reserved concurrency for all four durable executors, and shadow concurrency
+   one. Keep that state through step 8 and wait the full 300-second longest
+   active-invocation timeout. Wait until both
    tables' latest restorable times cover one timestamp after the quiescence
    boundary.
 3. Capture fresh central outputs with the preceding restricted capture
@@ -704,7 +794,7 @@ retirement and does not claim that 400 days have elapsed in a deployment.
 2. Drain work for the current digest within the approved rollout window. Record every version that remains in `pending_queue`, `queued`, `sending`, or `failed_retryable`; leave `delivery_unknown` as evidence.
 3. Run `python3 scripts/build_lambda_package.py --output build/slack-worker.zip`. Keep the reported `sha256:<digest>` with the change record. Build twice with the same Python and pip toolchain when runtime source, production dependencies or their lock, packaged schemas or assets, or package-builder inputs changed. Compare the exact bytes or SHA-256 digests. Documentation, site, test-only, and Terraform-only changes do not trigger this double build by themselves. A mismatch is a packaging change and must be reviewed as such. The archive carries ADR-029's stable manifest; commit and observed-tool attestations stay outside its identity.
 4. Require the repository quality run for the exact commit to pass its isolated Ubuntu 24.04, Python 3.12 package-import gate. Then publish with `python3 scripts/publish_lambda_artifact.py --bucket <config-bucket> --prefix <top-prefix>/application-artifacts --package build/slack-worker.zip`. Publication compares the owned source and input bytes with tracked `HEAD`, rejects unsafe members and unsupported handler declarations, and uploads with `If-None-Match: *` plus S3 SHA-256 validation. An existing matching digest is adopted without replacing its bytes or first-publication attestations.
-5. Apply `infra/central` with the worker, watcher, and dispatcher digest and VersionId pairs from the publisher and `delivery_triggers_enabled=false`. Supply the publisher's base64 `worker_artifact_checksum_sha256` for a new checksum-bearing package. Terraform refuses the watcher or dispatcher unless each pair exactly equals the worker pair, derives one digest key, deploys that exact S3 version to all three functions, checks the S3 checksum when supplied, and injects `APPLICATION_VERSION=sha256:<digest>` where the runtime consumes it. L-53 must define the mandatory checksum transition before application rollback. This apply creates the watcher and dispatcher rules and the worker event-source mapping in a disabled state.
+5. Apply `infra/central` with the worker, watcher, and dispatcher digest and VersionId pairs from the publisher and `delivery_triggers_enabled=false`. Supply the publisher's base64 `worker_artifact_checksum_sha256`; every new selection requires it. Terraform refuses the watcher or dispatcher unless each pair exactly equals the worker pair, derives one digest key, deploys that exact S3 version to all three functions, checks the S3 checksum, and injects `APPLICATION_VERSION=sha256:<digest>` where the runtime consumes it. The only checksum-less selection is the exact L-53 legacy digest and VersionId after `qualify_legacy_lambda_artifact.py` and the Linux import gate both pass on unchanged bytes. This apply creates the watcher and dispatcher rules and the worker event-source mapping in a disabled state.
 6. Read all three Lambda configurations before activation. Confirm their identical digest and code S3 version; the watcher's 300-second timeout, concurrency one, 360-second lease, and disabled 15-minute rule; the dispatcher's 60-second timeout, concurrency one, disabled one-minute rule, two retries, 300-second event age, and exact failure-queue source policy; and the worker's 300-second timeout, disabled FIFO event-source mapping, batch size 10, `ReportBatchItemFailures`, and 1,800-second queue visibility. Follow the Terraform output capture procedure with `TF_ROOT="infra/central"`, `CAPTURE_NAME="central-outputs"`, and a new `CAPTURE_ID`. Create the exact disabled-runtime plan, record the printed digest, review its bounded identities, and then apply only those plan bytes:
 
    ```bash
@@ -731,7 +821,7 @@ retirement and does not claim that 400 days have elapsed in a deployment.
 12. Preview with `python3 scripts/retire_lambda_artifacts.py preview --deployment <reviewed-deployment.yaml> --schema schemas/deployment.schema.json --plan <plan.json> --inventory-limit <positive-bound> --protected <digest:VersionId>`. Use `--no-protected-packages` only when the reviewed protection set is empty. Review every retained row and deletion candidate, then record the reported plan SHA-256. Preview does not delete.
 13. Apply the unchanged plan with the same deployment, protection arguments, and inventory limit, plus `apply --expected-plan-sha256 <sha256>`. A stale plan, refused conditional delete, failed delete, ambiguous exact-version read, partial run, or failed final inventory exits nonzero. Do not retry an old plan after any proved deletion; inventory it again and create a fresh preview.
 14. Treat only `applied` as completion. Preserve the plan, output, exact role identity, and proved-deleted/untouched lists. No package retirement is part of repository verification or deployment.
-15. To restore an ADR-029 package, obtain the approved exact ZIP bytes, recompute their digest, publish through `publish_lambda_artifact.py`, and record the new VersionId before rollout or rollback. The publisher intentionally refuses a pre-ADR-029 archive because it lacks the canonical manifest; the retained `c88b49c8...` version also lacks a stored S3 checksum. Do not retire that package on the assumption that this restoration path can republish it. L-53 must define an exact legacy restoration rule or declare the retained legacy package non-restorable after deletion. Permanent deletion cannot restore the old VersionId.
+15. To restore an ADR-029 package, obtain the approved exact ZIP bytes, recompute their digest, publish through `publish_lambda_artifact.py`, and record the new VersionId before rollout or rollback. The publisher intentionally refuses a pre-ADR-029 archive because it lacks the canonical manifest. The retained `c88b49c8...` / `QXNwt_NBIqp0pNKVFalwbZ72587h.GCc` package is the sole legacy exception and the retirement role explicitly denies deletion of its digest key. Treat its original VersionId as non-restorable after deletion. Publishing identical bytes under separate authority would create a new VersionId and needs a new decision.
 
 The recovery reconciler uses the same built package bytes but separate Terraform
 inputs: `reconciler_artifact_sha256` and `reconciler_artifact_version_id`. Setting

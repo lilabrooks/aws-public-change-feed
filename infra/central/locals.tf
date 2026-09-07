@@ -28,7 +28,9 @@ locals {
     "aws_public_change_feed.slack_worker_runtime.lambda_handler",
     "aws_public_change_feed.watcher_runtime.lambda_handler",
   ]
-  runtime_entrypoints_sha256 = sha256(join("\u0000", local.runtime_entrypoints))
+  runtime_entrypoints_sha256             = sha256(join("\u0000", local.runtime_entrypoints))
+  legacy_application_artifact_sha256     = "c88b49c8f070f1cb808ac005cbe28b484c14be7b29f50a34e21ef3a7ca85ccbd"
+  legacy_application_artifact_version_id = "QXNwt_NBIqp0pNKVFalwbZ72587h.GCc"
 
   secret_store = local.deployment.secret_store
 
@@ -106,12 +108,19 @@ locals {
   max_delivery_request_bytes         = 245760
   worker_visibility_seconds          = 6 * local.worker_timeout_seconds + local.worker_batch_window_seconds
   worker_runtime_enabled             = var.worker_artifact_sha256 != null && var.worker_artifact_version_id != null
+  shared_runtime_artifact_is_legacy = (
+    var.worker_artifact_sha256 == local.legacy_application_artifact_sha256 &&
+    var.worker_artifact_version_id == local.legacy_application_artifact_version_id
+  )
   worker_trigger_requested = (
     var.worker_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.worker_trigger_enabled_override
   )
   worker_trigger_enabled = local.worker_runtime_enabled && local.worker_trigger_requested
   worker_artifact_key    = var.worker_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.worker_artifact_sha256}.zip"
   application_version    = var.worker_artifact_sha256 == null ? null : "sha256:${var.worker_artifact_sha256}"
+  worker_reserved_concurrency = (
+    var.watcher_execution_paused ? 0 : local.rate_control.worker_reserved_concurrency
+  )
 
   watcher_timeout_seconds        = 300
   watcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1
@@ -129,7 +138,7 @@ locals {
   watcher_application_version = var.watcher_artifact_sha256 == null ? null : "sha256:${var.watcher_artifact_sha256}"
 
   dispatcher_timeout_seconds        = 60
-  dispatcher_reserved_concurrency   = 1
+  dispatcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1
   dispatcher_schedule_expression    = "rate(1 minute)"
   dispatcher_maximum_retry_attempts = 2
   dispatcher_maximum_event_age      = 300
@@ -142,7 +151,7 @@ locals {
   dispatcher_application_version = var.dispatcher_artifact_sha256 == null ? null : "sha256:${var.dispatcher_artifact_sha256}"
 
   reconciler_timeout_seconds        = 60
-  reconciler_reserved_concurrency   = 1
+  reconciler_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1
   reconciler_repair_limit           = 100
   reconciler_observation_limit      = 101
   reconciler_stale_queued_seconds   = 600
@@ -150,9 +159,13 @@ locals {
   reconciler_maximum_retry_attempts = 2
   reconciler_maximum_event_age      = 300
   reconciler_runtime_enabled        = var.reconciler_artifact_sha256 != null && var.reconciler_artifact_version_id != null
-  reconciler_trigger_enabled        = local.reconciler_runtime_enabled && var.reconciler_trigger_enabled
-  reconciler_artifact_key           = var.reconciler_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.reconciler_artifact_sha256}.zip"
-  reconciler_application_version    = var.reconciler_artifact_sha256 == null ? null : "sha256:${var.reconciler_artifact_sha256}"
+  reconciler_runtime_artifact_is_legacy = (
+    var.reconciler_artifact_sha256 == local.legacy_application_artifact_sha256 &&
+    var.reconciler_artifact_version_id == local.legacy_application_artifact_version_id
+  )
+  reconciler_trigger_enabled     = local.reconciler_runtime_enabled && var.reconciler_trigger_enabled
+  reconciler_artifact_key        = var.reconciler_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.reconciler_artifact_sha256}.zip"
+  reconciler_application_version = var.reconciler_artifact_sha256 == null ? null : "sha256:${var.reconciler_artifact_sha256}"
 
   metrics_namespace = "AWSPublicChangeFeed/${local.deployment_id}"
 }

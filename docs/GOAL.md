@@ -57,7 +57,7 @@ Slack carries the generated feed. It is not the source of truth for candidates o
 ## Implementation milestones
 
 - [x] Define product scope, decisions, schemas, examples, semantic validation, and regression tests.
-- [ ] Build a historical announcement corpus and matching evaluation harness. Verify precision and recall targets per service and risk type, negative examples, edited announcements, overlapping feeds, missing publication dates, and deterministic replay.
+- [x] Build a historical announcement corpus and matching evaluation harness. Verify precision and recall targets per service and risk type, negative examples, edited announcements, overlapping feeds, missing publication dates, and deterministic replay.
 - [ ] Implement immutable release publishing and promotion. Verify hashes, exact object versions, compare-and-swap promotion, rollback, concurrent publishers, retention, and incompatible-version rejection.
 - [ ] Implement safe feed acquisition and source state. Verify host allowlisting, DNS/IP controls, TLS, no redirects, response and parser limits, validators, partial feed failures, provenance coalescing, raw snapshots, checkpoints, and per-feed freshness alarms.
 - [ ] Implement matching, profile mapping, candidate construction, and the durable outbox. Verify route isolation, sorted environment IDs, distinct service/risk evidence, revisions, provenance-only updates, identity vectors, candidate limits, and atomic checkpoint rules.
@@ -69,7 +69,7 @@ Slack carries the generated feed. It is not the source of truth for candidates o
 
 A milestone is checked only when its whole verification list holds. Several unchecked milestones carry substantial working code, so this section records where each one actually stands. The repository's full check target runs the test suite, and the committed corpus scores precision 1.000 and recall 1.000 across 29 true positives.
 
-**Corpus and evaluation harness.** Built. `corpus/announcements.json` holds 47 labeled announcements, 26 of them negative examples, with 29 expected positive matches. `src/evaluation.py` reports precision and recall per service and risk type. Edited announcements, overlapping feeds, missing publication dates, and deterministic replay are covered by tests. One gap keeps it unchecked, and it is not the one it looks like. `corpus/thresholds.json` sets global floors only, and the harness already supports per-pair overrides, so adding them is a config edit. The counts do not justify it: four of the ten service and risk-type pairs carry one or two true positives, where a recall floor is a demand never to miss a single item and one relabelling gates promotion on noise. The schema says the same thing, keeping overrides absent until measurements justify one. Closing this needs more labelled items in the thin pairs, which needs elapsed time or an archive the four configured feeds do not reach.
+**Corpus and evaluation harness.** Complete. `corpus/announcements.json` holds 47 labeled announcements, 26 of them negative examples, with 29 expected positive matches. `src/evaluation.py` reports precision and recall per service and risk type. Edited announcements, overlapping feeds, missing publication dates, and deterministic replay are covered by tests. `corpus/thresholds.json` sets global floors only, and the harness already supports per-pair overrides. The observed counts do not justify those overrides: four of the ten pairs with any positive carry only one or two true positives. ADR-018's accepted 2026-09-06 revision requires a reviewed disposition for every enabled pair, reports recall as undefined where no labeled positive exists, and retains the global floors and explicit revisit triggers. It does not extend the sample merely to obtain a positive.
 
 The repository owner selected the current 4-feed, 3-service, 4-risk-rule policy unchanged for production preflight on 2026-09-01. The [production policy evidence](evidence/production-policy.md) expands the review to all 12 configured service and risk-type pairs: 6 have no historical positive, 4 have one, and the remaining 2 have two and seven. Those limits remain explicit, the global floors still govern promotion, and production readiness remains open for the rest of M3.
 
@@ -159,10 +159,44 @@ the restricted evidence manifest. Accepted ADR-029 now defines L-52's stable
 in-archive input manifest, source-member and handler checks, S3 SHA-256
 checksum, and Linux target import gate. It records volatile build details
 outside package identity and defers signed hosted-build provenance until the
-deployment's trust boundary grows. L-53 owns the exact compatibility rule for
-the checksum-less retained package and the application rollback boundary;
-L-54 owns the live proof with a genuine successor. M3 remains open through
-those successors, the post-M2 gate, and final status reconciliation.
+deployment's trust boundary grows. L-53 now has an accepted fixed exception
+for that one checksum-less package, mandatory checksums for every other
+selection, and a four-executor pause that keeps shadow callable. The exact S3
+version has since passed byte, source-revision, archive, handler, and
+network-disconnected Linux Python 3.12 x86_64 import qualification; all five
+current Lambda configurations report the same package digest and their
+expected handlers. Two byte-identical genuine L-52 successor builds passed the
+new manifest and Linux gate, and scoped publication stored the exact
+checksum-bearing `1ae996ca…` package at VersionId `yFAfr5Y8fdEnOatvqVHzXlFej5cXSSTg`.
+That successor is deployed across all five functions. Its three identity
+refusals, initial bounded shadow sample, and first natural scheduled cycle
+passed. The owner accepted ADR-026's application-only L-54 revision on
+2026-09-06. It reuses L-42's verified configuration claim when a recorded
+comparison finds no unresolved material difference, requires read-only
+retained-reference resolution, and makes configuration mutation never an
+automatic fallback.
+
+The [L-54 application rollback record](evidence/l54-application-rollback-2026-09-07.md)
+now reports `passed`. The exact `c88b49c8…` predecessor and `1ae996ca…`
+successor each passed a five-function transition, direct read-back, historical
+reference check, and one bounded shadow invocation while all durable execution
+remained stopped. Both samples processed four feeds and 240 items and returned
+the same eight candidate identities. The baseline and final stopped-state
+comparison matched both table digests, 673 raw-snapshot versions, queues,
+active pointer, restored successor package, and every paused control. One
+actual-state plan then restored the original concurrency, four triggers, and
+seven derived alarms. A fixed natural observation recorded one watcher, 18
+dispatcher, and three reconciler invocations with no errors or throttles; all
+28 alarms were `OK`, queues and actionable states were empty, and the final
+Terraform plan had no changes.
+
+The [M3 readiness assessment](evidence/m3-production-readiness-assessment-2026-09-06.md)
+uses that result for the actual one-environment, one-destination, four-feed,
+three-service, four-rule deployment and its 300-delivery/hour envelope. It
+remains `incomplete` until the final source candidate is published, required CI
+passes, and the authorized L-43 and L-44 status records are reconciled. M3 can
+close successfully only after L-43 records `passed`; a completed `failed` or
+`incomplete` attempt is evidence, not production readiness.
 
 **M3 data recovery.** The owner selected PITR for both DynamoDB tables with a
 35-day recovery period, a 5-minute recovery-point target, and a 4-hour operator

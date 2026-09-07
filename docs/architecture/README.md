@@ -27,14 +27,20 @@ the central source enables deletion protection on both primary tables while
 leaving preflight tables disposable. The exact L-50 plan changed only those two
 tables in place; owner-authorized apply, direct enabled readback, and a no-change
 central plan completed on 2026-09-05. M3 and its later production gate remain
-open.
+open pending the final source candidate and required CI.
 
 Accepted ADR-029 defines L-52's package-provenance repair. It keeps volatile
 build attestations outside package identity, adds a stable in-archive input
 manifest, requires source-member and handler checks before publication, uses an
 S3-computed SHA-256 for checksum-bearing objects, and adds a Linux target import
-gate. L-53 still owns the exact compatibility rule for the retained
-checksum-less rollback package.
+gate. Accepted ADR-026 and its L-53 revision define the one exact legacy-package
+exception, checksum enforcement for every other selection, and full pause of
+all four durable executors. The L-54 application-only exercise passed the exact
+five-function rollback and forward restoration, stopped-state comparison,
+normal scheduled observation, and final Terraform convergence. Its [public
+record](../evidence/l54-application-rollback-2026-09-07.md) binds that result.
+M3 remains open until the L-43 final source and CI gate passes and L-44 records
+the resulting status consistently.
 
 ## Architecture decision records
 

@@ -836,7 +836,7 @@ class PublishReleaseTests(unittest.TestCase):
         self.assertIn("do not apply source replay", section)
         self.assertIn("do not invoke the shadow evaluator repeatedly", section)
         self.assertIn("watcher_execution_paused=true", section)
-        self.assertIn("watcher reserved concurrency zero", section)
+        self.assertIn("zero reserved concurrency for watcher, dispatcher, worker, and reconciler", section)
         self.assertIn("--invocation-type RequestResponse", section)
         self.assertIn("five Lambda configurations", section)
         self.assertIn("converged `409` is unattributed", section)
