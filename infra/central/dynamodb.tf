@@ -25,7 +25,7 @@ resource "aws_dynamodb_table" "source_state" {
     recovery_period_in_days = var.enable_dynamodb_point_in_time_recovery ? var.dynamodb_recovery_period_days : null
   }
 
-  tags = local.tags
+  tags = local.storage_tags
 }
 
 resource "aws_dynamodb_table" "delivery" {
@@ -81,7 +81,7 @@ resource "aws_dynamodb_table" "delivery" {
     recovery_period_in_days = var.enable_dynamodb_point_in_time_recovery ? var.dynamodb_recovery_period_days : null
   }
 
-  tags = local.tags
+  tags = local.storage_tags
 }
 
 resource "terraform_data" "dynamodb_recovery_cutover_guard" {

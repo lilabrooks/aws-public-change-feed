@@ -65,7 +65,7 @@ variable "source_state_retention_migration_enabled" {
 }
 
 variable "tags" {
-  description = "Tags applied to created resources."
+  description = "Supplementary resource tags. Project, deployment_id, managed_by, and component are fixed by Terraform."
   type        = map(string)
   default = {
     project = "aws-public-change-feed"

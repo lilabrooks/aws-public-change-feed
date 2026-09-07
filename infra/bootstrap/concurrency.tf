@@ -15,7 +15,7 @@ locals {
 resource "aws_s3_bucket" "concurrency" {
   bucket        = local.concurrency_bucket_name
   force_destroy = false
-  tags          = var.tags
+  tags          = local.tags
 }
 
 resource "aws_s3_bucket_versioning" "concurrency" {
@@ -119,7 +119,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "concurrency" {
 # the first time" applies to those keys, not to this repository.
 resource "aws_iam_user" "concurrency_test" {
   name = "apcf_concurrency_test"
-  tags = var.tags
+  tags = local.tags
 }
 
 data "aws_iam_policy_document" "concurrency_test" {

@@ -24,7 +24,6 @@ locals {
   prefix  = "apcf-dev-live-control"
   account = "667653114001"
   region  = "us-east-1"
-  tags    = { project = "aws-public-change-feed", deployment_id = "dev", purpose = "bounded-live-control" }
 }
 
 resource "aws_s3_bucket" "control" {

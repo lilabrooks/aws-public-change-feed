@@ -1,6 +1,6 @@
 resource "aws_sns_topic" "operations" {
   name = local.sns_topic_name
-  tags = local.tags
+  tags = local.monitoring_tags
 
   # deploy_operational_sns_topic is const true in deployment.schema.json, so a
   # count on it would be unreachable code. This binds the input to the resource

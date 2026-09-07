@@ -16,7 +16,7 @@ variable "region" {
 }
 
 variable "tags" {
-  description = "Tags applied to the state bucket."
+  description = "Supplementary bootstrap tags. Project, deployment_id, managed_by, and component are fixed by Terraform."
   type        = map(string)
   default = {
     project = "aws-public-change-feed"

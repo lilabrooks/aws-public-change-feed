@@ -3,7 +3,7 @@ resource "aws_sqs_queue" "delivery_dlq" {
   fifo_queue                = true
   message_retention_seconds = 1209600
 
-  tags = local.tags
+  tags = local.storage_tags
 }
 
 resource "aws_sqs_queue" "delivery" {
@@ -13,7 +13,7 @@ resource "aws_sqs_queue" "delivery" {
   visibility_timeout_seconds  = local.worker_visibility_seconds
   message_retention_seconds   = 1209600
 
-  tags = local.tags
+  tags = local.storage_tags
 }
 
 resource "aws_sqs_queue_redrive_policy" "delivery" {
@@ -39,7 +39,7 @@ resource "aws_sqs_queue" "runtime_failures" {
   message_retention_seconds = 1209600
   sqs_managed_sse_enabled   = true
 
-  tags = local.tags
+  tags = local.storage_tags
 }
 
 locals {

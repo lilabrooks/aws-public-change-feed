@@ -249,6 +249,114 @@ Keep a human supervising initial qualification, including the local-waiter-loss
 test, and do not use routine unattended windows until actual email receipt and
 the cleanup lifecycle are proved.
 
+## Resource tags and billing activation
+
+Terraform defines four shared tags on every resource supported by the locked
+provider. The tagging follow-up is source configuration until a separate
+maintenance apply and billing activation are verified.
+
+| Key | Values and purpose |
+| --- | --- |
+| `project` | `aws-public-change-feed`, including bootstrap and live-control |
+| `deployment_id` | The actual deployment, including `preflight` for isolated resources |
+| `managed_by` | `terraform` |
+| `component` | `runtime`, `storage`, `monitoring`, or `live-control` |
+
+Central functions, rules, the queue mapping, and IAM use `runtime`. Buckets,
+tables, queues, and secret containers use `storage`. Logs, alarms, and the
+operations topic use `monitoring`. Bootstrap uses `storage`; all live-control
+resources use `live-control`, so its storage and execution overhead stay
+together. These are ownership groups, not billing or retention promises.
+Logs still incur storage usage when their `monitoring` component is parked.
+Supplementary tags are preserved, including preflight's `lifecycle` and the
+control root's `purpose`; the four shared keys are fixed by Terraform.
+
+The Slack queue mapping is tagged explicitly because it does not inherit
+function tags. Alarms inherit the shared monitoring tags whenever recreated.
+Central's locked provider (6.58.0) does not expose dashboard tags. Keep the exact
+dashboard name and Terraform address as its inventory identity. Event targets, Lambda invoke
+configuration and permissions, inline IAM policies, SNS subscriptions/policies,
+and separate S3/SQS configuration resources also have no independent `tags`
+field in these schemas. Their owning rules, functions, identities, topics,
+buckets, and queues carry tags. Tests recheck the exceptions against the
+provider locks. This list describes Terraform support, not every current AWS
+API capability; a provider upgrade needs its own review.
+
+Apply tag changes only through this maintenance sequence:
+
+1. Run `live-status` and verify parked controls and the reported owner. Check
+   Step Functions for running owners and CodeBuild for active control builds
+   separately; `live-status` does not list builds. Finish any failed owner's
+   recovery before changing tags, even if the runtime already appears stopped.
+   Check account-level tag-based access policies for these keys; a tag-only
+   diff cannot prove unchanged effective access under policies outside this repository.
+2. Preserve complete private tfvars and review fresh plans for bootstrap,
+   central, and live-control. Central inputs stay `live_mode=parked`. Require
+   only in-place `tags`/`tags_all` changes, no replacements, and no changes to
+   packages, controls, IAM policies, retention, secrets, or stored data. Do not
+   create absent preflight resources just to tag them. If an isolated
+   deployment exists, review it separately while its exercise is inactive.
+   Full plans can defer unchanged policy-document reads when a referenced
+   resource's tags change. Resulting unknown policy updates are not approved
+   tag changes. If encountered, stop and review the staged exception below.
+3. After exact plan approval, apply those plans, read back the tags and parked
+   controls, and require fresh no-change plans. Keep absent alarms/dashboard
+   absent; do not enable the service to demonstrate tags.
+4. Use the newly reviewed clean source for the next control bundle. Finish
+   recovery with an old immutable bundle before maintenance; an old bundle's
+   tag expectations can otherwise produce drift and block shutdown. Routine
+   toggles still reject tag changes. Do not widen their allowlist or add tag
+   mutation grants to make maintenance fit inside a live window.
+5. In the billing account's **Billing and Cost Management → Cost allocation
+   tags → User-defined tags**, activate `project`, `deployment_id`, and
+   `component`. Keep `managed_by` available for inventory without activating
+   it for billing unless that grouping becomes useful. This account-level
+   action is separate from Terraform deployment. It requires the organization's
+   management account or an eligible standalone account.
+6. Allow up to 24 hours for new keys to appear, then up to another 24 hours for
+   activation. Verify their active status and, once billing data arrives,
+   inspect Cost Explorer filtered to this project and grouped by deployment
+   or component. Compare with service/account totals and inspect unattributed
+   charges. A taggable resource does not guarantee all related usage carries
+   its tags. Short live windows may not yet appear in billing data.
+
+Tags remain static during park/unpark. Never infer shutdown from a tag or use
+tag selection for bulk deletion. Do not add per-window identifiers as metric
+dimensions, scheduled tag checks, or cost-export infrastructure for this
+workflow. Existing direct read-back remains the shutdown proof, and storage
+retirement remains separately authorized. Keep credentials, private endpoints,
+and customer data out of tags.
+
+### One-time staged maintenance exception
+
+Read-only previews on September 7, 2026 found deferred policy reads in the
+bootstrap root and in central Lambda dependencies. Targeting every tagged
+resource together still pulled central IAM policy updates into the plan.
+Do not apply either of those plans as a tag-only change.
+
+A separately reviewed targeted maintenance stage can exclude those downstream
+dependencies. Record every exact target address and saved-plan hash. Bootstrap
+targets its two buckets and concurrency-test IAM user. Central's first stage
+targets the tagged storage, monitoring, IAM roles, and rules, with all Lambda
+functions and the event-source mapping excluded. The control root's tagged
+resources are reviewed separately. Do not create parked alarms or any other
+absent resource just because its declaration supports tags.
+
+After an approved first stage, regenerate a central plan targeting the five
+existing functions and exact worker mapping. Review it anew: every mutation
+must still be a tag-only in-place update, with unchanged execution controls.
+If dependencies pull in an unknown policy update, stop for a new review.
+After the remaining tags are applied, full untargeted plans for all affected
+roots must report no changes before a new live bundle is eligible.
+
+Targeted plans intentionally have incomplete coverage (`complete=false`). That
+is an explicit exception for this separately approved maintenance sequence,
+never permission to relax the live-window validator or skip final full-plan
+convergence. Record partial progress if any stage fails; keep the service
+parked and regenerate from actual state before resuming. No stage was applied
+by the source-tagging change, and the later-stage/convergence proof remains
+open until maintenance is authorized.
+
 ## Costs and failure receipts
 
 Alarm/dashboard deletion removes those resources' future billable usage; actual
@@ -362,3 +470,7 @@ References verified: 2026-09-07.
 - [Step Functions events](https://docs.aws.amazon.com/step-functions/latest/dg/eventbridge-integration.html)
 - [Execution-history retention](https://docs.aws.amazon.com/step-functions/latest/dg/service-quotas.html)
 - [Incomplete multipart lifecycle](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpu-abort-incomplete-mpu-lifecycle-config.html)
+- [User-defined cost allocation tags](https://docs.aws.amazon.com/awsaccountbilling/latest/aboutv2/custom-tags.html)
+- [Cost-allocation activation timing](https://repost.aws/knowledge-center/organizations-no-cost-allocation-tags)
+- [Lambda event-source mapping tags](https://docs.aws.amazon.com/lambda/latest/dg/tags-esm.html)
+- [CloudWatch resource tagging](https://docs.aws.amazon.com/AmazonCloudWatch/latest/monitoring/CloudWatch-Tagging.html)

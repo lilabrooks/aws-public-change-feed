@@ -54,6 +54,34 @@ deletion. Closeout and pruning failures must never obstruct parking. The
 control ledger has no TTL. Only incomplete multipart uploads use an age-only
 one-day lifecycle rule; application retention and PITR remain unchanged.
 
+## Resource ownership and cost tags
+
+Every resource that supports `tags` in its locked Terraform provider receives
+`project=aws-public-change-feed`, its actual `deployment_id`,
+`managed_by=terraform`, and a static `component`. Central uses `runtime` for
+functions, triggers, and IAM; `storage` for buckets, tables, queues, and secret
+containers; and `monitoring` for logs, alarms, and the operations topic.
+Bootstrap resources use `storage`; the separate control root uses
+`live-control` throughout, including its retained storage and failure rules.
+Preflight inherits central's policy with its own deployment ID. These labels
+describe ownership, not whether a resource costs money or remains active.
+
+Terraform fixes these four keys while preserving supplementary input tags.
+Alarm recreation must include the same shared tags. Tags must not depend on
+`live_mode`, a deadline, or a session ID, and must not select mutation targets
+or grant permissions. Actual controls and the existing exact-resource lifecycle
+allowlist remain authoritative. Tag changes require a separate reviewed
+maintenance plan while parked, with no active cleanup owner. Old immutable
+control bundles must not be reused across that maintenance boundary.
+
+The locked provider's unsupported resources are explicit test exceptions;
+tag their owning resource where possible. Cost-allocation activation is a
+separate billing-account action. Tagged totals require reconciliation with
+service/account totals because billing attribution varies by service.
+The [tagging procedure](../../runbooks/live-window.md#resource-tags-and-billing-activation)
+records the coverage exceptions, activation, and verification steps. No cost
+collector, periodic tag enforcer, or new runtime metric is introduced.
+
 ## Security objectives
 
 - Fetch only reviewed public sources through bounded network behavior.

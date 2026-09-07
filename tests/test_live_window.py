@@ -801,6 +801,49 @@ class LiveWindowTests(unittest.TestCase):
                 with self.subTest(mode=mode, unknown=unknown), self.assertRaises(live.Refused):
                     live.validate_plan({"resource_changes": [row]}, mode)
 
+    def test_tag_changes_remain_outside_every_toggle_phase(self):
+        tags = {"project": "aws-public-change-feed", "component": "runtime"}
+        for mode in ("parked", "prepared", "direct", "draining", "live", "shadow", "stopping"):
+            triggers, concurrency = live.expected_controls(mode)
+            cases = (
+                (
+                    "aws_lambda_function.slack_worker[0]",
+                    "aws_lambda_function",
+                    "reserved_concurrent_executions",
+                    concurrency["worker"],
+                ),
+                (
+                    "aws_cloudwatch_event_rule.watcher[0]",
+                    "aws_cloudwatch_event_rule",
+                    "state",
+                    "ENABLED" if triggers["watcher"] else "DISABLED",
+                ),
+                (
+                    "aws_lambda_event_source_mapping.slack_worker[0]",
+                    "aws_lambda_event_source_mapping",
+                    "enabled",
+                    triggers["worker"],
+                ),
+            )
+            for address, kind, field, target in cases:
+                before: dict[str, Any] = {field: None, "tags": tags, "tags_all": tags}
+                if kind == "aws_lambda_event_source_mapping":
+                    before["uuid"] = live.MAPPING
+                after = {**before, field: target}
+                good = change(address, kind, before, after)
+                with self.subTest(mode=mode, address=address):
+                    live.validate_plan({"resource_changes": [good]}, mode)
+                    for attribute in ("tags", "tags_all"):
+                        for replacement in ({**tags, "owner": "changed"}, {}, None):
+                            bad = copy.deepcopy(good)
+                            bad["change"]["after"][attribute] = replacement
+                            with self.assertRaises(live.Refused):
+                                live.validate_plan({"resource_changes": [bad]}, mode)
+                        bad = copy.deepcopy(good)
+                        bad["change"]["after_unknown"] = {attribute: {"component": True}}
+                        with self.assertRaises(live.Refused):
+                            live.validate_plan({"resource_changes": [bad]}, mode)
+
     def test_computed_unknowns_are_accepted_but_known_or_configurable_changes_are_refused(self):
         cases: list[tuple[str, str, dict[str, Any], dict[str, Any]]] = [
             (

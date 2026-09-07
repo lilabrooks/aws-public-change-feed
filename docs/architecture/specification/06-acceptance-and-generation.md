@@ -78,6 +78,26 @@ The fixed delivery protocol remains preview/hash/apply with one attempt and no
 extension of a quiet sample. Observation completion alone does not prove a
 positive match or replace the runtime acceptance criteria below.
 
+## Resource-tag acceptance
+
+- Every declared resource uses its component's shared tags or an exception
+  checked against that root's locked provider schema. A new unclassified type,
+  missing tags, or wrong component expression fails the coverage test.
+- Real provider-free Terraform evaluation preserves supplementary input tags
+  and fixes project, deployment, management, and component values, including
+  the isolated preflight deployment. Tag expressions use only static identity
+  inputs; live phase, deadline, and session data cannot enter them.
+- Known tag additions/removals and unknown tag values remain outside routine
+  toggle plans in every managed phase. Each refusal starts from a passing
+  control-only plan with unchanged tags. Monitoring recreation inherits the
+  complete tag map through every alarm's shared expression.
+- Before live tagging maintenance, verify parked controls and no active owner,
+  review complete private-input plans, and require tag-only in-place changes.
+  Apply remains separately authorized. Read back tags and parked controls,
+  then require fresh no-change plans and a newly reviewed bundle before unpark.
+- Billing-tag activation and eventual report attribution are separate operator
+  checks. Source coverage and Terraform validation do not prove either one.
+
 ## Contract acceptance
 
 - Given a clean checkout, the six canonical examples load as one bundle, every document passes its paired JSON Schema, and all cross-document semantic checks pass.
