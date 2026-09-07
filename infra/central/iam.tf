@@ -207,6 +207,13 @@ data "aws_iam_policy_document" "release_publisher" {
 
 data "aws_iam_policy_document" "application_artifact_retirement" {
   statement {
+    sid       = "ProtectFixedLegacyRollbackArtifact"
+    effect    = "Deny"
+    actions   = ["s3:DeleteObjectVersion"]
+    resources = ["${aws_s3_bucket.config.arn}/${local.application_artifact_prefix}/${local.legacy_application_artifact_sha256}.zip"]
+  }
+
+  statement {
     sid       = "ListExactApplicationArtifactPrefix"
     actions   = ["s3:ListBucketVersions"]
     resources = [aws_s3_bucket.config.arn]

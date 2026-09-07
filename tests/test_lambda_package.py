@@ -248,7 +248,10 @@ class LambdaPackageTests(unittest.TestCase):
 
         self.assertEqual(terraform_handlers, RUNTIME_HANDLERS)
         self.assertEqual(list(RUNTIME_HANDLERS), sorted(RUNTIME_HANDLERS))
-        self.assertIn('runtime_entrypoints_sha256 = sha256(join("\\u0000", local.runtime_entrypoints))', locals_source)
+        self.assertIn(
+            'runtime_entrypoints_sha256             = sha256(join("\\u0000", local.runtime_entrypoints))',
+            locals_source,
+        )
         self.assertEqual(
             runtime_entrypoints_sha256(), "8d934863e4305f466c8e4982215f37b48222fee3cb18635509fae7163156cf29"
         )

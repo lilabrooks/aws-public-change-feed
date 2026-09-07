@@ -4,7 +4,7 @@ data "aws_s3_object" "shared_runtime_artifact" {
   bucket        = local.runtime_artifact_bucket_name
   key           = local.worker_artifact_key
   version_id    = var.worker_artifact_version_id
-  checksum_mode = var.worker_artifact_checksum_sha256 == null ? null : "ENABLED"
+  checksum_mode = local.shared_runtime_artifact_is_legacy ? null : "ENABLED"
 }
 
 resource "terraform_data" "shared_runtime_artifact_guard" {
@@ -36,10 +36,13 @@ resource "terraform_data" "shared_runtime_artifact_guard" {
     }
 
     precondition {
-      condition = var.worker_artifact_checksum_sha256 == null || (
+      condition = local.shared_runtime_artifact_is_legacy ? (
+        var.worker_artifact_checksum_sha256 == null
+        ) : (
+        var.worker_artifact_checksum_sha256 != null &&
         data.aws_s3_object.shared_runtime_artifact[0].checksum_sha256 == var.worker_artifact_checksum_sha256
       )
-      error_message = "the shared runtime artifact S3 SHA-256 checksum must match the selected package digest encoding."
+      error_message = "the shared runtime artifact requires an exact S3 SHA-256 checksum unless it is the one fixed legacy digest and VersionId."
     }
   }
 }
@@ -50,7 +53,7 @@ data "aws_s3_object" "reconciler_runtime_artifact" {
   bucket        = local.runtime_artifact_bucket_name
   key           = local.reconciler_artifact_key
   version_id    = var.reconciler_artifact_version_id
-  checksum_mode = var.reconciler_artifact_checksum_sha256 == null ? null : "ENABLED"
+  checksum_mode = local.reconciler_runtime_artifact_is_legacy ? null : "ENABLED"
 }
 
 resource "terraform_data" "reconciler_runtime_artifact_guard" {
@@ -82,10 +85,13 @@ resource "terraform_data" "reconciler_runtime_artifact_guard" {
     }
 
     precondition {
-      condition = var.reconciler_artifact_checksum_sha256 == null || (
+      condition = local.reconciler_runtime_artifact_is_legacy ? (
+        var.reconciler_artifact_checksum_sha256 == null
+        ) : (
+        var.reconciler_artifact_checksum_sha256 != null &&
         data.aws_s3_object.reconciler_runtime_artifact[0].checksum_sha256 == var.reconciler_artifact_checksum_sha256
       )
-      error_message = "the reconciler runtime artifact S3 SHA-256 checksum must match the selected package digest encoding."
+      error_message = "the reconciler runtime artifact requires an exact S3 SHA-256 checksum unless it is the one fixed legacy digest and VersionId."
     }
   }
 }

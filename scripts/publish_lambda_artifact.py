@@ -205,8 +205,8 @@ def _validate_handler(source: bytes, handler: str) -> None:
             raise ValueError(f"configured handler is rebound after declaration: {handler}")
 
 
-def validate_package(body: bytes, *, repository_root: Path = ROOT) -> dict[str, Any]:
-    """Verify archive safety, manifest fields, source identity, and handler declarations."""
+def safe_archive_contents(body: bytes) -> dict[str, bytes]:
+    """Return regular archive members after rejecting ambiguous or unsafe paths."""
 
     try:
         with zipfile.ZipFile(io.BytesIO(body)) as archive:
@@ -230,6 +230,14 @@ def validate_package(body: bytes, *, repository_root: Path = ROOT) -> dict[str, 
             raise ValueError(f"Lambda package contains an unsafe member path: {member.filename}")
         if member.is_dir() or not stat.S_ISREG(mode):
             raise ValueError(f"Lambda package contains a non-regular member: {member.filename}")
+    return contents
+
+
+def validate_package(body: bytes, *, repository_root: Path = ROOT) -> dict[str, Any]:
+    """Verify archive safety, manifest fields, source identity, and handler declarations."""
+
+    contents = safe_archive_contents(body)
+    names = list(contents)
     if MANIFEST_PATH not in contents:
         raise ValueError("Lambda package is missing its canonical manifest")
     try:

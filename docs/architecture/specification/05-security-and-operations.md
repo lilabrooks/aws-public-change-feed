@@ -499,6 +499,14 @@ only after the inventory and plan digest still match. Each deletion names the
 exact VersionId and recorded ETag, then proves absence with an exact-version
 read. Partial, refused, failed, and ambiguous outcomes never report success.
 
+Terraform requires the selected S3 SHA-256 checksum for every shared-runtime
+and reconciler package except the single L-53 legacy digest and VersionId named
+in ADR-026's accepted 2026-09-06 revision. That exception is eligible only after the
+unchanged archive passes exact-byte, fixed-source-revision, archive-safety,
+handler-declaration, and Linux Python 3.12 import checks. The retirement role
+has an explicit deny on its digest key because deleting the original object
+version cannot be reversed.
+
 Build the package twice with the same Python and pip toolchain whenever runtime
 source, production dependencies or their lock, packaged schemas or assets, or
 package-builder inputs change. Compare the exact bytes or SHA-256 digests before

@@ -159,15 +159,16 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
 - The recovery-evidence role has only `cloudtrail:LookupEvents` on `*`, has no
   DynamoDB or runtime action, and retains no raw or unrelated CloudTrail event.
 - Given central recovery staging before a restored pair is selected, Terraform
-  accepts individual trigger overrides only with PITR enabled, watcher
-  execution paused, the aggregate delivery and reconciler gates disabled, the
-  watcher and dispatcher overrides explicitly false, and the worker override
-  explicit. A true worker override is the drain stage; false is the fully
-  stopped stage. Every other central-root override combination refuses.
+  accepts individual trigger overrides only with PITR enabled, the aggregate
+  delivery and reconciler gates disabled, the watcher and dispatcher overrides
+  explicitly false, and the worker override explicit. A true worker override
+  is the drain stage and requires durable-executor pause false. A false worker
+  override is the fully stopped stage and requires durable-executor pause true.
+  Every other central-root override combination refuses.
 - Given a cutover input, Terraform refuses unless PITR remains enabled, watcher
-  execution is paused, all four trigger requests are false, the names use the
-  primary restore prefixes, both names share one exercise ID, and the plan
-  digest is lowercase SHA-256.
+  execution pause has set all four durable executors to zero concurrency, all
+  four trigger requests are false, the names use the primary restore prefixes,
+  both names share one exercise ID, and the plan digest is lowercase SHA-256.
 - Given an accepted cutover, every runtime environment, table and index IAM
   resource, alarm, dashboard dimension, and output uses the restored pair.
   Clearing the input returns all of them to the retained primary pair.
@@ -386,11 +387,12 @@ Preconditions follow [ADR-019](../../adr/019-s3-preconditions-for-release-public
   digest, manifest digest, null-framed configured-handler digest, and S3
   SHA-256 checksum. A Linux Python 3.12 gate imports every handler from the
   installed package in an isolated environment. A central Terraform plan
-  checks the S3 SHA-256 whenever a checksum-bearing selection is supplied;
-  L-53 owns the rule that makes this mandatory without invalidating the exact
-  retained predecessor by accident.
-- Given configuration rollback, an unchanged saved Terraform plan first disables all four durable-runtime triggers and sets watcher reserved concurrency to zero. After one full watcher timeout, preview loads the current and retained pointer versions exactly, verifies both releases and the application compatibility gate, records the active pointer ETag and VersionId, and writes canonical plan bytes without mutation. Apply rebuilds the preview, promotes the retained references forward with a fresh time through the existing ETag compare-and-swap path, probes the restored active release, and returns an exact current-pointer read-back. Forward restoration uses the former active pointer VersionId through a second preview and apply; neither operation republishes release objects.
-- Release rollback and application rollback exercises preserve historical replay. Application rollback keeps all four triggers disabled and watcher execution paused while one unchanged saved Terraform plan selects a retained digest and VersionId across watcher, shadow evaluator, dispatcher, and worker plus the reconciler's independent pair. A second saved plan restores the forward package before the recorded execution and trigger states resume.
+  checks the S3 SHA-256 for every selection except the single exact legacy
+  digest and VersionId named by L-53. That unchanged archive must pass the
+  fixed legacy qualification command before downtime.
+- Given configuration rollback, an unchanged saved Terraform plan first disables watcher, dispatcher, and reconciler scheduling while leaving worker execution available to drain. A second plan disables the worker trigger and sets reserved concurrency to zero for watcher, dispatcher, worker, and reconciler. The shadow evaluator remains callable at concurrency one. After exact read-back and one full longest active-invocation timeout, preview loads the current and retained pointer versions exactly, verifies both releases and the application compatibility gate, records the active pointer ETag and VersionId, and writes canonical plan bytes without mutation. Apply rebuilds the preview, promotes the retained references forward with a fresh time through the existing ETag compare-and-swap path, probes the restored active release, and returns an exact current-pointer read-back. Forward restoration uses the former active pointer VersionId through a second preview and apply; neither operation republishes release objects.
+- Given the L-54 application-only follow-up, the L-42 evidence record and restricted manifest verify, and a recorded comparison classifies whether intervening changes can affect the reused exact-version, identity, integrity, compare-and-swap, compatibility-probe, or pointer-read-back claim. An unresolved material difference blocks reuse; an unrelated change does not require another live transition. Current and retained configuration and inventory references plus one retained-source replay resolve read-only, while the active pointer remains unchanged. Configuration mutation is never an automatic fallback. After drain, confirmed pause of all four durable executors, and one full longest-invocation timeout, the exercise captures its durable-state baseline. One saved plan selects the exact qualified predecessor across all five functions and a second restores the exact successor while all durable execution remains paused. Required read-backs and bounded shadow checks pass on both selections. The stopped-interval baseline comparison occurs after forward-package verification and before resumption; no Slack post or unexpected application write occurs in that interval. Restored controls, alarms, producer eligibility, normal operation, and Terraform convergence are verified separately after resumption.
+- Release rollback and application rollback exercises preserve historical replay. Application rollback keeps all four triggers disabled and all four durable executors paused while one unchanged saved Terraform plan selects a retained digest and VersionId across watcher, shadow evaluator, dispatcher, and worker plus the reconciler's independent pair. A second saved plan restores the forward package before the recorded concurrency and trigger states resume.
 - The watcher, dispatcher, and worker package inputs carry one identical digest and exact S3 object version; a mismatch cannot enable any of those runtimes.
 - Every custom alarm declares its metric, dimension shape, and eligible runtime producer set; adding an unregistered alarm, changing its dimensions, or removing an eligible producer fails the reverse alarm-contract test.
 - A shared-package input change triggers two same-toolchain builds with byte or SHA-256 comparison. Runtime source, production dependencies or lock, packaged schemas or assets, and package-builder inputs are shared-package inputs; documentation, site, tests, and Terraform alone are not.

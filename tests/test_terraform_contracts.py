@@ -447,6 +447,12 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn('values   = ["${local.application_artifact_prefix}/*"]', retirement)
         self.assertIn('actions   = ["s3:GetObjectVersion", "s3:DeleteObjectVersion"]', retirement)
         self.assertIn("${aws_s3_bucket.config.arn}/${local.application_artifact_prefix}/*", retirement)
+        self.assertIn('sid       = "ProtectFixedLegacyRollbackArtifact"', retirement)
+        self.assertIn('effect    = "Deny"', retirement)
+        self.assertIn(
+            "${aws_s3_bucket.config.arn}/${local.application_artifact_prefix}/${local.legacy_application_artifact_sha256}.zip",
+            retirement,
+        )
         self.assertNotIn('s3:DeleteObject"', retirement)
         self.assertRegex(
             outputs,
@@ -576,6 +582,11 @@ class TerraformContractTests(unittest.TestCase):
 
         self.assertIn("watcher_timeout_seconds        = 300", locals_source)
         self.assertIn("watcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
+        self.assertIn("dispatcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
+        self.assertIn("reconciler_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
+        self.assertIn(
+            "var.watcher_execution_paused ? 0 : local.rate_control.worker_reserved_concurrency", locals_source
+        )
         self.assertIn("watcher_lease_seconds          = 360", locals_source)
         self.assertIn('watcher_schedule_expression    = "rate(15 minutes)"', locals_source)
         self.assertIn("watcher_maximum_retry_attempts = 2", locals_source)
@@ -639,7 +650,9 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn("shadow_reserved_concurrency    = 1", locals_source)
         self.assertIn("reserved_concurrent_executions = local.shadow_reserved_concurrency", function)
         self.assertIn("!var.watcher_execution_paused || (", s3)
-        self.assertIn("local.watcher_runtime_enabled && !local.watcher_trigger_enabled", s3)
+        for runtime in ("watcher", "dispatcher", "worker", "reconciler"):
+            self.assertIn(f"local.{runtime}_runtime_enabled", s3)
+            self.assertIn(f"!local.{runtime}_trigger_enabled", s3)
         self.assertRegex(outputs, r"shadow_evaluator\s+= aws_iam_role\.shadow_evaluator\.arn")
         self.assertRegex(outputs, r"shadow_invoker\s+= aws_iam_role\.shadow_invoker\.arn")
 
@@ -683,7 +696,7 @@ class TerraformContractTests(unittest.TestCase):
 
         for frozen in (
             "dispatcher_timeout_seconds        = 60",
-            "dispatcher_reserved_concurrency   = 1",
+            "dispatcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1",
             'dispatcher_schedule_expression    = "rate(1 minute)"',
             "dispatcher_maximum_retry_attempts = 2",
             "dispatcher_maximum_event_age      = 300",
@@ -762,7 +775,7 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn("version_id    = var.worker_artifact_version_id", artifacts)
         self.assertIn("version_id    = var.reconciler_artifact_version_id", artifacts)
         self.assertIn(
-            'runtime_entrypoints_sha256 = sha256(join("\\u0000", local.runtime_entrypoints))',
+            'runtime_entrypoints_sha256             = sha256(join("\\u0000", local.runtime_entrypoints))',
             locals_source,
         )
         self.assertEqual(lambda_source.count("terraform_data.shared_runtime_artifact_guard"), 4)
@@ -773,25 +786,28 @@ class TerraformContractTests(unittest.TestCase):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
         digest = hashlib.sha256(b"fixture package bytes").hexdigest()
         expected_base64 = "YsO/0ZwoflcO8MMGKhlZYesroZjWHbsquq8GKcvLIro="
+        legacy_digest = "c88b49c8f070f1cb808ac005cbe28b484c14be7b29f50a34e21ef3a7ca85ccbd"
+        legacy_version = "QXNwt_NBIqp0pNKVFalwbZ72587h.GCc"
+        message = (
+            "the shared runtime artifact requires an exact S3 SHA-256 checksum unless it is the one fixed "
+            "legacy digest and VersionId."
+        )
 
         self.assertEqual(base64.b64encode(bytes.fromhex(digest)).decode(), expected_base64)
-        self.assertEqual(artifacts.count("checksum_mode = var."), 2)
+        self.assertEqual(artifacts.count("checksum_mode = local."), 2)
         self.assertEqual(artifacts.count(".checksum_sha256 == var."), 2)
         self.assertIn('variable "worker_artifact_checksum_sha256"', variables)
         self.assertIn('variable "reconciler_artifact_checksum_sha256"', variables)
-
-        guard_match = re.search(
-            r'''precondition \{\s+condition = (?P<condition>var\.worker_artifact_checksum_sha256 == null \|\| \(\s+data\.aws_s3_object\.shared_runtime_artifact\[0\]\.checksum_sha256 == var\.worker_artifact_checksum_sha256\s+\))\s+error_message = "(?P<message>[^"]+)"''',
-            artifacts,
-        )
-        self.assertIsNotNone(guard_match)
-        assert guard_match is not None
-        condition = guard_match.group("condition").replace(
-            "data.aws_s3_object.shared_runtime_artifact[0].checksum_sha256",
-            "var.observed_checksum_sha256",
-        )
+        self.assertIn('checksum_mode = local.shared_runtime_artifact_is_legacy ? null : "ENABLED"', artifacts)
+        self.assertIn('checksum_mode = local.reconciler_runtime_artifact_is_legacy ? null : "ENABLED"', artifacts)
+        self.assertIn(message, artifacts)
         checksum_variable = self.variable_block(variables, "worker_artifact_checksum_sha256")
         fixture = f'''variable "worker_artifact_sha256" {{
+  type    = string
+  default = null
+}}
+
+variable "worker_artifact_version_id" {{
   type    = string
   default = null
 }}
@@ -803,21 +819,49 @@ variable "observed_checksum_sha256" {{
   nullable = true
 }}
 
+locals {{
+  shared_runtime_artifact_is_legacy = (
+    var.worker_artifact_sha256 == "{legacy_digest}" &&
+    var.worker_artifact_version_id == "{legacy_version}"
+  )
+}}
+
 resource "terraform_data" "checksum_guard" {{
   input = var.observed_checksum_sha256
 
   lifecycle {{
     precondition {{
-      condition     = {condition}
-      error_message = "{guard_match.group("message")}"
+      condition = local.shared_runtime_artifact_is_legacy ? (
+        var.worker_artifact_checksum_sha256 == null
+        ) : (
+        var.worker_artifact_checksum_sha256 != null &&
+        var.observed_checksum_sha256 == var.worker_artifact_checksum_sha256
+      )
+      error_message = "{message}"
     }}
   }}
 }}
 '''
         cases = (
-            ("matching checksum", expected_base64, expected_base64, 0),
-            ("mismatched checksum", expected_base64, base64.b64encode(b"x" * 32).decode(), 1),
-            ("legacy omission", None, base64.b64encode(b"x" * 32).decode(), 0),
+            ("matching checksum", digest, "new-version", expected_base64, expected_base64, 0),
+            (
+                "mismatched checksum",
+                digest,
+                "new-version",
+                expected_base64,
+                base64.b64encode(b"x" * 32).decode(),
+                1,
+            ),
+            ("new omission", digest, "new-version", None, expected_base64, 1),
+            ("exact legacy omission", legacy_digest, legacy_version, None, None, 0),
+            (
+                "legacy checksum is refused",
+                legacy_digest,
+                legacy_version,
+                expected_base64,
+                expected_base64,
+                1,
+            ),
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -833,10 +877,11 @@ resource "terraform_data" "checksum_guard" {{
                 check=False,
             )
             self.assertEqual(initialized.returncode, 0, msg=initialized.stderr)
-            for name, selected_checksum, observed_checksum, expected_exit in cases:
+            for name, selected_digest, selected_version, selected_checksum, observed_checksum, expected_exit in cases:
                 with self.subTest(case=name):
                     values = {
-                        "worker_artifact_sha256": digest,
+                        "worker_artifact_sha256": selected_digest,
+                        "worker_artifact_version_id": selected_version,
                         "worker_artifact_checksum_sha256": selected_checksum,
                         "observed_checksum_sha256": observed_checksum,
                     }
@@ -862,7 +907,7 @@ resource "terraform_data" "checksum_guard" {{
                     output = f"{planned.stdout}\n{planned.stderr}"
                     self.assertEqual(planned.returncode, expected_exit, msg=output)
                     if expected_exit:
-                        self.assertIn(guard_match.group("message"), re.sub(r"\s+", " ", output))
+                        self.assertIn(message, re.sub(r"\s+", " ", output))
 
     def test_dispatcher_artifact_validations_execute_in_provider_free_plans(self):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
@@ -1170,7 +1215,7 @@ resource "terraform_data" "checksum_guard" {{
                     locals_source,
                 )
         self.assertIn(
-            "reconciler_trigger_enabled        = local.reconciler_runtime_enabled && var.reconciler_trigger_enabled",
+            "reconciler_trigger_enabled     = local.reconciler_runtime_enabled && var.reconciler_trigger_enabled",
             locals_source,
         )
 
@@ -1388,7 +1433,7 @@ resource "terraform_data" "checksum_guard" {{
         normalized_specification = re.sub(r"\s+", " ", specification)
         normalized_runbook = re.sub(r"\s+", " ", runbook)
         self.assertIn(
-            "A true worker override is the drain stage; false is the fully stopped stage.",
+            "A true worker override is the drain stage and requires durable-executor pause false.",
             normalized_specification,
         )
         for required in (
@@ -1432,9 +1477,17 @@ variable "deployment_id" {
 }
 locals {
   deployment_id = var.deployment_id
-  watcher_runtime_enabled = true
+  watcher_runtime_enabled = var.watcher_artifact_sha256 != null
+  dispatcher_runtime_enabled = var.dispatcher_artifact_sha256 != null
+  worker_runtime_enabled = var.worker_artifact_sha256 != null
+  reconciler_runtime_enabled = var.reconciler_artifact_sha256 != null
   watcher_trigger_requested = var.watcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.watcher_trigger_enabled_override
   watcher_trigger_enabled = local.watcher_runtime_enabled && local.watcher_trigger_requested
+  dispatcher_trigger_requested = var.dispatcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.dispatcher_trigger_enabled_override
+  dispatcher_trigger_enabled = local.dispatcher_runtime_enabled && local.dispatcher_trigger_requested
+  worker_trigger_requested = var.worker_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.worker_trigger_enabled_override
+  worker_trigger_enabled = local.worker_runtime_enabled && local.worker_trigger_requested
+  reconciler_trigger_enabled = local.reconciler_runtime_enabled && var.reconciler_trigger_enabled
 }
 """
         recovery_pause = {
@@ -1456,13 +1509,37 @@ locals {
                 0,
                 None,
             ),
-            ("recovery worker drain", {**recovery_pause, "worker_trigger_enabled_override": True}, 0, None),
-            ("recovery all stopped", {**recovery_pause, "worker_trigger_enabled_override": False}, 0, None),
             (
-                "override without watcher pause",
+                "recovery worker drain",
                 {
                     **recovery_pause,
                     "watcher_execution_paused": False,
+                    "worker_trigger_enabled_override": True,
+                },
+                0,
+                None,
+            ),
+            (
+                "recovery all stopped",
+                {
+                    **recovery_pause,
+                    "worker_trigger_enabled_override": False,
+                    "worker_artifact_sha256": "a" * 64,
+                    "worker_artifact_version_id": "version-1",
+                    "watcher_artifact_sha256": "a" * 64,
+                    "watcher_artifact_version_id": "version-1",
+                    "dispatcher_artifact_sha256": "a" * 64,
+                    "dispatcher_artifact_version_id": "version-1",
+                    "reconciler_artifact_sha256": "a" * 64,
+                    "reconciler_artifact_version_id": "version-1",
+                },
+                0,
+                None,
+            ),
+            (
+                "worker drain cannot pause executors",
+                {
+                    **recovery_pause,
                     "worker_trigger_enabled_override": True,
                 },
                 1,
@@ -1712,7 +1789,7 @@ variable "reconciler_trigger_enabled" {
                 "watcher running",
                 {"dynamodb_recovery_cutover": safe_cutover},
                 1,
-                "watcher execution paused",
+                "all durable executors paused",
             ),
             (
                 "trigger requested",
@@ -2091,7 +2168,7 @@ resource "aws_cloudwatch_metric_alarm" "undocumented_delivery_gate" {
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
 
         self.assertIn("reconciler_timeout_seconds        = 60", locals_source)
-        self.assertIn("reconciler_reserved_concurrency   = 1", locals_source)
+        self.assertIn("reconciler_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
         self.assertIn("reconciler_repair_limit           = 100", locals_source)
         self.assertIn("reconciler_observation_limit      = 101", locals_source)
         self.assertIn('reconciler_schedule_expression    = "rate(5 minutes)"', locals_source)

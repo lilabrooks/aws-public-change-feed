@@ -13,10 +13,15 @@ from pathlib import Path
 
 from build_lambda_package import RUNTIME_HANDLERS
 from publish_lambda_artifact import validate_package
+from qualify_legacy_lambda_artifact import qualify_legacy_package
 
 
-def verify(package: Path) -> None:
-    validate_package(package.read_bytes())
+def verify(package: Path, *, legacy_version_id: str | None = None) -> None:
+    body = package.read_bytes()
+    if legacy_version_id is None:
+        validate_package(body)
+    else:
+        qualify_legacy_package(body, observed_version_id=legacy_version_id)
     configured_modules = {entrypoint.rpartition(".")[0] for entrypoint in RUNTIME_HANDLERS}
     with tempfile.TemporaryDirectory(prefix="apcf-lambda-import-") as raw:
         root = Path(raw)
@@ -52,8 +57,9 @@ def verify(package: Path) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--package", required=True, type=Path)
+    parser.add_argument("--legacy-version-id")
     arguments = parser.parse_args()
-    verify(arguments.package.resolve())
+    verify(arguments.package.resolve(), legacy_version_id=arguments.legacy_version_id)
     print(f"Lambda package import contract passed: {arguments.package}")
     return 0
 

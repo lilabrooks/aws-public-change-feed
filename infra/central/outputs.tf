@@ -148,7 +148,7 @@ output "runtime_trigger_states" {
 }
 
 output "watcher_execution_paused" {
-  description = "Whether the watcher reserved-concurrency pause is selected."
+  description = "Whether all four durable executors have selected zero reserved concurrency."
   value       = var.watcher_execution_paused
 }
 

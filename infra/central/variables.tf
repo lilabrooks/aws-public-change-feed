@@ -102,7 +102,7 @@ variable "watcher_trigger_enabled_override" {
 }
 
 variable "watcher_execution_paused" {
-  description = "Whether reserved concurrency is zero so no watcher invocation can run during an exact reviewed state exercise."
+  description = "Whether reserved concurrency is zero for watcher, dispatcher, worker, and reconciler during an exact reviewed state exercise. The shadow evaluator remains callable."
   type        = bool
   default     = false
   nullable    = false
@@ -152,7 +152,7 @@ variable "worker_artifact_version_id" {
 }
 
 variable "worker_artifact_checksum_sha256" {
-  description = "Optional base64 S3 SHA-256 checksum for a checksum-bearing shared runtime package; L-53 owns universal enforcement."
+  description = "Required base64 S3 SHA-256 checksum for a selected shared runtime package, except the fixed L-53 legacy digest and VersionId."
   type        = string
   default     = null
   nullable    = true
@@ -281,7 +281,7 @@ variable "reconciler_artifact_version_id" {
 }
 
 variable "reconciler_artifact_checksum_sha256" {
-  description = "Optional base64 S3 SHA-256 checksum for a checksum-bearing reconciler package; L-53 owns universal enforcement."
+  description = "Required base64 S3 SHA-256 checksum for a selected reconciler package, except the fixed L-53 legacy digest and VersionId."
   type        = string
   default     = null
   nullable    = true

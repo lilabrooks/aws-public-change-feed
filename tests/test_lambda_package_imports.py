@@ -55,6 +55,16 @@ class LambdaPackageImportTests(unittest.TestCase):
                 verify(self.package(Path(raw), "async def lambda_handler(event, context):\n    return {}\n"))
         validate_package.assert_called_once()
 
+    @patch("verify_lambda_package_imports.qualify_legacy_package")
+    @patch("verify_lambda_package_imports.validate_package")
+    @patch("verify_lambda_package_imports.RUNTIME_HANDLERS", ("fixture_handler.lambda_handler",))
+    def test_exact_legacy_version_uses_only_the_bounded_qualifier(self, validate_package, qualify_legacy_package):
+        with tempfile.TemporaryDirectory() as raw:
+            package = self.package(Path(raw), "def lambda_handler(event, context):\n    return {}\n")
+            verify(package, legacy_version_id="legacy-version")
+            qualify_legacy_package.assert_called_once_with(package.read_bytes(), observed_version_id="legacy-version")
+        validate_package.assert_not_called()
+
 
 if __name__ == "__main__":
     unittest.main()

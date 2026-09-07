@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-08-03
+- Revision accepted: 2026-09-06
 
 ## Context
 
@@ -40,6 +41,31 @@ Each corpus item declares its `provenance` as `historical` or `synthetic`. Synth
 ## Rollback
 
 If precision at 0.95 blocks useful matcher work while the observed noise in Slack proves tolerable, lower the floor to 0.90 and record the observed review burden that justified it. If the corpus reaches the size ceiling before covering the enabled services, move to fetched artifacts and record the credential and offline consequences for CI.
+
+## Accepted 2026-09-06 revision: production corpus disposition
+
+The repository owner accepted this revision on 2026-09-06.
+
+For the exact production-like dev policy selected in L-40, historical coverage
+means that every enabled `(service_id, risk_type)` pair has a reviewed
+disposition in the promotion record. It does not mean that every pair must have
+a historical positive. Recall is undefined for a pair with no labeled positive;
+that pair is reported with its historical and synthetic counts and cannot gain
+an invented per-pair threshold.
+
+The selected corpus has 47 items: 32 historical and 15 synthetic. It yields 29
+true positives, no false positives, and no false negatives. Six of the 12
+enabled pairs have no historical positive, four have one, and the remaining two
+have two and seven. The accepted global precision floor of 0.95 and recall
+floor of 0.80 still govern promotion, and every pair remains visible in the
+report.
+
+The owner may accept this thin-data boundary for the reviewed deployment
+without extending the sample merely to obtain a positive result. Revisit the
+policy when a new historical item changes a pair's evidence, a matcher or label
+changes, an enabled service or risk rule changes, a per-pair override is
+proposed, the global floors fail, or observed Slack review burden contradicts
+the precision-first choice.
 
 ## References
 
