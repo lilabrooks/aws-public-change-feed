@@ -32,6 +32,16 @@ MVP_VIDEO_URL = (
     f"https://github.com/lilabrooks/aws-public-change-feed/releases/download/mvp-evidence-v2/{MVP_VIDEO_NAME}"
 )
 MVP_VIDEO_SHA256 = "adfdd7c7ef8c1071e2b848b49c93e6f75a6003a331f3fc2a31ee54dcb43c5bd7"
+WALKTHROUGH_DIR = Path("site/media/walkthrough-v3")
+WALKTHROUGH_FILES = {
+    "aws-public-change-alerting-walkthrough-web.mp4",
+    "aws-public-change-alerting-walkthrough.mp4",
+    "captions.vtt",
+    "chapters.vtt",
+    "poster.png",
+    "poster.svg",
+    *(f"scene-{number:02d}.svg" for number in range(1, 9)),
+}
 ACCEPTED_ADR_COUNT_RE = re.compile(r"(?<![0-9])([0-9]+) accepted ADRs")
 ADR_INDEX_LINK_RE = re.compile(
     r"^- \[ADR-[0-9]{3}:[^\n]*\]\(\.\./adr/([0-9]{3}-[^)#]+\.md)(?:#[^)]+)?\)",
@@ -120,6 +130,9 @@ REQUIRED_SITE_FILES = {
     MVP_PPTX_PATH,
     MVP_WEB_VIDEO_PATH,
     MVP_HASHES_PATH,
+    Path("site/readiness.svg"),
+    WALKTHROUGH_DIR / "SHA256SUMS",
+    *(WALKTHROUGH_DIR / name for name in WALKTHROUGH_FILES),
 }
 PUBLIC_NARRATIVE_PREFIXES = (
     "docs/architecture/",
@@ -132,6 +145,7 @@ REQUIRED_PAGE_IDS = {
     "content",
     "value",
     "mvp-demo",
+    "readiness",
     "contracts",
     "slack-sample",
     "flow",
@@ -331,6 +345,34 @@ def validate_mvp_media(root: Path) -> list[str]:
     return errors
 
 
+def validate_walkthrough_media(root: Path) -> list[str]:
+    errors: list[str] = []
+    directory = root / WALKTHROUGH_DIR
+    manifest = directory / "SHA256SUMS"
+    if not manifest.is_file() or any(not (directory / name).is_file() for name in WALKTHROUGH_FILES):
+        return errors  # Required-file validation reports missing artifacts.
+    entries: dict[str, str] = {}
+    for line in manifest.read_text(encoding="utf-8").splitlines():
+        match = re.fullmatch(r"([0-9a-f]{64})  ([^/]+)", line)
+        if not match or match[2] in entries:
+            errors.append(f"{WALKTHROUGH_DIR}: malformed or duplicate hash entry")
+            continue
+        entries[match[2]] = match[1]
+    if set(entries) != WALKTHROUGH_FILES:
+        errors.append(f"{WALKTHROUGH_DIR}: manifest must match the current walkthrough artifacts")
+    for name in sorted(WALKTHROUGH_FILES):
+        data = (directory / name).read_bytes()
+        if hashlib.sha256(data).hexdigest() != entries.get(name):
+            errors.append(f"{WALKTHROUGH_DIR}: digest mismatch for {name}")
+        if name.endswith(".mp4") and (len(data) < 12 or data[4:8] != b"ftyp"):
+            errors.append(f"{WALKTHROUGH_DIR}: {name} must be an ISO media file")
+        if name.endswith(".vtt") and not data.startswith(b"WEBVTT\n\n"):
+            errors.append(f"{WALKTHROUGH_DIR}: {name} requires a WEBVTT header")
+        if name == "poster.png" and not data.startswith(b"\x89PNG\r\n\x1a\n"):
+            errors.append(f"{WALKTHROUGH_DIR}: poster must be a PNG image")
+    return errors
+
+
 def validate_adr_public_contract(root: Path) -> list[str]:
     errors: list[str] = []
     adr_paths = sorted((root / "docs/adr").glob("[0-9][0-9][0-9]-*.md"))
@@ -461,8 +503,8 @@ def validate_repository(root: Path) -> list[str]:
         if image.get("width") != "1800" or image.get("height") != "780":
             errors.append(f"{PAGE_PATH}: architecture image dimensions must match the SVG viewBox")
 
-    if len(parser.mvp_videos) != 1:
-        errors.append(f"{PAGE_PATH}: expected exactly one MVP evidence video")
+    if len(parser.mvp_videos) != 1 or parser.tag_counts.get("video") != 1:
+        errors.append(f"{PAGE_PATH}: expected exactly one service walkthrough video")
     else:
         video = parser.mvp_videos[0]
         required_boolean_attributes = {"controls", "playsinline"}
@@ -471,7 +513,7 @@ def validate_repository(root: Path) -> list[str]:
             errors.append(f"{PAGE_PATH}: MVP video is missing attributes: {', '.join(missing_attributes)}")
         if video.get("preload") != "metadata":
             errors.append(f"{PAGE_PATH}: MVP video must preload metadata only")
-        if video.get("poster") != "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png":
+        if video.get("poster") != "./media/walkthrough-v3/poster.png":
             errors.append(f"{PAGE_PATH}: MVP video must use the reviewed poster")
         if video.get("width") != "1920" or video.get("height") != "1080":
             errors.append(f"{PAGE_PATH}: MVP video dimensions must be 1920 by 1080")
@@ -483,20 +525,23 @@ def validate_repository(root: Path) -> list[str]:
         if expected_reference not in page_references:
             errors.append(f"{PAGE_PATH}: missing architecture artifact link: {expected_reference}")
     for expected_reference in (
-        MVP_VIDEO_URL,
-        "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-web.mp4",
-        "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-captions.vtt",
+        "./media/walkthrough-v3/aws-public-change-alerting-walkthrough.mp4",
+        "./media/walkthrough-v3/aws-public-change-alerting-walkthrough-web.mp4",
+        "./media/walkthrough-v3/captions.vtt",
+        "./media/walkthrough-v3/chapters.vtt",
+        "./readiness.svg",
         "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf",
         "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx",
-        "./media/mvp-evidence-v2/SHA256SUMS",
+        "./media/walkthrough-v3/SHA256SUMS",
     ):
         if expected_reference not in page_references:
-            errors.append(f"{PAGE_PATH}: missing MVP evidence reference: {expected_reference}")
+            errors.append(f"{PAGE_PATH}: missing walkthrough reference: {expected_reference}")
     if "mermaid" in page.read_text(encoding="utf-8").casefold():
         errors.append(f"{PAGE_PATH}: Mermaid source or runtime references are no longer allowed")
 
     errors.extend(validate_drawio_artifacts(root))
     errors.extend(validate_mvp_media(root))
+    errors.extend(validate_walkthrough_media(root))
     errors.extend(validate_adr_public_contract(root))
 
     theme_css = (root / "site/compact-theme.css").read_text(encoding="utf-8")

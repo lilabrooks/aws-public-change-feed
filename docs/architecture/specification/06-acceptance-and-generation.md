@@ -430,6 +430,15 @@ Each step records the passing contracts, tests, or live-exercise result required
 
 Generated code and infrastructure must follow the current contracts and accepted ADRs. Do not generate placeholder external interfaces, customer roles, account data collectors, or unbounded plugin hooks. Keep producer, matcher, release, state, dispatch, Slack, and operations packages separate behind typed internal interfaces. Runtime names and IAM policies derive from validated deployment input.
 
+## Public walkthrough acceptance
+
+The public page presents one service walkthrough, with captions and chapter
+markers. Its current media manifest binds both video renditions, captions,
+chapter track, poster, and editable frames; the original MVP assets retain
+their separate historical manifest. Site validation rejects a second video player and any media whose bytes
+differ from its recorded hash. The readiness explanation
+links to the final assessment and preserves that assessment's scope and limits.
+
 ## References
 
 References verified: 2026-07-13.

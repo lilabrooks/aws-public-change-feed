@@ -73,13 +73,13 @@ outside this evidence claim.
 
 See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issues) for the current work queue. The [goal](docs/GOAL.md) defines product scope, completion criteria, evidence, and the limits of the passing production-readiness result.
 
-## MVP walkthrough
+## Service walkthrough
 
-[![Opening frame from the AWS Public Change Alerting dev MVP walkthrough.](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png)](https://lilabrooks.github.io/aws-public-change-feed/)
+[![AWS Public Change Alerting: delivery, lifecycle, and readiness.](site/media/walkthrough-v3/poster.png)](https://lilabrooks.github.io/aws-public-change-feed/)
 
-The public walkthrough traces the Terraform roots, Lambda runtimes, matcher corpus, candidate fields, DynamoDB state, SQS FIFO delivery, and recorded Slack responses. Private account and channel details are omitted.
+The 3:41 walkthrough explains the five Lambda roles, why DynamoDB owns delivery state, and how S3, SQS, CloudWatch, and CloudTrail support the service. It then covers the M1 live results and M2 lifecycle changes, with a 48-second M3 conclusion starting at 2:54. The opening shows all three milestones closed. Private account and channel details are omitted.
 
-[Watch with captions](https://lilabrooks.github.io/aws-public-change-feed/) · [Open the slide deck as PDF](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf) · [Download the editable PowerPoint](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx) · [Read the transcript and recorded results](docs/evidence/mvp-walkthrough.md)
+[Watch with captions](https://lilabrooks.github.io/aws-public-change-feed/) · [Open the MVP slides as PDF](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf) · [Download the MVP PowerPoint](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx) · [Read the transcript and recorded results](docs/evidence/mvp-walkthrough.md)
 
 ## Processing path
 
@@ -166,7 +166,9 @@ Terraform cleanup is event-driven. Use `make terraform-clean` after a backend or
 - [DynamoDB PITR recovery decision](docs/adr/027-dynamodb-point-in-time-recovery.md): the 35-day two-table mechanism, safety boundaries, staged proof, implemented checks, and completed L-41 evidence.
 - [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
 - [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
-- [Dev MVP walkthrough](docs/evidence/mvp-walkthrough.md): narrated video, slides, captions, transcript, recorded results, and artifact hashes.
+- [Service walkthrough](docs/evidence/mvp-walkthrough.md): one video covering the MVP and readiness decision, captions, transcript, and artifact hashes.
+- [How readiness was established](docs/production-readiness.md): the decision, evidence reuse, rollback proof, and retained limits.
+- [Final M3 assessment](docs/evidence/m3-production-readiness-assessment-2026-09-06.md): each criterion, baseline, relevant change, and final disposition.
 - [Production policy evidence](docs/evidence/production-policy.md): exact policy inputs, corpus results, pair-level sample limits, and revisit conditions.
 - [L-42 shadow and rollback evidence](docs/evidence/l42-shadow-and-rollback-2026-09-06.md): live shadow results, configuration rollback and restoration, runtime recovery, retained artifact audit, evidence limits, and successor issues.
 

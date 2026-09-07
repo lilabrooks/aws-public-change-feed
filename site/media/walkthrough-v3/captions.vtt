@@ -1,0 +1,173 @@
+WEBVTT
+
+1
+00:00:00.300 --> 00:00:10.600
+AWS Public Change Alerting matches public AWS announcements to
+configured services and risk phrases, then sends the results to
+Slack.
+
+2
+00:00:10.720 --> 00:00:19.570
+M1 proved delivery, M2 added retention and replay controls, and
+M3 established readiness for the reviewed deployment.
+
+3
+00:00:20.567 --> 00:00:23.117
+EventBridge schedules three Lambdas.
+
+4
+00:00:23.237 --> 00:00:31.812
+The watcher fetches approved feeds, matches service aliases and
+risk phrases, and records candidates before advancing
+checkpoints.
+
+5
+00:00:31.932 --> 00:00:36.182
+The dispatcher sends due delivery records to SQS FIFO.
+
+6
+00:00:36.302 --> 00:00:41.402
+The queue invokes the Slack worker, which sends the message and
+records the outcome.
+
+7
+00:00:41.522 --> 00:00:47.572
+The reconciler recovers overdue work and marks expired sends as
+delivery unknown.
+
+8
+00:00:47.692 --> 00:00:53.667
+A fifth Lambda, shadow, evaluates the same feed policy in memory
+for deployment checks.
+
+9
+00:00:54.667 --> 00:01:00.242
+DynamoDB keeps checkpoints and delivery history after queue
+messages are consumed.
+
+10
+00:01:00.362 --> 00:01:06.137
+Conditional writes coordinate leases, deduplication, and retries
+across Lambdas.
+
+11
+00:01:06.257 --> 00:01:10.107
+SQS provides transport and destination ordering.
+
+12
+00:01:10.227 --> 00:01:16.252
+S3 holds exact configuration releases and retained feed
+responses for replay.
+
+13
+00:01:16.372 --> 00:01:22.822
+CloudWatch collects runtime logs and metrics; alarms notify the
+operator through SNS.
+
+14
+00:01:22.942 --> 00:01:29.392
+CloudTrail has a narrower role here: proving which table and
+timestamp a recovery request used.
+
+15
+00:01:29.512 --> 00:01:31.987
+It doesn't prove restored contents.
+
+16
+00:01:32.107 --> 00:01:38.907
+Terraform defines the resources and scoped IAM roles, including
+access to Slack credentials.
+
+17
+00:01:39.900 --> 00:01:48.475
+M1's live cohort produced twelve Slack posts, each with one
+network attempt, and twelve posted records in DynamoDB.
+
+18
+00:01:48.595 --> 00:01:57.595
+A separate recovery exercise completed a pending delivery and
+moved an expired send lease to delivery unknown without another
+Slack call.
+
+19
+00:01:57.715 --> 00:02:01.590
+The fixed load run created fifty records in ten minutes.
+
+20
+00:02:01.710 --> 00:02:04.660
+The owner also received the alarm email.
+
+21
+00:02:05.633 --> 00:02:09.458
+M2 addressed what happens as history accumulates.
+
+22
+00:02:09.578 --> 00:02:17.103
+The migration added expiry dates to one-hundred-and-sixty-four
+old rows, leaving the four active checkpoints alone.
+
+23
+00:02:17.223 --> 00:02:23.973
+Retained-source replay now binds one saved response and
+inspected state into a reviewed plan.
+
+24
+00:02:24.093 --> 00:02:27.968
+It can fill missing records but can't touch feed checkpoints.
+
+25
+00:02:28.088 --> 00:02:30.688
+No live source replay was applied.
+
+26
+00:02:31.667 --> 00:02:40.917
+The matcher scored twenty-nine true-positive service and risk
+pairs, with no false positives or false negatives, on
+forty-seven labeled items.
+
+27
+00:02:41.037 --> 00:02:43.562
+That passes the global thresholds.
+
+28
+00:02:43.682 --> 00:02:52.882
+But six configured pairs have no historical positive, so that
+score doesn't establish recall on real AWS wording for those
+pairs.
+
+29
+00:02:53.867 --> 00:02:58.767
+M3 reused earlier evidence where the changes still supported it.
+
+30
+00:02:58.887 --> 00:03:01.887
+The missing test was application rollback.
+
+31
+00:03:02.007 --> 00:03:09.582
+With durable execution paused, we switched all five Lambdas to
+the qualified predecessor and back to the successor.
+
+32
+00:03:09.702 --> 00:03:16.802
+One shadow run per version returned the same eight candidate
+identities from two-hundred-and-forty items.
+
+33
+00:03:17.800 --> 00:03:22.275
+The stopped-state digests matched, then we restored normal
+operation.
+
+34
+00:03:22.395 --> 00:03:29.220
+The fixed observation window passed, all twenty-eight alarms
+were healthy, and Terraform showed no changes.
+
+35
+00:03:29.340 --> 00:03:36.915
+The owner accepted readiness for one environment and Slack
+destination at three-hundred delivery requests per hour.
+
+36
+00:03:37.035 --> 00:03:40.710
+Live service on restored tables remains unproved.

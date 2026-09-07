@@ -1,0 +1,33 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:20.267
+Delivery, lifecycle, and readiness
+
+2
+00:00:20.267 --> 00:00:54.367
+How the Lambda jobs connect
+
+3
+00:00:54.367 --> 00:01:39.600
+Why these services have separate jobs
+
+4
+00:01:39.600 --> 00:02:05.333
+What M1 exercised
+
+5
+00:02:05.333 --> 00:02:31.367
+What M2 changed
+
+6
+00:02:31.367 --> 00:02:53.567
+What the matching score supports
+
+7
+00:02:53.567 --> 00:03:17.500
+The remaining rollback proof
+
+8
+00:03:17.500 --> 00:03:41.400
+The readiness result and its limits

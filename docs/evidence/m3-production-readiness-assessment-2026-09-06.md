@@ -17,7 +17,7 @@
   `infra/central/deployment.yaml`
   `785bc448eb68292fccf3e78cc549410a5a016ba8e7fb1a177b7a3729b8dd8122`
 
-This table starts L-43 before further downtime. A reuse decision means the
+This final table records L-43’s completed assessment. A reuse decision means the
 named evidence still answers the requirement at its stated boundary. On
 2026-09-06 authorized L-54 stages deployed the genuine successor across all
 five functions, passed its identity refusals and one bounded shadow sample,
@@ -26,7 +26,7 @@ scheduled cycle. The later application-only exercise passed its predecessor
 and forward transitions, both bounded shadow checks, stopped-state comparison,
 normal restoration, scheduled observation, and final Terraform convergence.
 
-| Requirement | Exact baseline evidence | Intervening change checked | Reuse, targeted rerun, or blocker | Remaining outcome |
+| Requirement | Exact baseline evidence | Intervening change checked | Reuse, targeted rerun, or blocker | Final disposition |
 | --- | --- | --- | --- | --- |
 | Reviewed scope and policy inputs | L-40 issue #145 and `docs/evidence/production-policy.md` SHA-256 `4f6a4ad8ea2d1de27fd9fa499848a227cbca0c99ec458ce78d3895c0b5f89b8c` select the input hashes and the 4/3/4 policy. | M2 and M3 changed runtime, packaging, recovery, IAM, and alarms. The reviewed `config/dev.yaml` and `infra/central/deployment.yaml` inputs retained SHA-256 values `66545778…` and `785bc448…`. | Reuse the selection and hashes. Do not project repository ceilings onto the deployment. | Resolved for the exact one-environment, one-destination, four-feed, three-service, four-rule deployment and its 300-delivery/hour envelope. |
 | Repository contracts, schemas, identities, and clean build | L-49 #186 independently binds recovery hashes. L-52 #189 / PR #195 at `db12c519…` passed repository quality, security, references, and the Ubuntu 24.04 Python 3.12 package import job (Actions run `34049165126`). | L-53 changed package validation, artifact guards, quiescence, tests, specifications, and runbooks. Final candidate `91f8db0…` passed local checks and PR #196's repository-quality, minimum-Terraform, CodeQL, dependency, secret, Terraform, and reference jobs in Actions runs `34072602056`, `34072601512`, `34072602083`, and `34072602180`. | Retain the exact final commit and CI identities. A future package build must still use the accepted target. | Resolved and passed. |
@@ -42,6 +42,8 @@ normal restoration, scheduled observation, and final Terraform convergence.
 | Retention, historical references, replay, and rollback availability | M2 tools provide preview-bound config/package retirement, source retention, replay, and exact-version handling. The archived L-42 snapshot has 15 posted records and three older package digests. | ADR-029 makes older packages ineligible for the current deploy path unless separately qualified. S3 retention does not make them deployable. The L-54 replay previews resolved the retained snapshot and release, all four existing candidate and delivery records, and one missing response-page marker without apply. Current actionable inventory is empty. Exact predecessor and successor objects remain protected and resolved. | The 15 posted records are not stranded actionable work. Only `c88…` was qualified for L-54. Unavailable exact packages remain unchanged under ADR-020. No blanket replay or deletion exercise. | Resolved. |
 | IAM, Terraform drift, operator procedure, and restoration controls | M1/M2/L-41/L-42 read-backs and no-change plans cover their own commits. L-50 records final deletion protection convergence. | Central IAM, artifact guards, concurrency, alarms, recovery controls, package provenance, and runbooks changed after those baselines. L-54 read all seven relevant role-policy sets and found no attached managed policies. Shadow had no DynamoDB, S3 write, queue, or secret action, and its invoker had only `lambda:InvokeFunction`. Saved plans preserved the pause across serials 62 and 63, restored from serial 64, and ended at exact backend VersionId `QrLUsn…` for serial 65. | Use the fresh read-backs and actual-state plans rather than blanket reuse. | Resolved. The final source and required CI passed. |
 | Terminal readiness decision and status | L-42 is a completed attempt with terminal result `incomplete`; it is not a passing M3 result. L-54 records `passed`. | The application proof, affected live checks, restored scheduled operation, Terraform convergence, final source publication, and required CI passed. | The repository owner accepted L-43 `passed` on 2026-09-07 for this exact deployment and envelope. Preserve the limits and L-42's historical result. | `passed`; M3 is production-ready at the recorded boundary. |
+
+For a reader-facing account of the decision, see [How readiness was established](../production-readiness.md).
 
 ## Decision gates and live result
 
