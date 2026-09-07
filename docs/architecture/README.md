@@ -44,7 +44,8 @@ passed every required check in PR #196. The repository owner accepted L-43's
 terminal `passed` disposition on 2026-09-07. M3 is production-ready for the
 exact one-environment, one-destination, four-feed, three-service, four-rule dev
 deployment and its 300-delivery/hour envelope, subject to the limits retained
-in the readiness assessment.
+in the [readiness assessment](../evidence/m3-production-readiness-assessment-2026-09-06.md).
+[How readiness was established](../production-readiness.md) explains the decision and links its supporting records.
 
 ## Architecture decision records
 
@@ -141,7 +142,7 @@ policy that needs cryptographic build origin.
 
 [`site/index.html`](../../site/index.html) is the concise public explanation of this architecture. The editable diagram lives in [`site/architecture.drawio`](../../site/architecture.drawio), and the page renders its committed [`site/architecture.svg`](../../site/architecture.svg) export without a client-side diagram runtime.
 
-The dev MVP walkthrough is indexed by [`docs/evidence/mvp-walkthrough.md`](../evidence/mvp-walkthrough.md). Its committed public assets live under [`site/media/mvp-evidence-v2/`](../../site/media/mvp-evidence-v2/): the 720p web video, slide deck, PDF, poster, WebVTT captions, and SHA-256 manifest. The 1080p MP4 is the `mvp-evidence-v2` GitHub Release asset named by the page and manifest, which keeps the largest binary out of Git history.
+The [service walkthrough](../evidence/mvp-walkthrough.md) explains the completed M1, M2, and M3 milestones in eight scenes, including the Lambda workflow, service choices, and a concise readiness conclusion. Current video, captions, chapter markers, poster, editable SVG frames, and hashes live under [`site/media/walkthrough-v3/`](../../site/media/walkthrough-v3/). The original MVP media and slide deck remain under [`site/media/mvp-evidence-v2/`](../../site/media/mvp-evidence-v2/); their recorded hashes are unchanged.
 
 The draw.io source uses AWS4 resource-icon cells for AWS services. The committed SVG embeds the matching service artwork from AWS's 2026-07-31 Architecture Icons package. Use the [official AWS architecture icons page](https://aws.amazon.com/architecture/icons/) when that artwork needs to be refreshed.
 

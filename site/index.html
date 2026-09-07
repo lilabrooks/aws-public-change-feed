@@ -10,14 +10,14 @@
   <meta property="og:title" content="AWS Public Change Alerting">
   <meta property="og:description" content="Matches public AWS feed items to configured services and risk phrases, then queues route-scoped Slack review candidates.">
   <meta property="og:url" content="https://lilabrooks.github.io/aws-public-change-feed/">
-  <meta property="og:image" content="https://lilabrooks.github.io/aws-public-change-feed/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png">
-  <meta property="og:image:alt" content="Opening frame from the AWS Public Change Alerting dev MVP results walkthrough.">
+  <meta property="og:image" content="https://lilabrooks.github.io/aws-public-change-feed/media/walkthrough-v3/poster.png">
+  <meta property="og:image:alt" content="AWS Public Change Alerting: delivery, lifecycle, and readiness.">
   <meta property="og:image:width" content="1920">
   <meta property="og:image:height" content="1080">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="AWS Public Change Alerting">
-  <meta name="twitter:description" content="A public walkthrough of the dev MVP, from AWS feeds and Terraform through DynamoDB state, SQS FIFO, and Slack delivery.">
-  <meta name="twitter:image" content="https://lilabrooks.github.io/aws-public-change-feed/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png">
+  <meta name="twitter:description" content="One walkthrough of public-feed delivery and the evidence used to establish scoped production readiness.">
+  <meta name="twitter:image" content="https://lilabrooks.github.io/aws-public-change-feed/media/walkthrough-v3/poster.png">
   <link rel="canonical" href="https://lilabrooks.github.io/aws-public-change-feed/">
   <link rel="license" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/LICENSE">
   <link rel="stylesheet" href="./compact-theme.css">
@@ -264,6 +264,40 @@
         min-width: 1040px;
       }
     }
+    .readiness-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
+      gap: 3rem;
+      align-items: start;
+    }
+
+    .readiness-layout h3 {
+      margin: 0 0 .75rem;
+    }
+
+    .readiness-layout p {
+      line-height: 1.7;
+      margin: 0 0 2rem;
+    }
+
+    .readiness-figure {
+      margin: 0;
+    }
+
+    .readiness-figure img {
+      width: 100%;
+      height: auto;
+      border-radius: 1rem;
+    }
+
+    .readiness-figure figcaption {
+      margin-top: .75rem;
+    }
+
+    @media (max-width: 760px) {
+      .readiness-layout { grid-template-columns: 1fr; }
+      .readiness-figure { max-width: 600px; }
+    }
   </style>
 </head>
 <body>
@@ -278,6 +312,7 @@
       <nav class="compact-nav" aria-label="Primary navigation">
         <a href="#value">Purpose</a>
         <a href="#mvp-demo">Demo</a>
+        <a href="#readiness">Readiness</a>
         <a href="#flow">System</a>
         <a href="#evidence">Status</a>
         <a href="#source">Source</a>
@@ -292,7 +327,7 @@
         <p class="compact-eyebrow">AWS RSS and Atom feeds to Slack</p>
         <h1 class="compact-title">AWS announcements matched to <em>configured services and risk phrases.</em></h1>
         <div class="compact-actions">
-          <a class="compact-button compact-button-primary" href="#mvp-demo">Watch the MVP walkthrough</a>
+          <a class="compact-button compact-button-primary" href="#mvp-demo">Watch the walkthrough</a>
           <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed">Open GitHub</a>
         </div>
       </div>
@@ -330,10 +365,10 @@
     <section class="compact-section" id="mvp-demo">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Dev MVP results</p>
+          <p class="compact-eyebrow">M1, M2, and M3 complete</p>
           <div>
-            <h2 class="compact-section-title">Watch one AWS announcement cross the system and reach Slack.</h2>
-            <p class="compact-section-copy">This public walkthrough traces the Terraform roots, Lambda jobs, matcher corpus, candidate fields, DynamoDB state, SQS FIFO delivery, and recorded Slack responses. Private account and Slack channel details are omitted.</p>
+            <h2 class="compact-section-title">See the service work, then follow the readiness decision.</h2>
+            <p class="compact-section-copy">One 3:41 video explains the Lambda workflow and service choices with AWS service icons, then covers live delivery results and lifecycle changes. A 48-second closing section summarizes the M3 rollback proof and readiness limits, starting at 2:54. All three milestones are closed. Private account and Slack details are omitted.</p>
           </div>
         </div>
 
@@ -344,35 +379,36 @@
             controls
             playsinline
             preload="metadata"
-            poster="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-poster.png"
+            poster="./media/walkthrough-v3/poster.png"
             width="1920"
             height="1080"
-            aria-label="Narrated dev MVP walkthrough"
+            aria-label="Narrated service walkthrough: delivery, lifecycle, and readiness"
           >
-            <source src="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-web.mp4" type="video/mp4">
+            <source src="./media/walkthrough-v3/aws-public-change-alerting-walkthrough-web.mp4" type="video/mp4">
             <track
               default
               kind="captions"
               srclang="en"
               label="English"
-              src="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2-captions.vtt"
+              src="./media/walkthrough-v3/captions.vtt"
             >
-            Your browser cannot play this video. <a href="https://github.com/lilabrooks/aws-public-change-feed/releases/download/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.mp4">Download the MP4</a> instead.
+            <track kind="chapters" srclang="en" label="Chapters" src="./media/walkthrough-v3/chapters.vtt">
+            Your browser cannot play this video. <a href="./media/walkthrough-v3/aws-public-change-alerting-walkthrough.mp4">Download the MP4</a> instead.
           </video>
         </div>
 
         <dl class="site-spec mvp-evidence-meta">
           <div class="site-spec-row">
-            <dt>Recorded run</dt>
-            <dd>M1 closed. Captured 2026-08-29 from source revision <code>04370df</code>.</dd>
+            <dt>Evidence</dt>
+            <dd>M1 live delivery, recovery, load, and alarm records; M2 lifecycle changes; and the accepted 2026-09-07 M3 readiness assessment.</dd>
           </div>
           <div class="site-spec-row">
-            <dt>Recorded result</dt>
+            <dt>M1 live results</dt>
             <dd>4 runtime triggers enabled, 12 public-feed posts accepted by Slack, 2 recovery cases passed, 50 load messages created at 5 per minute, and alarm email receipt confirmed.</dd>
           </div>
           <div class="site-spec-row">
             <dt>Boundary</dt>
-            <dd>The walkthrough summarizes the recorded Slack, recovery, load, and alarm results. M3 later added its production policy, bounded recovery decision, five-function rollback proof, and passing final readiness gate.</dd>
+            <dd>M3 passed for one reviewed environment and destination at 300 delivery requests per hour. The readiness chapters cover evidence reuse, application rollback, restored operation, and the limits retained in the decision.</dd>
           </div>
           <div class="site-spec-row">
             <dt>Attribution</dt>
@@ -381,11 +417,43 @@
         </dl>
 
         <div class="compact-actions">
-          <a class="compact-button compact-button-primary" href="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf">Open the slide deck</a>
-          <a class="compact-button" href="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx">Download PowerPoint</a>
-          <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/releases/download/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.mp4">Download 1080p video</a>
+          <a class="compact-button compact-button-primary" href="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf">Open MVP slides (PDF)</a>
+          <a class="compact-button" href="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx">Download MVP PowerPoint</a>
+          <a class="compact-button" href="./media/walkthrough-v3/aws-public-change-alerting-walkthrough.mp4">Download 1080p video</a>
           <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/evidence/mvp-walkthrough.md">Read the transcript</a>
-          <a class="compact-button" href="./media/mvp-evidence-v2/SHA256SUMS">Verify downloads</a>
+          <a class="compact-button" href="./media/walkthrough-v3/SHA256SUMS">Verify downloads</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="compact-section" id="readiness">
+      <div class="compact-shell">
+        <div class="compact-section-head">
+          <p class="compact-eyebrow">How readiness was established</p>
+          <div>
+            <h2 class="compact-section-title">Every conclusion has a scope and a supporting record.</h2>
+            <p class="compact-section-copy">On 7 September 2026, the owner accepted readiness for one persistent-dev deployment: one environment, one Slack destination, 4 feeds, 3 services, 4 risk rules, and a 300-delivery/hour arrival envelope.</p>
+          </div>
+        </div>
+        <div class="readiness-layout">
+          <div>
+            <h3>Keep the evidence that still applies.</h3>
+            <p>Earlier exercises established matching results, Slack and alarm receipt, a fixed 50-message load cohort, configuration rollback, and bounded database recovery. Each claim was checked against changes since its own evidence baseline. Material differences received targeted checks; a quiet feed sample was accepted without waiting for a positive match.</p>
+            <h3>Close the missing application proof.</h3>
+            <p>With all 4 durable executors stopped, all 5 Lambdas moved to the qualified predecessor and back to the exact successor. Each version passed one shadow check: 4 feeds, 240 items, and the same 8 candidate identities. The stopped-state digests matched and the configuration pointer stayed fixed. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/evidence/l54-application-rollback-2026-09-07.md">Read the L-54 record.</a></p>
+            <h3>Restore normal operation and assess the result.</h3>
+            <p>One reviewed plan restored the original controls. A fixed scheduled window passed, all 28 alarms were healthy, and Terraform reported no changes. Required CI passed for the final source before the owner accepted readiness.</p>
+            <h3>Keep the limits visible.</h3>
+            <p>Matching evidence remains thin, with 6 of 12 service and risk-type pairs carrying no historical positive. Slack outcomes can remain ambiguous. Recovery proved stopped restored-table binding and restart on primaries; live service on restored tables remains unproved. Another deployment or workload needs its own assessment.</p>
+            <div class="compact-actions">
+              <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/production-readiness.md">Follow the evidence</a>
+              <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/evidence/m3-production-readiness-assessment-2026-09-06.md">Read the final assessment</a>
+            </div>
+          </div>
+          <figure class="readiness-figure">
+            <img src="./readiness.svg" width="600" height="960" loading="lazy" alt="Readiness sequence: define scope, review earlier evidence, add the missing rollback proof, complete the assessment, and record the owner's scoped decision.">
+            <figcaption><a href="./readiness.svg">Open the readiness diagram</a></figcaption>
+          </figure>
         </div>
       </div>
     </section>
@@ -614,7 +682,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
             </tr>
             <tr>
               <th scope="row">M3 · Passed</th>
-              <td>M3 establishes production readiness for the exact reviewed production-like dev deployment: one environment, one destination, 4 feeds, 3 services, 4 risk rules, and a 300-delivery/hour arrival envelope. The <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/evidence/m3-production-readiness-assessment-2026-09-06.md">L-43 assessment</a> maps every criterion to its evidence baseline, intervening changes, reuse or targeted check, and outcome. L-40&rsquo;s policy result remains 47 items and 1.000 global precision and recall, with 6 of 12 service and risk-type pairs carrying no historical positive. L-41&rsquo;s dev recovery proof is complete: it covers stopped table restoration, rollback, and primary-table restart, but not service operation on restored data. L-42 remains a completed <code>incomplete</code> attempt whose shadow and configuration portions passed. The later <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/evidence/l54-application-rollback-2026-09-07.md">L-54 application-only exercise</a> passed. The exact <code>c88b49c8&hellip;</code> predecessor and <code>1ae996ca&hellip;</code> successor each passed a five-function transition and one bounded shadow invocation while all durable executors were stopped. Both samples processed 4 feeds and 240 items and returned the same 8 candidate identities. The stopped comparison matched both DynamoDB table digests, 673 raw-snapshot versions, queues, active pointer, restored successor, and every paused control. One actual-state plan restored the original concurrency, all 4 triggers, and 7 derived alarms. A fixed natural window then recorded 1 watcher, 18 dispatcher, and 3 reconciler invocations with no errors or throttles; all 28 alarms were <code>OK</code>, queues and actionable states were empty, and Terraform reported no change. Current topic, subscription, dashboard, IAM, package, PITR, deletion protection, and primary-table checks passed without reading a secret value. Prior Slack, notification, capacity, corpus, and recovery evidence was reused only where its recorded comparison supported the claim. Final candidate <code>91f8db0e&hellip;</code> passed every required check in PR #196, and the owner accepted L-43 <code>passed</code> on 2026-09-07. The result does not cover repository scale ceilings, another deployment, exactly-once Slack delivery, service on restored tables, or historical positives that do not exist.</td>
+              <td>The owner accepted production readiness on 2026-09-07 for the exact reviewed deployment and its 300-delivery/hour arrival envelope. L-54 closed the application rollback gap; the final L-43 assessment connects earlier evidence, targeted checks, restored operation, and passing CI to every applicable criterion. <a href="#readiness">See how readiness was established and what remains outside the claim.</a></td>
             </tr>
           </tbody>
         </table>

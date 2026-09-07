@@ -179,6 +179,22 @@ class SiteValidatorTests(unittest.TestCase):
             errors = validator.validate_repository(root)
         self.assertTrue(any("target does not exist" in error for error in errors))
 
+    def test_changed_current_captions_are_rejected_by_the_hash_manifest(self):
+        directory, root = self.make_repository()
+        with directory:
+            captions = root / validator.WALKTHROUGH_DIR / "captions.vtt"
+            captions.write_text(captions.read_text() + "Incorrect extra narration.\n")
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("digest mismatch for captions.vtt" in error for error in errors))
+
+    def test_a_second_unmarked_video_is_rejected(self):
+        directory, root = self.make_repository()
+        with directory:
+            page = root / "site/index.html"
+            page.write_text(page.read_text().replace("</main>", "<video controls></video></main>"))
+            errors = validator.validate_repository(root)
+        self.assertTrue(any("expected exactly one service walkthrough video" in error for error in errors))
+
     def test_changed_mvp_media_is_rejected_by_its_hash_manifest(self):
         directory, root = self.make_repository()
         with directory:
