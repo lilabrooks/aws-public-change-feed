@@ -199,5 +199,8 @@ mechanism and input comparisons passed. No load cohort, forced Slack post,
 configuration promotion, replay apply, or additional feed sample was added to
 this exercise.
 
-M3 remains open until the final L-43 source candidate passes repository checks
-and required CI and the L-44 public and GitHub status records are consistent.
+After this exercise, final candidate
+`91f8db0e9b1f6cd6a1889face54589feaef295c0` passed all required checks in
+PR #196. The repository owner then accepted L-43's terminal `passed`
+disposition. L-54 remains the application-transition evidence within that M3
+result; its scope and limits did not expand when the later gate passed.
