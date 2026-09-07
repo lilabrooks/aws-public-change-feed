@@ -270,6 +270,19 @@ resource "aws_lambda_event_source_mapping" "slack_worker" {
   scaling_config {
     maximum_concurrency = local.rate_control.worker_reserved_concurrency
   }
+
+  lifecycle {
+    # AWS may return an empty block for disabled metrics. Provider 6.58.0
+    # preserves it on refresh but rejects an explicitly configured empty set.
+    # Keep that representation. Metrics drift must not block shutdown fences;
+    # the controller still refuses it at final read-back after monitoring removal.
+    ignore_changes = [metrics_config]
+
+    postcondition {
+      condition     = var.live_mode == "stopping" || var.live_mode == "parked" || alltrue([for config in self.metrics_config : length(config.metrics) == 0])
+      error_message = "Worker mapping metrics must remain disabled before activation or drain; park first, then review metrics drift recovery separately."
+    }
+  }
 }
 
 resource "aws_lambda_function" "reconciler" {

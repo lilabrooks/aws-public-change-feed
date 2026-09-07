@@ -1,4 +1,6 @@
 resource "aws_cloudwatch_dashboard" "operations" {
+  count = local.monitoring_enabled ? 1 : 0
+
   dashboard_name = "apcf-${local.deployment_id}-operations"
 
   dashboard_body = jsonencode({

@@ -1,0 +1,19 @@
+version: 0.2
+
+phases:
+  install:
+    runtime-versions:
+      python: 3.12
+    commands:
+      - >-
+        curl --fail --silent --show-error --location --max-time 60
+        https://releases.hashicorp.com/terraform/1.15.8/terraform_1.15.8_linux_amd64.zip
+        -o /tmp/live-terraform.zip
+      - >-
+        echo 'd25ce7b6902013ad905db3d2eab0be4cd905887fe88b81a6171b8d5503c31f3d  /tmp/live-terraform.zip'
+        | sha256sum --check
+      - unzip -q /tmp/live-terraform.zip -d /usr/local/bin
+      - pip install --requirement requirements.txt
+  build:
+    commands:
+      - python scripts/live_window.py run

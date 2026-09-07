@@ -1,5 +1,59 @@
 # 5. Security and operations
 
+## Proposed bounded live operation
+
+[ADR-030](../../adr/030-bounded-live-windows-and-terraform-parking.md) and the
+[live-window runbook](../../runbooks/live-window.md) define the proposed M4
+operator workflow. After its first-use gate, persistent dev defaults to parked
+through complete private Terraform inputs. The workflow owns bounded unpark,
+eligible monitoring, optional delivery preflight or observation, and shutdown.
+It must preserve application bytes, retained data, credentials, log retention,
+and PITR. Existing recovery and isolated-preflight procedures retain their
+separate authorization and must not overlap a live-window owner.
+
+Parking removes all deployment metric alarms and the dashboard, disables every
+automatic trigger, and fences all five functions. Evidence failure cannot
+bypass an attempt at mandatory fencing. Retained async work may resume on
+unpark; parked controls do not prove an empty async queue. Retained storage and
+secrets remain possible costs. Source checks do not qualify automatic cleanup
+until the AWS-hosted interruption and deadline proof completes.
+
+The controller and control root share a reviewed timing budget. Its cleanup
+reserve covers one configured attempt; emergency retries can overrun the target.
+Delivery refusal records must preserve the protocol status before cleanup.
+Initial setup and remaining activation have separate allowances. Activation
+must reserve both its remaining work and usable test time, then recheck test
+time before reporting readiness or invoking delivery. Computed unknowns are
+accepted only for the pinned provider's computed-only Lambda/mapping fields;
+unknown configurable changes still fail closed. Worker concurrency follows the
+bundled deployment policy, and exact mapping identity must match its IAM grant.
+Schedule-state changes must leave the runtime-failure queue policy known and
+unchanged. Local JSON rendering preserves exact source-rule/account grants
+without a deferred policy-document data read; it grants no new permissions.
+Known or unknown policy changes still require separate review.
+The mapping may retain an absent or empty metrics block across toggles. Its
+Terraform postcondition must reject enabled metrics in legacy mode and every
+phase except `stopping` and `parked`. Those shutdown phases permit fencing and
+monitoring removal despite metrics drift. Controller read-back then rejects
+enabled metrics or unexpected shapes and cannot report successful parking.
+Ignoring representation drift must not expand the lifecycle field allowlist;
+metrics recovery remains separate. Other plan or provider failures can still
+block shutdown. Failure of an interrupted local test's best-effort early-park
+request must print only a fixed warning and leave the AWS cleanup owner intact.
+Failure-only EventBridge rules and a bounded exhausted-cleanup SNS publish use
+the existing operations topic. They remain outside central parking; central
+alone owns the topic policy. Event transforms exclude private event contents.
+Live receipt proof remains a gate for routine unattended operation.
+
+Control logs retain 14 days. Explicit `live-prune` preview/hash/apply may retire
+exact bundle/evidence versions 90 days after verified successful session
+closure. Current, failed, unresolved, or unproven orphan sessions remain
+protected. Immutable closeouts survive execution-history expiry and partial
+pruning; unknown schemas, changed ownership, or incomplete inventories refuse
+deletion. Closeout and pruning failures must never obstruct parking. The
+control ledger has no TTL. Only incomplete multipart uploads use an age-only
+one-day lifecycle rule; application retention and PITR remain unchanged.
+
 ## Security objectives
 
 - Fetch only reviewed public sources through bounded network behavior.

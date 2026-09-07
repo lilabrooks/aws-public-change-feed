@@ -5,6 +5,8 @@ locals {
 }
 
 resource "aws_cloudwatch_metric_alarm" "delivery_queue_age" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-delivery-queue-age"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 5
@@ -31,6 +33,8 @@ resource "aws_cloudwatch_metric_alarm" "delivery_queue_age" {
 # cannot observe a record stuck at pending_queue because the dispatcher is down.
 # This reads the durable outbox instead.
 resource "aws_cloudwatch_metric_alarm" "outbox_backlog_age" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-outbox-backlog-age"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 3
@@ -49,6 +53,8 @@ resource "aws_cloudwatch_metric_alarm" "outbox_backlog_age" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "delivery_dlq_depth" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-delivery-dlq-depth"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -71,6 +77,8 @@ resource "aws_cloudwatch_metric_alarm" "delivery_dlq_depth" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "runtime_failure_queue_depth" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-runtime-failure-queue-depth"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -216,6 +224,8 @@ resource "aws_cloudwatch_metric_alarm" "dispatcher_heartbeat" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "worker_errors" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-slack-worker-errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -238,6 +248,8 @@ resource "aws_cloudwatch_metric_alarm" "worker_errors" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "reconciler_errors" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-recovery-reconciler-errors"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -260,6 +272,8 @@ resource "aws_cloudwatch_metric_alarm" "reconciler_errors" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "source_state_write_throttles" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-source-state-write-throttles"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -282,6 +296,8 @@ resource "aws_cloudwatch_metric_alarm" "source_state_write_throttles" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "delivery_write_throttles" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-delivery-write-throttles"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -352,6 +368,8 @@ resource "aws_cloudwatch_metric_alarm" "reconciler_heartbeat" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "delivery_unknown" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-delivery-unknown"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -370,6 +388,8 @@ resource "aws_cloudwatch_metric_alarm" "delivery_unknown" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "application_version_mismatch" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-application-version-mismatch"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -388,6 +408,8 @@ resource "aws_cloudwatch_metric_alarm" "application_version_mismatch" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "artifact_unavailable" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-application-artifact-unavailable"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -406,6 +428,8 @@ resource "aws_cloudwatch_metric_alarm" "artifact_unavailable" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "artifact_availability_check_failed" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-application-artifact-check-failed"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -424,6 +448,8 @@ resource "aws_cloudwatch_metric_alarm" "artifact_availability_check_failed" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "worker_fault" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-worker-fault"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -442,6 +468,8 @@ resource "aws_cloudwatch_metric_alarm" "worker_fault" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "dispatch_unknown_outcome" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-dispatch-unknown-outcome"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -460,6 +488,8 @@ resource "aws_cloudwatch_metric_alarm" "dispatch_unknown_outcome" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "recovery_observation_saturated" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-recovery-observation-saturated"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -478,6 +508,8 @@ resource "aws_cloudwatch_metric_alarm" "recovery_observation_saturated" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "recovery_repair_limit" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-recovery-repair-limit"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -496,6 +528,8 @@ resource "aws_cloudwatch_metric_alarm" "recovery_repair_limit" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "reconciler_fault" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-reconciler-fault"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -514,6 +548,8 @@ resource "aws_cloudwatch_metric_alarm" "reconciler_fault" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "release_verification_failures" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-release-verification-failures"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -529,6 +565,8 @@ resource "aws_cloudwatch_metric_alarm" "release_verification_failures" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "raw_snapshot_failures" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-raw-snapshot-failures"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -547,6 +585,8 @@ resource "aws_cloudwatch_metric_alarm" "raw_snapshot_failures" {
 }
 
 resource "aws_cloudwatch_metric_alarm" "terminal_failures" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-terminal-failures"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 1
@@ -570,6 +610,8 @@ resource "aws_cloudwatch_metric_alarm" "terminal_failures" {
 # MaxFeedStalenessSeconds aggregate for this alarm and FeedStalenessSeconds
 # with a FeedName dimension for per-feed attribution in the dashboard.
 resource "aws_cloudwatch_metric_alarm" "feed_staleness" {
+  count = local.monitoring_enabled ? 1 : 0
+
   alarm_name          = "apcf-${local.deployment_id}-feed-staleness"
   comparison_operator = "GreaterThanThreshold"
   evaluation_periods  = 3

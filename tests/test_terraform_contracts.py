@@ -63,6 +63,8 @@ class TerraformContractTests(unittest.TestCase):
                 continue
             if cardinality_selectors == [("count", "local.reconciler_trigger_enabled ? 1 : 0")]:
                 continue
+            if cardinality_selectors == [("count", "local.monitoring_enabled ? 1 : 0")]:
+                continue
             if (
                 len(cardinality_selectors) == 1
                 and cardinality_selectors[0][0] == "count"
@@ -166,11 +168,11 @@ class TerraformContractTests(unittest.TestCase):
         central_backend = (ROOT / "infra/central/backend.tf").read_text(encoding="utf-8")
         preflight_backend = (ROOT / "infra/preflight/backend.tf").read_text(encoding="utf-8")
 
-        self.assertIn('bootstrap_state_key = "apcf/terraform.tfstate"', bootstrap)
-        self.assertIn('central_state_key   = "apcf/central/terraform.tfstate"', bootstrap)
-        self.assertIn('preflight_state_key = "apcf/preflight/terraform.tfstate"', bootstrap)
+        self.assertRegex(bootstrap, r'bootstrap_state_key\s*= "apcf/terraform.tfstate"')
+        self.assertRegex(bootstrap, r'central_state_key\s*= "apcf/central/terraform.tfstate"')
+        self.assertRegex(bootstrap, r'preflight_state_key\s*= "apcf/preflight/terraform.tfstate"')
         self.assertIn(
-            "backend_state_keys  = [local.bootstrap_state_key, local.central_state_key, local.preflight_state_key]",
+            "[local.bootstrap_state_key, local.central_state_key, local.preflight_state_key, local.live_control_state_key]",
             bootstrap,
         )
         self.assertIn('key          = "apcf/central/terraform.tfstate"', central_backend)
@@ -217,6 +219,7 @@ class TerraformContractTests(unittest.TestCase):
                     "-chdir=infra/bootstrap init -backend=false -input=false -lockfile=readonly",
                     "-chdir=infra/central init -backend=false -input=false -lockfile=readonly",
                     "-chdir=infra/preflight init -backend=false -input=false -lockfile=readonly",
+                    "-chdir=infra/live-control init -backend=false -input=false -lockfile=readonly",
                 ],
             )
 
@@ -581,11 +584,18 @@ class TerraformContractTests(unittest.TestCase):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
 
         self.assertIn("watcher_timeout_seconds        = 300", locals_source)
-        self.assertIn("watcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
-        self.assertIn("dispatcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
-        self.assertIn("reconciler_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
+        self.assertIn("watcher_reserved_concurrency   = var.watcher_execution_paused ||", locals_source)
         self.assertIn(
-            "var.watcher_execution_paused ? 0 : local.rate_control.worker_reserved_concurrency", locals_source
+            "dispatcher_reserved_concurrency   = var.watcher_execution_paused || local.live_fenced ? 0 : 1",
+            locals_source,
+        )
+        self.assertIn(
+            "reconciler_reserved_concurrency   = var.watcher_execution_paused || local.live_fenced ? 0 : 1",
+            locals_source,
+        )
+        self.assertIn(
+            "var.watcher_execution_paused || local.live_fenced ? 0 : local.rate_control.worker_reserved_concurrency",
+            locals_source,
         )
         self.assertIn("watcher_lease_seconds          = 360", locals_source)
         self.assertIn('watcher_schedule_expression    = "rate(15 minutes)"', locals_source)
@@ -646,8 +656,10 @@ class TerraformContractTests(unittest.TestCase):
         self.assertIn("function:${local.function_names.shadow}", invoker)
         self.assertNotIn("function:${local.function_names.shadow}:*", invoker)
         self.assertIn('variable "watcher_execution_paused"', variables)
-        self.assertIn("watcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
-        self.assertIn("shadow_reserved_concurrency    = 1", locals_source)
+        self.assertIn("watcher_reserved_concurrency   = var.watcher_execution_paused ||", locals_source)
+        self.assertIn(
+            'shadow_reserved_concurrency    = local.live_managed && var.live_mode != "shadow" ? 0 : 1', locals_source
+        )
         self.assertIn("reserved_concurrent_executions = local.shadow_reserved_concurrency", function)
         self.assertIn("!var.watcher_execution_paused || (", s3)
         for runtime in ("watcher", "dispatcher", "worker", "reconciler"):
@@ -696,7 +708,7 @@ class TerraformContractTests(unittest.TestCase):
 
         for frozen in (
             "dispatcher_timeout_seconds        = 60",
-            "dispatcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1",
+            "dispatcher_reserved_concurrency   = var.watcher_execution_paused || local.live_fenced ? 0 : 1",
             'dispatcher_schedule_expression    = "rate(1 minute)"',
             "dispatcher_maximum_retry_attempts = 2",
             "dispatcher_maximum_event_age      = 300",
@@ -755,10 +767,10 @@ class TerraformContractTests(unittest.TestCase):
         permission = self.resource_block(lambda_source, "aws_lambda_permission", "dispatcher_schedule")
         self.assertIn("source_arn    = aws_cloudwatch_event_rule.dispatcher[0].arn", permission)
 
-        statement = queue[queue.index('sid     = "AllowExactDispatcherSchedule"') :]
-        statement = statement[: statement.index("\n  statement {")]
-        self.assertIn("values   = [aws_cloudwatch_event_rule.dispatcher[0].arn]", statement)
-        self.assertIn('variable = "aws:SourceAccount"', statement)
+        statement = queue[queue.index('Sid       = "AllowExactDispatcherSchedule"') :]
+        statement = statement[: statement.index("}] : []")]
+        self.assertIn('"aws:SourceArn" = aws_cloudwatch_event_rule.dispatcher[0].arn', statement)
+        self.assertIn('"aws:SourceAccount" = data.aws_caller_identity.current.account_id', statement)
 
     def test_exact_runtime_artifacts_must_carry_the_configured_handler_contract(self):
         artifacts = (ROOT / "infra/central/artifacts.tf").read_text(encoding="utf-8")
@@ -1215,7 +1227,7 @@ resource "terraform_data" "checksum_guard" {{
                     locals_source,
                 )
         self.assertIn(
-            "reconciler_trigger_enabled     = local.reconciler_runtime_enabled && var.reconciler_trigger_enabled",
+            "reconciler_trigger_enabled     = local.reconciler_runtime_enabled && (local.live_managed ? local.live_consumers : var.reconciler_trigger_enabled)",
             locals_source,
         )
 
@@ -1234,8 +1246,8 @@ resource "terraform_data" "checksum_guard" {{
             'state               = local.reconciler_trigger_enabled ? "ENABLED" : "DISABLED"',
             reconciler_rule,
         )
-        self.assertIn("for_each = local.watcher_runtime_enabled ? [1] : []", queue)
-        self.assertIn("for_each = local.dispatcher_runtime_enabled ? [1] : []", queue)
+        self.assertIn("local.watcher_runtime_enabled ? [{", queue)
+        self.assertIn("local.dispatcher_runtime_enabled ? [{", queue)
 
         output = outputs[outputs.index('output "runtime_trigger_states"') :]
         output = output[: output.index("\noutput ", 1)]
@@ -1261,7 +1273,7 @@ resource "terraform_data" "checksum_guard" {{
         for alarm in ("delivery_queue_age", "delivery_dlq_depth", "worker_errors", "delivery_unknown"):
             with self.subTest(always_observed_alarm=alarm):
                 block = self.resource_block(alarms, "aws_cloudwatch_metric_alarm", alarm)
-                self.assertNotIn("count = local.", block)
+                self.assertIn("count = local.monitoring_enabled ? 1 : 0", block)
 
     def test_dynamodb_recovery_defaults_and_runtime_binding_match_adr_027(self):
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
@@ -1475,7 +1487,11 @@ variable "deployment_id" {
   type = string
   default = "dev"
 }
+variable "dynamodb_recovery_cutover" {
+  default = null
+}
 locals {
+  live_managed = false
   deployment_id = var.deployment_id
   watcher_runtime_enabled = var.watcher_artifact_sha256 != null
   dispatcher_runtime_enabled = var.dispatcher_artifact_sha256 != null
@@ -2084,9 +2100,9 @@ resource "aws_cloudwatch_metric_alarm" "undocumented_delivery_gate" {
         iam = (ROOT / "infra/central/iam.tf").read_text(encoding="utf-8")
         alarms = (ROOT / "infra/central/alarms.tf").read_text(encoding="utf-8")
 
-        start = queue.index('sid     = "AllowExactWatcherSchedule"')
-        watcher_statement = queue[start : queue.index("\n  statement {", start)]
-        self.assertIn("values   = [aws_cloudwatch_event_rule.watcher[0].arn]", watcher_statement)
+        start = queue.index('Sid       = "AllowExactWatcherSchedule"')
+        watcher_statement = queue[start : queue.index("}] : []", start)]
+        self.assertIn('"aws:SourceArn" = aws_cloudwatch_event_rule.watcher[0].arn', watcher_statement)
         self.assertNotIn("reconciler.arn", watcher_statement)
         feed_policy = iam[iam.index('data "aws_iam_policy_document" "feed_watcher"') :]
         feed_policy = feed_policy[: feed_policy.index('data "aws_iam_policy_document" "outbox_dispatcher"')]
@@ -2168,7 +2184,10 @@ resource "aws_cloudwatch_metric_alarm" "undocumented_delivery_gate" {
         variables = (ROOT / "infra/central/variables.tf").read_text(encoding="utf-8")
 
         self.assertIn("reconciler_timeout_seconds        = 60", locals_source)
-        self.assertIn("reconciler_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1", locals_source)
+        self.assertIn(
+            "reconciler_reserved_concurrency   = var.watcher_execution_paused || local.live_fenced ? 0 : 1",
+            locals_source,
+        )
         self.assertIn("reconciler_repair_limit           = 100", locals_source)
         self.assertIn("reconciler_observation_limit      = 101", locals_source)
         self.assertIn('reconciler_schedule_expression    = "rate(5 minutes)"', locals_source)
@@ -2284,11 +2303,10 @@ resource "aws_cloudwatch_metric_alarm" "undocumented_delivery_gate" {
 
         runtime_queue = queue[queue.index('resource "aws_sqs_queue" "runtime_failures"') :]
         self.assertIn("sqs_managed_sse_enabled   = true", runtime_queue)
-        self.assertNotIn("fifo_queue", runtime_queue.split("data ", 1)[0])
-        self.assertIn('sid     = "AllowExactReconcilerSchedule"', queue)
-        self.assertIn('identifiers = ["events.amazonaws.com"]', queue)
-        self.assertIn('variable = "aws:SourceArn"', queue)
-        self.assertIn("values   = [aws_cloudwatch_event_rule.reconciler.arn]", queue)
+        self.assertNotIn("fifo_queue", self.resource_block(queue, "aws_sqs_queue", "runtime_failures"))
+        self.assertIn('Sid       = "AllowExactReconcilerSchedule"', queue)
+        self.assertIn('Principal = { Service = "events.amazonaws.com" }', queue)
+        self.assertIn('"aws:SourceArn" = aws_cloudwatch_event_rule.reconciler.arn', queue)
         self.assertIn("dead_letter_config", lambda_source)
         self.assertIn("arn = aws_sqs_queue.runtime_failures.arn", lambda_source)
 

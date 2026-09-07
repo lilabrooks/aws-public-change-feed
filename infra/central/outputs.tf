@@ -148,11 +148,11 @@ output "runtime_trigger_states" {
 }
 
 output "watcher_execution_paused" {
-  description = "Whether all four durable executors have selected zero reserved concurrency."
+  description = "Legacy pause input only; managed live_mode requires false even when fenced. Read runtime_reserved_concurrency for effective execution controls."
   value       = var.watcher_execution_paused
 }
 
 output "dashboard_name" {
   description = "CloudWatch operations dashboard name."
-  value       = aws_cloudwatch_dashboard.operations.dashboard_name
+  value       = one(aws_cloudwatch_dashboard.operations[*].dashboard_name)
 }

@@ -113,45 +113,45 @@ locals {
     var.worker_artifact_version_id == local.legacy_application_artifact_version_id
   )
   worker_trigger_requested = (
-    var.worker_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.worker_trigger_enabled_override
+    local.live_managed ? local.live_consumers : (var.worker_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.worker_trigger_enabled_override)
   )
   worker_trigger_enabled = local.worker_runtime_enabled && local.worker_trigger_requested
   worker_artifact_key    = var.worker_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.worker_artifact_sha256}.zip"
   application_version    = var.worker_artifact_sha256 == null ? null : "sha256:${var.worker_artifact_sha256}"
   worker_reserved_concurrency = (
-    var.watcher_execution_paused ? 0 : local.rate_control.worker_reserved_concurrency
+    var.watcher_execution_paused || local.live_fenced ? 0 : local.rate_control.worker_reserved_concurrency
   )
 
   watcher_timeout_seconds        = 300
-  watcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1
-  shadow_reserved_concurrency    = 1
+  watcher_reserved_concurrency   = var.watcher_execution_paused || (local.live_managed && !contains(["live", "direct"], coalesce(var.live_mode, "legacy"))) ? 0 : 1
+  shadow_reserved_concurrency    = local.live_managed && var.live_mode != "shadow" ? 0 : 1
   watcher_lease_seconds          = 360
   watcher_schedule_expression    = "rate(15 minutes)"
   watcher_maximum_retry_attempts = 2
   watcher_maximum_event_age      = 900
   watcher_runtime_enabled        = var.watcher_artifact_sha256 != null && var.watcher_artifact_version_id != null
   watcher_trigger_requested = (
-    var.watcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.watcher_trigger_enabled_override
+    local.live_managed ? var.live_mode == "live" : (var.watcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.watcher_trigger_enabled_override)
   )
   watcher_trigger_enabled     = local.watcher_runtime_enabled && local.watcher_trigger_requested
   watcher_artifact_key        = var.watcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.watcher_artifact_sha256}.zip"
   watcher_application_version = var.watcher_artifact_sha256 == null ? null : "sha256:${var.watcher_artifact_sha256}"
 
   dispatcher_timeout_seconds        = 60
-  dispatcher_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1
+  dispatcher_reserved_concurrency   = var.watcher_execution_paused || local.live_fenced ? 0 : 1
   dispatcher_schedule_expression    = "rate(1 minute)"
   dispatcher_maximum_retry_attempts = 2
   dispatcher_maximum_event_age      = 300
   dispatcher_runtime_enabled        = var.dispatcher_artifact_sha256 != null && var.dispatcher_artifact_version_id != null
   dispatcher_trigger_requested = (
-    var.dispatcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.dispatcher_trigger_enabled_override
+    local.live_managed ? local.live_consumers : (var.dispatcher_trigger_enabled_override == null ? var.delivery_triggers_enabled : var.dispatcher_trigger_enabled_override)
   )
   dispatcher_trigger_enabled     = local.dispatcher_runtime_enabled && local.dispatcher_trigger_requested
   dispatcher_artifact_key        = var.dispatcher_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.dispatcher_artifact_sha256}.zip"
   dispatcher_application_version = var.dispatcher_artifact_sha256 == null ? null : "sha256:${var.dispatcher_artifact_sha256}"
 
   reconciler_timeout_seconds        = 60
-  reconciler_reserved_concurrency   = var.watcher_execution_paused ? 0 : 1
+  reconciler_reserved_concurrency   = var.watcher_execution_paused || local.live_fenced ? 0 : 1
   reconciler_repair_limit           = 100
   reconciler_observation_limit      = 101
   reconciler_stale_queued_seconds   = 600
@@ -163,7 +163,7 @@ locals {
     var.reconciler_artifact_sha256 == local.legacy_application_artifact_sha256 &&
     var.reconciler_artifact_version_id == local.legacy_application_artifact_version_id
   )
-  reconciler_trigger_enabled     = local.reconciler_runtime_enabled && var.reconciler_trigger_enabled
+  reconciler_trigger_enabled     = local.reconciler_runtime_enabled && (local.live_managed ? local.live_consumers : var.reconciler_trigger_enabled)
   reconciler_artifact_key        = var.reconciler_artifact_sha256 == null ? null : "${local.application_artifact_prefix}/${var.reconciler_artifact_sha256}.zip"
   reconciler_application_version = var.reconciler_artifact_sha256 == null ? null : "sha256:${var.reconciler_artifact_sha256}"
 

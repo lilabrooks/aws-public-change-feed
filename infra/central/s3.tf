@@ -5,6 +5,20 @@ resource "aws_s3_bucket" "config" {
 
   lifecycle {
     precondition {
+      condition = !local.live_managed || (
+        !var.preflight_mode && !var.watcher_execution_paused &&
+        var.dynamodb_recovery_cutover == null &&
+        !var.delivery_triggers_enabled && !var.reconciler_trigger_enabled &&
+        var.watcher_trigger_enabled_override == null &&
+        var.dispatcher_trigger_enabled_override == null &&
+        var.worker_trigger_enabled_override == null &&
+        local.watcher_runtime_enabled && local.dispatcher_runtime_enabled &&
+        local.worker_runtime_enabled && local.reconciler_runtime_enabled
+      )
+      error_message = "live_mode requires all runtime packages, no recovery cutover, no preflight, and neutral legacy controls."
+    }
+
+    precondition {
       condition = var.preflight_mode || (
         var.runtime_artifact_bucket_name == null &&
         (
