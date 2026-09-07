@@ -1,0 +1,17 @@
+{
+  "watcher_wait_seconds": 300,
+  "final_wait_seconds": 300,
+  "drain_seconds": 120,
+  "control_work_allowance_seconds": 780,
+  "build_timeout_minutes": 40,
+  "queued_timeout_minutes": 5,
+  "provisioning_allowance_seconds": 120,
+  "startup_reserve_seconds": 600,
+  "activation_allowance_seconds": 600,
+  "observation_seconds": 60,
+  "delivery_seconds": 660,
+  "park_retry_attempts": 2,
+  "park_retry_interval_seconds": 30,
+  "park_retry_backoff_rate": 2,
+  "cleanup_notification_seconds": 30
+}

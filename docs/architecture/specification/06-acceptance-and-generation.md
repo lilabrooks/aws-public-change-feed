@@ -1,5 +1,83 @@
 # 6. Acceptance and implementation sequence
 
+## Proposed live-window acceptance
+
+The M4 / L-58 controller in proposed
+[ADR-030](../../adr/030-bounded-live-windows-and-terraform-parking.md) adds these
+checks without repeating the accepted matching, recovery, or load cohorts:
+
+- Evaluate every Terraform lifecycle phase against the controller's expected
+  trigger/concurrency map, including legacy null mode and shadow fencing.
+- Reject out-of-scope plans, code changes, retained-resource deletion, unexpected
+  output changes, stale owners, expired activation, and malformed windows.
+- Bind permitted computed unknowns to the pinned provider schema. Exercise each
+  computed-only Lambda/mapping attribute, reject known metadata changes and
+  configurable unknowns (including nested or previously null inputs). Real
+  transition plans remain a separate first-use gate.
+  The normal repository gate initializes Terraform before running the offline
+  provider-schema test; standalone unit runs report a skip if no provider is cached.
+- Evaluate the actual mapping postcondition for absent and empty blocks and
+  enabled metrics across every phase and legacy null mode. Only `stopping` and
+  `parked` may bypass its metrics rejection. Trace the resulting plan decisions
+  through mandatory shutdown and monitoring removal before final drift refusal;
+  no successful parked receipt may result from unresolved metrics drift.
+  Trace API read-back through snapshot and verification in
+  every phase, accepting only absent/empty metrics and rejecting enabled or
+  malformed configurations. Keep metrics changes outside the lifecycle
+  allowlist. Fresh transition plans must preserve the empty representation
+  while changing only permitted controls; post-apply convergence is a live gate.
+- Evaluate the actual failure-queue policy renderer for every watcher/dispatcher
+  runtime-presence combination, including absent rule lists and different
+  account/Region inputs. Compare the full decoded policy against exact expected
+  grants. Fresh toggle plans must keep the queue policy known and unchanged;
+  both known and unknown policy mutations remain lifecycle refusals.
+- Bind monitoring deletions to the actual declared alarm names. Prove normal
+  removal/recreation and partial-failure recovery with fresh plans.
+- Exercise stop before and after callback registration, repeated unpark/park,
+  uncertain execution submission, and failed parking retries. Neither early
+  stop nor a lost local waiter may cancel the durable cleanup owner.
+- Interrupt a local test and fail its best-effort early-park request with provider
+  and unexpected exceptions. Require exit 130, a fixed warning, and no private
+  message or traceback. Interrupting unpark must not request early parking.
+- Inject evidence/inventory/drain failures and prove mandatory fencing is still
+  attempted. Keep test result, control result, evidence completeness, unresolved
+  work, and deadline overrun separate.
+- Bind build and queue timeouts, retry settings, invocation waits, minimum
+  windows, and the readiness wait to the reviewed shared timing budget. Reject
+  unknown/malformed budget fields and budgets too small for planned work.
+- Reserve remaining activation work as well as case time, reject insufficient
+  time before enabling, and reject overruns before readiness or delivery. Bind
+  the notification timeout and full terminal-failure allowance to the budget.
+- Read worker concurrency from canonical deployment policy in both the controller
+  and Terraform fixture. Bind the exact mapping UUID to its IAM update grant;
+  live replacement drift requires a separate comparison. Reject waiter success
+  with incomplete evidence even if an execution reports `SUCCEEDED`.
+- Exercise omitted/empty `CASE`, delivery refusal evidence and stop/outcome
+  recording, and an immutable bundle containing the timing file and declared
+  artifact inputs whose names include digits. Keep unknown-input rejection.
+- Before operational use, complete service-side state-machine validation, exact
+  IAM/plan review, manual and deadline round trips, loss of the local waiter,
+  and final parked Terraform convergence. Local mocks are not the live proof.
+- Verify failure-only notification patterns, exact-topic publication roles,
+  minimal payload transforms, retained rule ownership, and failure-preserving
+  cleanup notification states. Prove actual email receipt separately.
+- Close only successful terminal sessions with exact owner input, complete
+  converged receipts, and no recorded unresolved delivery or queue work. Allow
+  a successful recovery owner; reject ambiguous receipts and changed ownership.
+- Prune only reviewed exact versions after 90 days from verified closeout.
+  Recheck the current owner before each deletion; reject changed previews,
+  unknown schemas, missing ownership, future/expired clocks, cross-session
+  references, and unversioned objects. Partial deletion must remain retryable
+  without expanding the approved inventory, and absence must be read back.
+- Preserve current-session artifacts, unresolved/failed sessions, unproven
+  orphan uploads, new unapproved object versions, and immutable closeouts.
+  Closure capture failure cannot block normal parking or disclose private
+  error payloads. No live deletion follows from these local acceptance tests.
+
+The fixed delivery protocol remains preview/hash/apply with one attempt and no
+extension of a quiet sample. Observation completion alone does not prove a
+positive match or replace the runtime acceptance criteria below.
+
 ## Contract acceptance
 
 - Given a clean checkout, the six canonical examples load as one bundle, every document passes its paired JSON Schema, and all cross-document semantic checks pass.

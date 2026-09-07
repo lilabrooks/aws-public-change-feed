@@ -1,14 +1,30 @@
 PYTHON ?= python3
+.DEFAULT_GOAL := help
 LYCHEE ?= lychee
 PYTHON_PATHS := scripts tests $(wildcard src)
 MYPY_PATHS := $(PYTHON_PATHS)
-YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml $(wildcard .github/workflows)
+YAML_PATHS := .yamllint.yaml examples .github/dependabot.yml $(wildcard .github/workflows) infra/live-control/buildspec.yml
 TERRAFORM ?= terraform
 REQUIRE_TERRAFORM ?= 0
 TFLINT ?= tflint
 REQUIRE_TFLINT ?= 0
 TFLINT_CONFIG := $(CURDIR)/.tflint.hcl
-TERRAFORM_ROOTS := infra/bootstrap infra/central infra/preflight
+TERRAFORM_ROOTS := infra/bootstrap infra/central infra/preflight infra/live-control
+export LIVE_CONFIG WINDOW CASE PLAN APPLY
+
+.PHONY: live-test live-unpark live-park live-status live-close live-prune
+live-test:
+	$(PYTHON) scripts/live_window.py test
+live-unpark:
+	$(PYTHON) scripts/live_window.py unpark
+live-park:
+	$(PYTHON) scripts/live_window.py park
+live-status:
+	$(PYTHON) scripts/live_window.py status
+live-close:
+	$(PYTHON) scripts/live_window.py close
+live-prune:
+	$(PYTHON) scripts/live_window.py prune
 CHECK_DIFF_BASE ?=
 CHECK_DIFF_HEAD ?= HEAD
 
@@ -30,7 +46,9 @@ help:
 	@echo "  screen-feeds       Screen live feeds against the rules (requires network)"
 	@echo "  terraform-check    Format-check and validate Terraform roots (REQUIRE_TERRAFORM=1 fails if absent)"
 	@echo "  tflint-check       Run TFLint and its AWS ruleset (REQUIRE_TFLINT=1 fails if absent)"
-	@echo "  terraform-clean    Remove Terraform working directories from the three repository roots"
+	@echo "  terraform-clean    Remove Terraform working directories from the four repository roots"
+	@echo "  live-test / live-unpark / live-park / live-status    Bounded AWS live sessions (one-time setup required)"
+	@echo "  live-close / live-prune    Capture successful closure / preview and approve exact-version retirement"
 	@echo "  test          Run the unittest suite"
 	@echo "  whitespace    Check the working tree and configured commit range for Git whitespace errors"
 	@echo "  check         Run every non-mutating repository check"
@@ -117,7 +135,7 @@ tflint-check:
 	fi
 
 terraform-clean:
-	rm -rf infra/bootstrap/.terraform infra/central/.terraform infra/preflight/.terraform
+	rm -rf infra/bootstrap/.terraform infra/central/.terraform infra/preflight/.terraform infra/live-control/.terraform
 
 test:
 	$(PYTHON) -m unittest discover -s tests
@@ -128,7 +146,7 @@ whitespace:
 		git diff --check "$(CHECK_DIFF_BASE)...$(CHECK_DIFF_HEAD)"; \
 	fi
 
-check: format-check lint typecheck validate test terraform-check tflint-check whitespace
+check: format-check lint typecheck validate terraform-check test tflint-check whitespace
 
 clean:
 	find $(PYTHON_PATHS) -type d -name __pycache__ -prune -exec rm -rf {} +

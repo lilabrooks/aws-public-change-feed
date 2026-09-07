@@ -74,6 +74,19 @@ in the [readiness assessment](../evidence/m3-production-readiness-assessment-202
 - [ADR-027: DynamoDB point-in-time recovery for both state tables](../adr/027-dynamodb-point-in-time-recovery.md)
 - [ADR-028: Separate CloudTrail evidence for DynamoDB restore identity](../adr/028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md)
 - [ADR-029: Lambda package provenance and entrypoint proof](../adr/029-lambda-package-provenance-and-entrypoint-proof.md)
+- [ADR-030: Bounded live windows and Terraform parking (Proposed)](../adr/030-bounded-live-windows-and-terraform-parking.md)
+
+The proposed [live-window operator workflow](../runbooks/live-window.md) bundles
+bounded activation, live testing, and Terraform parking. It preserves retained
+data while removing monitoring and fencing runtime execution between tests.
+Failure-only notifications remain available while parked. Control artifacts
+use verified closeouts and separate, hash-approved retirement after 90 days;
+application retention is unchanged.
+Initial parked migration and control-plane deployment completed on 2026-09-07,
+with post-wait control verification, AWS definition validation, and no-change
+plans. The [runbook deployment record](../runbooks/live-window.md#initial-deployment-record-2026-09-07)
+states the exact evidence boundary. Live interruption/cleanup, build-role
+execution, notification receipt, and eligible closeout remain unproved.
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 

@@ -42,90 +42,51 @@ resource "aws_sqs_queue" "runtime_failures" {
   tags = local.tags
 }
 
-data "aws_iam_policy_document" "runtime_failure_queue" {
-  dynamic "statement" {
-    for_each = local.watcher_runtime_enabled ? [1] : []
-    content {
-      sid     = "AllowExactWatcherSchedule"
-      actions = ["sqs:SendMessage"]
-      resources = [
-        aws_sqs_queue.runtime_failures.arn,
-      ]
-
-      principals {
-        type        = "Service"
-        identifiers = ["events.amazonaws.com"]
-      }
-
-      condition {
-        test     = "ArnEquals"
-        variable = "aws:SourceArn"
-        values   = [aws_cloudwatch_event_rule.watcher[0].arn]
-      }
-
-      condition {
-        test     = "StringEquals"
-        variable = "aws:SourceAccount"
-        values   = [data.aws_caller_identity.current.account_id]
-      }
-    }
-  }
-
-  dynamic "statement" {
-    for_each = local.dispatcher_runtime_enabled ? [1] : []
-    content {
-      sid     = "AllowExactDispatcherSchedule"
-      actions = ["sqs:SendMessage"]
-      resources = [
-        aws_sqs_queue.runtime_failures.arn,
-      ]
-
-      principals {
-        type        = "Service"
-        identifiers = ["events.amazonaws.com"]
-      }
-
-      condition {
-        test     = "ArnEquals"
-        variable = "aws:SourceArn"
-        values   = [aws_cloudwatch_event_rule.dispatcher[0].arn]
-      }
-
-      condition {
-        test     = "StringEquals"
-        variable = "aws:SourceAccount"
-        values   = [data.aws_caller_identity.current.account_id]
-      }
-    }
-  }
-
-  statement {
-    sid     = "AllowExactReconcilerSchedule"
-    actions = ["sqs:SendMessage"]
-    resources = [
-      aws_sqs_queue.runtime_failures.arn,
-    ]
-
-    principals {
-      type        = "Service"
-      identifiers = ["events.amazonaws.com"]
-    }
-
-    condition {
-      test     = "ArnEquals"
-      variable = "aws:SourceArn"
-      values   = [aws_cloudwatch_event_rule.reconciler.arn]
-    }
-
-    condition {
-      test     = "StringEquals"
-      variable = "aws:SourceAccount"
-      values   = [data.aws_caller_identity.current.account_id]
-    }
-  }
+locals {
+  # A policy-document data read is deferred when a referenced rule changes
+  # state, even though its ARN is unchanged. Pure rendering keeps the exact
+  # policy known during cost toggles; IAM changes remain outside that workflow.
+  runtime_failure_queue_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = concat(
+      local.watcher_runtime_enabled ? [{
+        Sid       = "AllowExactWatcherSchedule"
+        Effect    = "Allow"
+        Action    = "sqs:SendMessage"
+        Resource  = aws_sqs_queue.runtime_failures.arn
+        Principal = { Service = "events.amazonaws.com" }
+        Condition = {
+          ArnEquals    = { "aws:SourceArn" = aws_cloudwatch_event_rule.watcher[0].arn }
+          StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+        }
+      }] : [],
+      local.dispatcher_runtime_enabled ? [{
+        Sid       = "AllowExactDispatcherSchedule"
+        Effect    = "Allow"
+        Action    = "sqs:SendMessage"
+        Resource  = aws_sqs_queue.runtime_failures.arn
+        Principal = { Service = "events.amazonaws.com" }
+        Condition = {
+          ArnEquals    = { "aws:SourceArn" = aws_cloudwatch_event_rule.dispatcher[0].arn }
+          StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+        }
+      }] : [],
+      [{
+        Sid       = "AllowExactReconcilerSchedule"
+        Effect    = "Allow"
+        Action    = "sqs:SendMessage"
+        Resource  = aws_sqs_queue.runtime_failures.arn
+        Principal = { Service = "events.amazonaws.com" }
+        Condition = {
+          ArnEquals    = { "aws:SourceArn" = aws_cloudwatch_event_rule.reconciler.arn }
+          StringEquals = { "aws:SourceAccount" = data.aws_caller_identity.current.account_id }
+        }
+      }]
+    )
+  })
 }
 
 resource "aws_sqs_queue_policy" "runtime_failures" {
   queue_url = aws_sqs_queue.runtime_failures.id
-  policy    = data.aws_iam_policy_document.runtime_failure_queue.json
+  policy    = local.runtime_failure_queue_policy
 }

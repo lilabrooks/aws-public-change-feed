@@ -12,9 +12,8 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import validate_references as validator  # noqa: E402
 
-# A fixed clock keeps the committed-reference assertions deterministic. Move it
-# forward when a document is verified on a later date; the 180-day warning and
-# 365-day maximum leave ample room before older markers need re-verification.
+# Synthetic fixtures use a fixed clock. The real repository check uses today's
+# date, matching the validator CLI rather than requiring a clock edit per ADR.
 AS_OF = date(2026, 9, 6)
 VALID_LYCHEE_CONFIG = (ROOT / "lychee.toml").read_text(encoding="utf-8")
 
@@ -42,7 +41,7 @@ class ReferenceValidatorTests(unittest.TestCase):
         return validator.validate_repository(root, as_of)
 
     def test_committed_references_pass_local_validation(self):
-        errors, warnings, file_count, url_count = self.validate(ROOT)
+        errors, warnings, file_count, url_count = self.validate(ROOT, as_of=date.today())
         self.assertEqual(errors, [])
         self.assertEqual(warnings, [])
         self.assertGreater(file_count, 0)
