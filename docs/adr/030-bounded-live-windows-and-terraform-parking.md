@@ -1,6 +1,6 @@
 # ADR-030: Bounded live windows and Terraform parking
 
-- Status: Proposed
+- Status: Accepted
 - Date: 2026-09-07
 - Owner: Lila Brooks
 
@@ -11,7 +11,7 @@ queue polling, alarms, the dashboard, and direct invocation available. A local
 timer cannot shut these down after a terminal closes or an SSO session expires.
 The implementation must preserve application packages and retained data.
 
-## Proposed decision
+## Decision
 
 Add explicit central Terraform phases and a separate `infra/live-control` root.
 The operator commands share one Python controller. A Step Functions Standard
@@ -195,21 +195,31 @@ and preserved retained resources. Post-wait read-back and fresh no-change plans
 completed at 17:45:57 UTC. The runbook records the source snapshot and limits.
 
 The owner approved the exact initial plans and their control IAM for deployment.
-This ADR remains Proposed pending explicit acceptance of the ongoing trust
-decision. Deployment and syntax validation have not proved build-role execution,
-notification receipt, or the shutdown lifecycle. Later source fixes need a fresh
-reviewed bundle and transition plans; they are not covered by that deployment.
+The owner explicitly accepted the ongoing trust decision on 2026-09-07.
+Acceptance does not qualify unattended operation. Deployment and syntax
+validation alone did not prove build-role execution, notification receipt, or
+the shutdown lifecycle. Later source fixes need a fresh reviewed bundle and
+transition plans; they are not covered by that deployment.
+
+The supervised attempt exposed two missing S3 tag reads. Each scoped IAM repair
+received separate owner approval. After a complete read-only plan passed under
+the build role, parking-only recovery succeeded on September 8 UTC. It recreated
+21 tagged baseline alarms and removed them after the required invocation wait,
+then proved parked convergence. Build and terminal-failure emails were received.
+The [runbook](../runbooks/live-window.md#first-supervised-attempt-2026-09-07)
+records the failed activation, retries, grants, and successful recovery without
+treating that recovery as a successful live test.
 
 Still required before first use:
 
-- Owner acceptance of this proposed trust decision and review of any IAM changes
-  since the approved initial deployment.
-- Live failure-notification proof, including confirmed email receipt, early
-  build failures, workflow failure, and exhausted-cleanup publishing failure.
-- Enabled-to-disabled schedule/mapping plans, actual build-role execution, and
+- Review of any IAM changes since the approved initial deployment; owner
+  acceptance of the trust decision is recorded above.
+- Remaining notification checks: distinguish receipt of each terminal route
+  and prove failure preservation when exhausted-cleanup publishing fails.
+- Enabled-to-disabled schedule/mapping plans, live activation under the build role, and
   the provider's mapping-update request behavior under `ignore_changes`.
 - Unpark/readiness, early park, deadline park after terminating the local waiter,
-  failed build recovery, and final Terraform convergence.
+  and final Terraform convergence after those live transitions.
 - Measured phase timings, separate test and parking outcomes, retained work,
   any overrun, and verified successful evidence closeout when eligible.
 

@@ -17,6 +17,8 @@ Each candidate includes the matched text, service, risk type, mapped environment
 
 GitHub Issues and milestones hold the current backlog state.
 
+Dev is parked between live tests. The [parking and resource-tagging workflow](#parking-and-resource-tags) describes the controls, retained costs, and remaining live qualification gates. The completed milestones below record earlier evidence; they do not mean the service runs continuously.
+
 | Milestone | State | Purpose |
 | --- | --- | --- |
 | [D0: first live Slack delivery](https://github.com/lilabrooks/aws-public-change-feed/milestone/1) | Closed | Send one real public AWS announcement through the deployed dev service and record the Slack result. |
@@ -73,6 +75,40 @@ outside this evidence claim.
 
 See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issues) for the current work queue. The [goal](docs/GOAL.md) defines product scope, completion criteria, evidence, and the limits of the passing production-readiness result.
 
+## Parking and resource tags
+
+The [September 7, 2026 deployment record](docs/runbooks/live-window.md#initial-deployment-record-2026-09-07) confirms initial Terraform parking and deployment of the AWS-hosted control plane. [M4 / L-58](https://github.com/lilabrooks/aws-public-change-feed/issues/199) remains open: supervised unpark/early-park, deadline cleanup after local waiter loss, the remaining notification checks, and eligible successful-test closeout still need live proof. The owner accepted ADR-030 on September 7, 2026. Complete the [first-use gate](docs/runbooks/live-window.md#first-use-gate-and-private-configuration) before relying on unattended cleanup.
+
+Parking disables the `apcf-dev-feed-watcher`, `apcf-dev-outbox-dispatcher`, and `apcf-dev-recovery-reconciler` EventBridge rules and the `apcf-delivery-dev.fifo` mapping on `apcf-dev-slack-worker`. It sets reserved concurrency to zero on all five functions, including shadow, and **deletes the deployment's CloudWatch metric alarms and dashboard**. Eligible monitoring is recreated during activation.
+
+Once in-flight work ends, ordinary runtime execution, queue polling, and application log/metric publishing stop. Packages, releases, queues, delivery state, secrets, log groups and retention, and DynamoDB PITR are preserved. Retained logs, S3, DynamoDB storage/PITR, Secrets Manager, and control resources can still incur charges; operating the controller also uses billable builds and requests. Failure-only notification rules remain available while parked. Parking does not purge work, and unpark can resume retained asynchronous invocations.
+
+### Repeatable park, unpark, and testing
+
+The [first supervised attempt and recovery](docs/runbooks/live-window.md#first-supervised-attempt-2026-09-07) exposed missing S3 tag-read permissions. Both scoped repairs are applied, and a full read-only plan passed under the build role. Parking-only recovery then succeeded: the 21 baseline alarms were recreated with their tags and removed after the required wait. Dev remains parked. The owner received build and terminal-failure emails; unpark/early-park and deadline cleanup still need proof.
+
+After first-use qualification, set `LIVE_CONFIG` to the private operator JSON described in the runbook and use the repository's Python environment. These are separate operations, not a sequence to run together:
+
+| Command | Effect |
+| --- | --- |
+| `make live-status` | Read controls, monitoring, retained work, owner/deadline, and residual cost categories without enabling anything. |
+| `make live-unpark WINDOW=90m` | Activate a bounded manual session and wait for verified readiness. |
+| `make live-test WINDOW=90m` | Run bounded scheduled observation, then wait for parking. |
+| `make live-test CASE=delivery WINDOW=90m` | Run the existing one-attempt delivery proof and park when it finishes, including a quiet or refused result. |
+| `make live-park` | Request early cleanup; a repeat call on a verified parked service makes no changes. |
+
+`WINDOW` accepts ordered durations such as `90m`, `2h`, and `1h30m`. Current limits are 68 minutes minimum for manual/observation, 78 minutes for delivery, and 364 days maximum, including setup and one cleanup reserve. Early completion starts cleanup promptly; a repeated unpark retains the original deadline. AWS delays or emergency retries can exceed it, so it is not an exact billing cutoff. Step Functions owns cleanup beyond the local terminal's lifetime. Keep initial qualification supervised and never extend a quiet sample to obtain a match.
+
+### Static ownership and cost tags
+
+Terraform defines `project=aws-public-change-feed`, the actual `deployment_id`, `managed_by=terraform`, and `component=runtime|storage|monitoring|live-control` on resources supported by the locked provider. The queue mapping is tagged explicitly, recreated alarms receive the shared monitoring tags, and tests check provider exceptions such as the dashboard. Tags stay unchanged during park/unpark; the controller verifies actual AWS controls.
+
+**Live tags were applied and verified on September 7, 2026:** 47 existing resources across bootstrap, central, and live-control, with all three full Terraform plans reporting no changes and the service still parked. The [tag deployment record](docs/runbooks/live-window.md#tag-deployment-record-2026-09-07) separates that operator apply from the PR merge. Merging a PR runs repository checks and publishes GitHub Pages; it does not apply Terraform to AWS.
+
+AWS Billing reports `project` and `deployment_id` Active. `component` is still awaiting discovery; its activation and eventual cost attribution remain pending. Tags alone cannot account for every charge. Later tag changes follow the [separate maintenance procedure](docs/runbooks/live-window.md#resource-tags-and-billing-activation) while parked, with no active cleanup owner. Use a fresh reviewed post-maintenance control bundle for the next live window; routine toggles reject tag changes.
+
+The [live-window runbook](docs/runbooks/live-window.md) owns setup, timing budgets, failure recovery, and separately approved control-evidence retirement. It summarizes qualification outcomes and open gates; exact execution receipts and private inputs stay in restricted operator evidence. No data-retention or PITR change is part of parking.
+
 ## Service walkthrough
 
 [![AWS Public Change Alerting: delivery, lifecycle, and readiness.](site/media/walkthrough-v3/poster.png)](https://lilabrooks.github.io/aws-public-change-feed/)
@@ -113,7 +149,7 @@ A direct SQS-to-Lambda-to-Slack path is a smaller design for notifications that 
 | Slack uncertainty stays visible | A timeout becomes `delivery_unknown`. An operator checks Slack before closure or one audited retry. |
 | Credentials stay with the worker | Feed content, configuration, candidates, fixtures, and logs contain no Slack secret values. |
 
-The [numbered specification and 25 accepted ADRs](docs/architecture/README.md) define these rules in full.
+The [numbered specification and 26 accepted ADRs](docs/architecture/README.md) define these rules in full.
 
 ## Run locally
 
@@ -161,10 +197,11 @@ Terraform cleanup is event-driven. Use `make terraform-clean` after a backend or
 
 - [Public system page](https://lilabrooks.github.io/aws-public-change-feed/): system diagram, processing summary, contract checks, and generated Slack output.
 - [Product goal](docs/GOAL.md): scope, exclusions, quality bar, and completion criteria.
-- [Architecture index](docs/architecture/README.md): 6 specification chapters, 25 accepted ADRs, and the schema-to-example map.
+- [Architecture index](docs/architecture/README.md): 6 specification chapters, 26 accepted ADRs, and the schema-to-example map.
 - [Repository checks](docs/repository-file-checks.md): local, CI, security, and operator-only checks, plus a diagram of the 4 CI workflows.
 - [DynamoDB PITR recovery decision](docs/adr/027-dynamodb-point-in-time-recovery.md): the 35-day two-table mechanism, safety boundaries, staged proof, implemented checks, and completed L-41 evidence.
 - [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
+- [Live windows and parking](docs/runbooks/live-window.md): bounded unpark/test/park commands, remaining qualification gates, retained costs, resource tags, and billing activation.
 - [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
 - [Service walkthrough](docs/evidence/mvp-walkthrough.md): one video covering the MVP and readiness decision, captions, transcript, and artifact hashes.
 - [How readiness was established](docs/production-readiness.md): the decision, evidence reuse, rollback proof, and retained limits.

@@ -315,6 +315,7 @@
         <a href="#readiness">Readiness</a>
         <a href="#flow">System</a>
         <a href="#evidence">Status</a>
+        <a href="#live-operation">Parking</a>
         <a href="#source">Source</a>
       </nav>
       <button class="compact-theme-toggle" type="button" data-theme-toggle hidden>Theme</button>
@@ -470,7 +471,7 @@
         <dl class="site-spec">
           <div class="site-spec-row">
             <dt>Required behavior</dt>
-            <dd>Six specification chapters and 25 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
+            <dd>Six specification chapters and 26 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
           </div>
           <div class="site-spec-row">
             <dt>Contracts</dt>
@@ -620,7 +621,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <p class="compact-eyebrow">Required rules</p>
           <div>
             <h2 class="compact-section-title">Public feeds only. DynamoDB owns delivery history.</h2>
-            <p class="compact-section-copy">25 accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
+            <p class="compact-section-copy">26 accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
           </div>
         </div>
         <dl class="site-spec">
@@ -663,7 +664,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <p class="compact-eyebrow">Status</p>
           <div>
             <h2 class="compact-section-title">The project moves from one live Slack post to a production decision.</h2>
-            <p class="compact-section-copy">D0, M1, M2, and M3 are complete.</p>
+            <p class="compact-section-copy">D0, M1, M2, and M3 are complete. Dev is parked between live tests; <a href="#live-operation">bounded cleanup qualification remains open.</a></p>
           </div>
         </div>
         <table class="site-status-table">
@@ -689,9 +690,49 @@ Recommended review action: Review supported Kubernetes versions and plan require
         <div class="site-note">
           <p>Accepted ADR-029 defines L-52&rsquo;s package repair: a stable input manifest inside each new ZIP, exact source-member checks before publication, an S3-computed SHA-256, and a Linux target import gate. The owner accepted the 2026-09-06 revisions to ADR-018, ADR-026, and ADR-027. Each completed L-54 publication, deployment, invocation, and saved-plan apply received its own exact-action authorization. Any later live mutation keeps that boundary. Signed hosted-build provenance remains a revisit condition if the deployment gains another publisher, CI publication, an external artifact consumer, or a production policy requiring cryptographic build origin.</p>
           <p>The repository includes separate operator controls for retained-source replay, delivery replay, DLQ movement, package retirement, and configuration-release retirement.</p>
-          <p>Terraform defines shared project, deployment, management, and component tags across supported resources, including retained storage, queue triggers, and recreated alarms. Provider-schema checks track tagging exceptions. Applying these tags and activating billing attribution remain separate maintenance steps; static tags neither prove shutdown nor account for every charge. Park/unpark continues to verify actual AWS controls and rejects tag changes during a live window.</p>
-          <p>Live-window toggles tolerate AWS&rsquo;s empty queue-metrics representation. Enabled-metrics drift refuses activation and optional draining. Shutdown phases can still fence all five functions and remove monitoring before final read-back refuses the unresolved drift; metrics recovery stays separate. Other plan or provider failures can still block shutdown. An interrupted local test reports early-park request failures without provider details and leaves the AWS cleanup owner intact. The failure-queue policy is rendered locally so schedule changes can be planned with its exact permissions known; permission changes remain outside the toggle&rsquo;s authority.</p>
-          <p>Proposed ADR-030 adds repeatable, bounded live-test windows with an AWS-hosted cleanup owner. Terraform parking disables schedules and queue polling, fences all five functions, and removes alarms and the dashboard. Initial parked migration and deployment of 21 control resources completed on September 7, 2026, with post-wait read-back, no-change plans, and AWS validation of the deployed definition including its notification state. Failure-only notifications stay available through the existing operations email topic, but actual receipt and the live cleanup lifecycle remain unproved. Later source fixes need a newly reviewed bundle and fresh transition plans. Control logs retain 14 days; successfully closed sessions qualify for separately approved, exact-version bundle/evidence pruning after 90 days. Current, unresolved, and unproven orphan sessions stay protected. Application retention and PITR are unchanged, so retained storage and secrets still have costs. Minimum windows are 68 minutes for observation and 78 minutes for delivery, subject to live timing proof. Emergency retries can overrun the deadline. Plan validation permits only schema-computed unknowns, and worker concurrency follows deployment policy. Enabled-to-disabled plans, build-role execution, mapping-update behavior, measured timings, and eligible closeout remain qualification gates.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="compact-section" id="live-operation">
+      <div class="compact-shell">
+        <div class="compact-section-head">
+          <p class="compact-eyebrow">Live operation</p>
+          <div>
+            <h2 class="compact-section-title">Park between tests. Restore only for a bounded live window.</h2>
+            <p class="compact-section-copy">Initial Terraform parking and deployment of 21 control resources completed on September 7, 2026, with post-wait read-back and no-change plans. <a href="https://github.com/lilabrooks/aws-public-change-feed/issues/199">M4 / L-58 remains open</a> for live cleanup qualification. The earlier readiness results describe their recorded deployments and test windows.</p>
+            <p class="compact-section-copy">Merging a PR runs repository checks and publishes this GitHub Pages site. Applying Terraform changes to AWS is a separate operator action.</p>
+          </div>
+        </div>
+        <dl class="site-spec">
+          <div class="site-spec-row">
+            <dt>Park</dt>
+            <dd>Disable the watcher, outbox-dispatcher, and recovery-reconciler EventBridge rules and the delivery FIFO mapping on the Slack worker. Set reserved concurrency to zero on all five functions, including shadow. Delete deployment CloudWatch metric alarms and the dashboard; recreate eligible monitoring during activation. Application log/metric publishing stops after in-flight runtime work ends.</dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Retain</dt>
+            <dd>Keep packages, releases, queues, durable delivery state, secrets, logs and their retention, and DynamoDB PITR. Retained log/S3/DynamoDB storage, PITR, secrets, and control resources can still incur charges. Builds and requests add usage while operating. Failure-only notification rules remain available while parked. Unpark can resume retained asynchronous work; parking does not purge it or prove an empty async queue.</dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Unpark and test</dt>
+            <dd>After first-use qualification and private <code>LIVE_CONFIG</code> setup, use <code>make live-unpark WINDOW=90m</code> for a manual session, or <code>make live-test WINDOW=90m</code> for observation followed by parking. Add <code>CASE=delivery</code> for the one-attempt delivery proof. <code>make live-park</code> requests early cleanup; <code>make live-status</code> reads controls and the owner/deadline. These are separate operations. Completed delivery starts cleanup promptly, and quiet samples are never extended for a match.</dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Window limits</dt>
+            <dd>User-selected durations include setup and cleanup: ordered values such as <code>90m</code>, <code>2h</code>, or <code>1h30m</code>, with minimums of 68 minutes for manual/observation and 78 minutes for delivery, up to 364 days. Repeated unpark keeps the original deadline. Step Functions owns cleanup beyond the local terminal&rsquo;s lifetime, but AWS delays, retries, and recovery failures can overrun the target. Timings and net savings remain unmeasured.</dd>
+          </div>
+          <div class="site-spec-row">
+            <dt>Resource tags</dt>
+            <dd>Terraform defines <code>project=aws-public-change-feed</code>, the actual <code>deployment_id</code>, <code>managed_by=terraform</code>, and <code>component</code> values <code>runtime</code>, <code>storage</code>, <code>monitoring</code>, or <code>live-control</code>. <strong>Live tags were applied and verified on September 7, 2026:</strong> 47 existing resources, all three full Terraform plans reporting no changes, and the service still parked. The queue mapping is tagged explicitly; alarms receive shared tags when recreated. Locked-provider exceptions such as dashboard tagging are tested. Later tag changes use separate parked maintenance and a fresh reviewed bundle. Routine toggles reject tag changes; actual AWS controls establish shutdown. AWS Billing reports <code>project</code> and <code>deployment_id</code> Active; <code>component</code> discovery and cost attribution remain pending. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md#tag-deployment-record-2026-09-07">Read the tag deployment record.</a></dd>
+          </div>
+        </dl>
+        <div class="site-note">
+          <p>The owner accepted ADR-030 on September 7, 2026. Supervised unpark/early-park, deadline cleanup after local waiter loss, remaining notification checks, and eligible successful-test closeout remain required before unattended use. The deadline proof must end only the local waiter without requesting early parking; Ctrl-C during <code>live-test</code> requests early park. Successful executions do not exercise either terminal-failure notification route. The recorded validated definition already includes exhausted-cleanup notification; deliberate fault injection needs its own approval. Activation, enabled-to-disabled plans, mapping updates, and measured full-cycle timings remain live gates. Control logs retain 14 days; bundle/evidence retirement requires a separate exact-version approval after 90 days from verified closure. Application retention and PITR are unchanged.</p>
+          <p>The first supervised attempt exposed missing S3 tag-read permissions. Both owner-approved, scoped read repairs are applied, and a full read-only plan passed under the build role. Parking-only recovery then succeeded: 21 baseline alarms were recreated with verified tags and removed after the required wait. Dev remains parked, with zero alarms and no dashboard. The owner received build and terminal-failure emails. Unpark/early-park and deadline cleanup still need proof; the failed activation evidence stays retained. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md#first-supervised-attempt-2026-09-07">Read the outcome and remaining gates.</a> Exact execution receipts and private inputs stay in restricted operator evidence.</p>
+        </div>
+        <div class="compact-actions">
+          <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md">Read setup, proof gates, and recovery</a>
+          <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md#resource-tags-and-billing-activation">Read tagging and billing procedure</a>
         </div>
       </div>
     </section>

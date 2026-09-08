@@ -252,13 +252,22 @@ class SiteValidatorTests(unittest.TestCase):
     def test_accepted_adr_count_is_derived_from_top_level_statuses(self):
         directory, root = self.make_repository()
         with directory:
+            accepted_before = sum(
+                next(
+                    (line for line in path.read_text(encoding="utf-8").splitlines() if line.startswith("- Status:")),
+                    "",
+                ).startswith("- Status: Accepted")
+                for path in (root / "docs/adr").glob("*.md")
+            )
+            self.assertEqual(validator.validate_repository(root), [])
             decision = root / "docs/adr/028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md"
+            self.assertIn("- Status: Accepted", decision.read_text(encoding="utf-8").splitlines())
             decision.write_text(
                 decision.read_text(encoding="utf-8").replace("- Status: Accepted", "- Status: Proposed", 1),
                 encoding="utf-8",
             )
             errors = validator.validate_repository(root)
-        self.assertTrue(any("accepted-ADR count must be 24" in error for error in errors))
+        self.assertTrue(any(f"accepted-ADR count must be {accepted_before - 1}" in error for error in errors))
 
     def test_architecture_index_must_list_each_active_adr_once(self):
         directory, root = self.make_repository()
@@ -323,7 +332,6 @@ class SiteValidatorTests(unittest.TestCase):
 
     def test_source_state_lifecycle_matches_the_accepted_decision(self):
         page = (ROOT / "site/index.html").read_text(encoding="utf-8")
-        self.assertIn("25 accepted ADRs", page)
         self.assertIn("Active feed checkpoints do not expire", page)
         self.assertIn("docs/adr/025-source-state-and-response-page-retirement.md", page)
 
