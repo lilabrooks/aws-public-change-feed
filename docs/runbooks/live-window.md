@@ -2,11 +2,39 @@
 
 Implementation for M4 / L-58, governed by accepted
 [ADR-030](../adr/030-bounded-live-windows-and-terraform-parking.md). Initial
-parked migration and control-plane deployment completed on 2026-09-07. The
-supervised unpark/early-park round trip and eligible closeout have passed;
-deadline cleanup after local waiter loss and remaining notification checks
-are still open. Build and terminal-failure emails have been received. Complete the
-first-use gate below before relying on automatic shutdown.
+parked migration and control-plane deployment completed on 2026-09-07.
+[Supervised lifecycle qualification passed on September 8](../evidence/l57-l58-supervised-live-window-2026-09-08.md):
+unpark/early-park, deadline cleanup after local waiter loss, the fixed L-57
+observation, and eligible closeout. The owner accepted supervised short dev
+windows. Unattended use remains gated by
+[L-59](https://github.com/lilabrooks/aws-public-change-feed/issues/205).
+
+## Supervised use and requalification
+
+An operator must remain available through terminal workflow/build results and
+independent parked verification, including when the local waiter is lost.
+Verify all four triggers disabled, all five execution fences at zero, alarms
+and dashboard absent, and retained work classified. Handle failed or uncertain
+cleanup through the recovery procedure below; a deadline or missing email is
+not evidence that parking succeeded. `live-status` is a readback command, not a
+continuous monitor.
+
+For the unchanged qualified deployment, use a fresh reviewed clean bundle and
+complete private inputs, valid operator credentials, no conflicting owner,
+current application/release and control comparisons, and fresh plans. Declare
+the test's fixed bounds and terminal condition before starting. Request early
+park when evidence gathering finishes, then verify the result. The 90-minute
+first-use deadline protocol need not be repeated for every short test; user
+windows still must fit the unchanged reviewed minimums and cleanup reserve.
+
+Repeat affected qualification when the workflow, provider, control IAM,
+mapping identity, tags, or timing policy changes. Changed application or release
+inputs need their existing deployment/proof gates too. Reassess receipt evidence
+after topic, subscription, notification-route or permission changes, or evidence
+of missed notifications. None of these checks implicitly authorizes a new live
+exercise or IAM repair. The first-use procedure below remains the setup and
+requalification reference; historical failed attempts retain their original
+outcomes.
 
 ## Repeatable commands
 
@@ -241,8 +269,10 @@ unknown delivery work remains in its system of record, not purged.
    failure; losing the waiter does not end supervision.
    Verify recreation and removal, both invocation boundaries,
    preserved identities, explicit unresolved work, and a converged parked plan.
-   Exercise a failed build/parking retry without manufacturing Slack traffic.
-   Do not mark the automatic cleanup guarantee live-qualified before this proof.
+   Reuse unchanged failed-build/recovery evidence. If an affected failure path
+   lacks evidence, review and authorize a separate bounded exercise without
+   manufacturing Slack traffic. Do not qualify the lifecycle before its
+   required live proof, and do not treat that proof as an unconditional guarantee.
    Use `WINDOW=90m` for the first supervised proof; this supplies unmeasured
    setup margin, not a reason to keep a completed test running. Earlier 58/68
    minute minimums omitted remaining activation work. Capture actual phase
@@ -254,6 +284,12 @@ unknown delivery work remains in its system of record, not purged.
    300-second invocation wait (dispatcher/reconciler event age is 300 seconds).
    A zero-count receipt can precede late runtime-failure queue arrivals; alarm
    removal and a closeout do not establish that async backlog is empty.
+
+   The September 8 proof completed the manual/deadline lifecycle gates for the
+   recorded deployment, including the 20-minute L-57 cohort and successful
+   closeout. See the [bounded result](../evidence/l57-l58-supervised-live-window-2026-09-08.md).
+   The [notification gate](#failure-notifications) distinguishes the owner's
+   supervised-use acceptance from the still-unqualified unattended case.
 
 ### Initial deployment record, 2026-09-07
 
@@ -278,10 +314,11 @@ need a newly reviewed clean bundle and fresh transition plans before live proof.
 Never reuse the initial migration plans for qualification.
 
 At initial deployment, failure notification resources were deployed but actual
-receipt was unproved. Later receipt evidence is recorded below.
-Keep a human supervising initial qualification, including the local-waiter-loss
-test, and do not use routine unattended windows until actual email receipt and
-the cleanup lifecycle are proved.
+receipt and lifecycle qualification were unproved. Later sections record the
+completed lifecycle proof and the remaining notification gaps.
+[Supervision remains required for every window](#supervised-use-and-requalification),
+through terminal results and independent parked verification. L-59 gates
+unattended use on route-specific receipt and live failed-publication preservation.
 
 ### First supervised attempt, 2026-09-07
 
@@ -306,9 +343,9 @@ Lambda's asynchronous backlog empty.
 The result was `parked` with outcome `activation_incomplete` and
 `retained_without_closeout`. Failed activation and diagnostic evidence remain
 protected. This proves parking-only recovery and baseline alarm recreation and
-removal. Live unpark, the full 28-alarm set, early parking from live state,
-deadline cleanup after local waiter loss, and eligible successful-test closeout
-remain unproved. No new live window followed the repair.
+removal. At that point live unpark, the full 28-alarm set, early parking from
+live state, deadline cleanup after local waiter loss, and eligible successful-test
+closeout were unproved. Later attempts and their evidence are recorded below.
 
 The owner confirmed build-failure and terminal-failure emails. The terminal
 confirmation did not distinguish the workflow-event email from the direct
@@ -375,10 +412,13 @@ retained Lambda asynchronous work remains unobservable.
 The controller created an exact-version evidence closeout. Objects remain
 retained; no pruning was requested. Its `observation_complete` outcome labels
 this completed manual session, not L-57's separate fixed-observation cohort.
-That cohort, deadline cleanup after local waiter loss, and the remaining
-notification checks still require their own evidence. Keep receipts and
-measured phase timings private; this successful sample does not establish
-worst-case budgets or authorize unattended use.
+That manual run did not establish the separate cohort or deadline proof.
+The later [combined L-57/deadline record](../evidence/l57-l58-supervised-live-window-2026-09-08.md)
+now records both as passed, with successful same-owner automatic parking after
+waiter loss, no early-stop request, no deadline overrun, and converged parked
+plans. Notification gaps remain explicit under L-59. Keep receipts and exact
+phase timestamps private; measured samples do not establish worst-case budgets
+or authorize unattended use.
 
 ## Resource tags and billing activation
 
@@ -522,8 +562,10 @@ logs arrive. Secrets Manager, DynamoDB storage/PITR, S3, control ledger/bundles,
 and control logs remain possible costs. Stopping runtime publishing also stops
 new application custom-metric and log ingestion after in-flight work ends.
 CodeBuild minutes and workflow/API requests accrue while operating, so frequent
-round trips can offset monitoring savings. Session duration and net savings
-have not been measured; do not treat the timing allowances as cost estimates.
+round trips can offset monitoring savings. The September 8 deadline proof
+measured activation and parking build wall times of about 2.5 and 12.3 minutes.
+It did not measure the AWS bill, net savings, or worst-case cost. Keep the
+reviewed allowances unchanged; they are not cost estimates.
 Reserved concurrency itself is not provisioned
 capacity. The controller refuses provisioned Lambda environments or pollers.
 
@@ -558,15 +600,29 @@ the exhausted-cleanup SNS state. Repeat service-side validation when the
 definition changes.
 
 The owner confirmed build and terminal-failure emails in the
-[supervised attempt](#first-supervised-attempt-2026-09-07). The remaining receipt
-check must distinguish the workflow-event and direct exhausted-cleanup routes;
-inspect the received failure emails first. Successful workflow executions do
-not exercise either terminal-failure route, and build-failure emails alone do
-not distinguish them. Failure preservation when exhausted-cleanup
-publishing fails also remains unproved live. Any deliberate fault injection
-needs a separately reviewed and authorized procedure, including restoration
-and verification of any changed configuration. It is not an implicit step in
-the next normal live window.
+[supervised attempt](#first-supervised-attempt-2026-09-07). Reuse the build
+receipt while the mechanism and destination remain unchanged. The terminal
+confirmation did not distinguish the workflow-event and direct exhausted-cleanup
+routes, so neither is separately receipt-qualified. Successful ordinary windows
+do not exercise them. Failure preservation when exhausted-cleanup publishing
+fails also remains unproved live; definition inspection and offline checks are
+separate evidence.
+
+On September 8 the owner accepted these gaps for supervised short dev windows,
+with operator responsibility through terminal parked verification.
+[L-59](https://github.com/lilabrooks/aws-public-change-feed/issues/205) holds the
+remaining qualification before unattended use. Inspect existing emails first:
+the workflow-event body starts with `APCF live-control workflow:`, followed by
+`FAILED`, `TIMED_OUT`, or `ABORTED`. The direct subject is
+`APCF cleanup exhausted: check parking`. Keep private
+identifiers and full emails outside Git. Record any unidentified route as
+unverified; no extra live failure is needed to close the supervised lifecycle.
+
+Any still-needed fault injection requires separate approval for the exact
+exercise, restoration, and final readbacks. Keep dev parked and require no
+active cleanup owner; do not impair an active session's shared SNS channel.
+It is not an implicit step in a normal live window. Even completed receipt
+qualification cannot make these best-effort routes a delivery guarantee.
 
 Central is the only topic-policy owner. The EventBridge target role trusts only
 the two exact rules in this account and may publish only to the operations

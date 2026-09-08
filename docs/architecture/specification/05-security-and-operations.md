@@ -4,7 +4,9 @@
 
 [ADR-030](../../adr/030-bounded-live-windows-and-terraform-parking.md) and the
 [live-window runbook](../../runbooks/live-window.md) define the accepted M4
-operator workflow. After its first-use gate, persistent dev defaults to parked
+operator workflow. The September 8, 2026
+[live evidence](../../evidence/l57-l58-supervised-live-window-2026-09-08.md)
+qualifies supervised short dev windows. Persistent dev defaults to parked
 through complete private Terraform inputs. The workflow owns bounded unpark,
 eligible monitoring, optional delivery preflight or observation, and shutdown.
 It must preserve application bytes, retained data, credentials, log retention,
@@ -51,7 +53,23 @@ request must print only a fixed warning and leave the AWS cleanup owner intact.
 Failure-only EventBridge rules and a bounded exhausted-cleanup SNS publish use
 the existing operations topic. They remain outside central parking; central
 alone owns the topic policy. Event transforms exclude private event contents.
-Live receipt proof remains a gate for routine unattended operation.
+The operator must remain available until workflow/build results are terminal
+and independent readback verifies parking and classifies retained work, including
+after local waiter loss. Failed or uncertain cleanup requires operator recovery.
+Reuse unchanged confirmed build-email evidence. The unidentified terminal-email
+route and live failed-publication preservation remain unverified; source checks
+cannot mark them passed. They are deferred to
+[L-59](https://github.com/lilabrooks/aws-public-change-feed/issues/205) before
+unattended operation, starting with inspection of existing emails. Any additional
+live fault injection needs separate authorization and must not impair an active
+cleanup owner's shared notification channel.
+
+Per-use review, valid credentials, exact release/package comparisons, fresh
+plans and readbacks remain required. Changes to the workflow, provider, control
+IAM, mapping identity, tags, or timing policy require affected requalification.
+Topic, subscription, notification-route or permission changes, or evidence of
+missed notifications, require reassessing prior receipt proof. Unchanged ordinary
+sessions do not require a repeated deadline or notification failure campaign.
 
 Control logs retain 14 days. Explicit `live-prune` preview/hash/apply may retire
 exact bundle/evidence versions 90 days after verified successful session

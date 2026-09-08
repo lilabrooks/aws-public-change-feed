@@ -17,7 +17,7 @@ Each candidate includes the matched text, service, risk type, mapped environment
 
 GitHub Issues and milestones hold the current backlog state.
 
-Dev is parked between live tests. The [parking and resource-tagging workflow](#parking-and-resource-tags) describes the controls, retained costs, and remaining live qualification gates. The completed milestones below record earlier evidence; they do not mean the service runs continuously.
+Dev is parked between live tests. [Supervised short-window qualification passed on September 8, 2026](docs/evidence/l57-l58-supervised-live-window-2026-09-08.md); unattended use remains gated. The [parking and resource-tagging workflow](#parking-and-resource-tags) describes the controls and retained costs. The completed milestones below record earlier evidence; they do not mean the service runs continuously.
 
 | Milestone | State | Purpose |
 | --- | --- | --- |
@@ -25,6 +25,7 @@ Dev is parked between live tests. The [parking and resource-tagging workflow](#p
 | [M1: dev MVP](https://github.com/lilabrooks/aws-public-change-feed/milestone/2) | Closed | Run the dev service on schedule and exercise delivery, recovery, the fixed load case, and alarm notification. |
 | [M2: lifecycle and replay](https://github.com/lilabrooks/aws-public-change-feed/milestone/3) | Closed | Set expiry and retirement rules for feed state and releases, add saved-response replay, and fix named recovery failures. |
 | [M3: production-readiness proof](https://github.com/lilabrooks/aws-public-change-feed/milestone/4) | Closed | The exact reviewed dev deployment passed its production-readiness gate for one environment, one destination, four feeds, three services, four risk rules, and the 300-delivery/hour envelope. |
+| [M4: bounded live confirmation and cost shutdown](https://github.com/lilabrooks/aws-public-change-feed/milestone/5) | Supervised live proof passed | Confirm the unchanged dev deployment in a fixed observation, then verify repeatable supervised early parking and deadline cleanup after local waiter loss. |
 
 ### D0: first live Slack delivery
 
@@ -77,7 +78,7 @@ See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issue
 
 ## Parking and resource tags
 
-The [September 7, 2026 deployment record](docs/runbooks/live-window.md#initial-deployment-record-2026-09-07) confirms initial Terraform parking and deployment of the AWS-hosted control plane. [Supervised unpark/early-park and eligible evidence closeout have now passed](docs/runbooks/live-window.md#successful-supervised-round-trip-2026-09-08-utc). Deadline cleanup after local waiter loss and the remaining notification checks still need proof, so M4 / L-58 is not complete. The owner accepted ADR-030 on September 7, 2026. Complete the [first-use gate](docs/runbooks/live-window.md#first-use-gate-and-private-configuration) before relying on unattended cleanup.
+The [September 8 qualification record](docs/evidence/l57-l58-supervised-live-window-2026-09-08.md) confirms supervised unpark/early-park, deadline cleanup after local waiter loss, the fixed L-57 observation, and eligible evidence closeout. The owner accepted the supervised-use revision to ADR-030 that day. [L-59](https://github.com/lilabrooks/aws-public-change-feed/issues/205) holds the remaining notification qualification before unattended use, outside M4.
 
 Parking disables the `apcf-dev-feed-watcher`, `apcf-dev-outbox-dispatcher`, and `apcf-dev-recovery-reconciler` EventBridge rules and the `apcf-delivery-dev.fifo` mapping on `apcf-dev-slack-worker`. It sets reserved concurrency to zero on all five functions, including shadow, and **deletes the deployment's CloudWatch metric alarms and dashboard**. Eligible monitoring is recreated during activation.
 
@@ -85,9 +86,9 @@ Once in-flight work ends, ordinary runtime execution, queue polling, and applica
 
 ### Repeatable park, unpark, and testing
 
-The earlier attempts exposed missing S3 tag reads and a companion EventBridge tag permission for rule updates. The scoped repairs are applied. The successful retry reached verified live readiness with 28 alarms, then early-parked under the same cleanup owner. Both builds and the workflow succeeded; independent checks confirmed parked controls, absent monitoring, unchanged identities and rule tags, and no-change central/control plans. The controller created a verified closeout without deleting evidence. This manual round trip does not satisfy the separate deadline or L-57 fixed-observation proof. The [runbook records the outcomes and limits](docs/runbooks/live-window.md#successful-supervised-round-trip-2026-09-08-utc).
+The fixed 20-minute observation recorded the expected 1/20/4 watcher/dispatcher/reconciler invocations and heartbeats, with zero scheduled-function errors or throttles. No new delivery posted in that cohort, and the sample was not extended. The same AWS cleanup owner later parked on its deadline path without the local waiter or an early-stop request. Independent readbacks and no-change plans confirmed removed monitoring, disabled controls, and preserved application identities.
 
-After first-use qualification, set `LIVE_CONFIG` to the private operator JSON described in the runbook and use the repository's Python environment. These are separate operations, not a sequence to run together:
+Set `LIVE_CONFIG` to the private operator JSON described in the runbook and follow its [per-use checks](docs/runbooks/live-window.md#supervised-use-and-requalification). An operator stays available through terminal results and verified parking, and handles failed or uncertain cleanup. Use the repository's Python environment. These are separate operations, not a sequence to run together:
 
 | Command | Effect |
 | --- | --- |
@@ -97,7 +98,7 @@ After first-use qualification, set `LIVE_CONFIG` to the private operator JSON de
 | `make live-test CASE=delivery WINDOW=90m` | Run the existing one-attempt delivery proof and park when it finishes, including a quiet or refused result. |
 | `make live-park` | Request early cleanup; a repeat call on a verified parked service makes no changes. |
 
-`WINDOW` accepts ordered durations such as `90m`, `2h`, and `1h30m`. Current limits are 68 minutes minimum for manual/observation, 78 minutes for delivery, and 364 days maximum, including setup and one cleanup reserve. Early completion starts cleanup promptly; a repeated unpark retains the original deadline. AWS delays or emergency retries can exceed it, so it is not an exact billing cutoff. Step Functions owns cleanup beyond the local terminal's lifetime. Keep initial qualification supervised and never extend a quiet sample to obtain a match.
+`WINDOW` accepts ordered durations such as `90m`, `2h`, and `1h30m`. Current limits are 68 minutes minimum for manual/observation, 78 minutes for delivery, and 364 days maximum, including setup and one cleanup reserve. Early completion starts cleanup promptly; a repeated unpark retains the original deadline. AWS delays or emergency retries can exceed it, so it is not an exact billing cutoff. Step Functions owns cleanup beyond the local terminal's lifetime. Keep windows supervised and never extend a quiet sample to obtain a match. The completed deadline proof need not be repeated for each unchanged short test.
 
 ### Static ownership and cost tags
 

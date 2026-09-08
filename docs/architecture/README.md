@@ -82,24 +82,32 @@ data while removing monitoring and fencing runtime execution between tests.
 Failure-only notifications remain available while parked. Control artifacts
 use verified closeouts and separate, hash-approved retirement after 90 days;
 application retention is unchanged.
-The owner accepted ADR-030 on 2026-09-07; acceptance does not replace the
-remaining supervised live qualification gates.
+The owner accepted ADR-030 on 2026-09-07 and its supervised-use qualification
+revision on 2026-09-08.
 Initial parked migration and control-plane deployment completed on 2026-09-07,
 with post-wait control verification, AWS definition validation, and no-change
 plans. The [runbook deployment record](../runbooks/live-window.md#initial-deployment-record-2026-09-07)
 states the exact evidence boundary. The later supervised attempt proved
 parking-only recovery, tagged baseline-alarm recreation/removal, and parked
 convergence under the build role. Build and terminal-failure emails were
-received. Deadline cleanup after local waiter loss and remaining notification
-checks still require proof.
+received, though the terminal receipt did not identify its route.
 The later attempt exposed the tagged EventBridge rule-update permission gap;
 failure cleanup passed. The constrained repair was applied through a separately
 reviewed parked IAM plan, with matching policy readback and no control-plan
 changes afterward. The subsequent supervised unpark/early-park passed with
 live readiness, successful rule/mapping updates in both directions, unchanged
 identities and rule tags, absent parked monitoring, and no-change central/control
-plans. Eligible evidence closeout passed without pruning objects. The manual
-round trip does not satisfy the separate fixed-observation or deadline proof.
+plans. Eligible evidence closeout passed without pruning objects.
+The later [L-57/deadline proof](../evidence/l57-l58-supervised-live-window-2026-09-08.md)
+passed the fixed 20-minute scheduled observation and automatic parking after
+local waiter loss, with the same owner and deadline and no early-stop request.
+The lifecycle is qualified for supervised short dev windows; an operator stays
+available through terminal results, independent parked verification, and
+recovery if needed. GitHub issues and milestones hold M4's closure state.
+[L-59](https://github.com/lilabrooks/aws-public-change-feed/issues/205) holds
+route-specific receipt and live failed-publication qualification before
+unattended use, outside M4. Those checks remain unperformed, not passed.
+Fresh per-use checks and changed-mechanism requalification still apply.
 
 The [resource-tag policy](specification/05-security-and-operations.md#resource-ownership-and-cost-tags)
 groups supported Terraform resources by project, deployment, management, and
@@ -112,7 +120,7 @@ The [September 7 tag deployment record](../runbooks/live-window.md#tag-deploymen
 confirms the separate maintenance apply and direct tag readback for 47 existing
 resources. All three full Terraform plans converged with no changes, and dev
 remained parked. Billing reports `project` and `deployment_id` Active;
-`component` discovery and live-window qualification remain pending.
+`component` discovery and cost attribution remain pending.
 
 ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the product. [Archived copies](../adr/archive/README.md) preserve them for audit, separate from the accepted decisions that govern the current product. Numbering remains stable so earlier links and review notes are auditable.
 
