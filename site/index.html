@@ -734,6 +734,9 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md">Read setup, proof gates, and recovery</a>
           <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md#resource-tags-and-billing-activation">Read tagging and billing procedure</a>
         </div>
+        <div class="site-note">
+          <p>A later supervised activation failed because tagged EventBridge rule updates needed an additional tag permission. Failure cleanup succeeded, and independent checks confirmed parked controls, absent monitoring, preserved identities, and no Terraform changes. The repair restricts the permission to the three runtime rules and their four fixed tag values, with no extra keys or tag-removal grant. A separately reviewed parked IAM apply completed with matching policy readback and a no-change control plan. Live qualification remains pending. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md#later-supervised-attempt-2026-09-08-utc">Read the later attempt and remaining gate.</a></p>
+        </div>
       </div>
     </section>
 

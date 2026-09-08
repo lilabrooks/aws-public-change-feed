@@ -92,6 +92,10 @@ parking-only recovery, tagged baseline-alarm recreation/removal, and parked
 convergence under the build role. Build and terminal-failure emails were
 received. Live unpark/interruption/deadline cleanup, remaining notification
 checks, and eligible successful-test closeout remain unproved.
+The later attempt exposed the tagged EventBridge rule-update permission gap;
+failure cleanup passed. The constrained repair was applied through a separately
+reviewed parked IAM plan, with matching policy readback and no control-plan
+changes afterward. Live provider qualification remains pending.
 
 The [resource-tag policy](specification/05-security-and-operations.md#resource-ownership-and-cost-tags)
 groups supported Terraform resources by project, deployment, management, and

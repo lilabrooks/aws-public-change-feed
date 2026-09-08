@@ -65,6 +65,13 @@ checks without repeating the accepted matching, recovery, or load cohorts:
   artifact prefix only, with no tag-write grant. Regression checks reject missing
   read actions, widened prefixes, and blanket `s3:*` grants. Require a full read-only plan
   under the build role before retrying recovery after a permission repair.
+- Evaluate the actual schedule-tag IAM statement through Terraform in an
+  isolated fixture. Require only `events:TagResource` on the three exact runtime
+  rules, the four fixed runtime request-tag values, an exact allowed key set,
+  and a non-null key set. Reject alternate/wildcard tag grants, tag removal,
+  widened resources, missing conditions, changed values, and extra keys.
+  Policy simulation must cover allowed and refused request contexts before
+  maintenance apply; simulation does not replace live provider qualification.
 - Verify failure-only notification patterns, exact-topic publication roles,
   minimal payload transforms, retained rule ownership, and failure-preserving
   cleanup notification states. Prove actual email receipt separately.

@@ -139,6 +139,17 @@ unknown delivery work remains in its system of record, not purged.
    versions. Recheck that call and the scoped permissions when upgrading the
    provider; `s3:GetObjectVersionTagging` has not been shown necessary by the
    current live proof and is not granted speculatively.
+   Schedule state updates also carry the pinned provider's tag payload and
+   need the companion `events:TagResource` permission. The source repair grants
+   it only on the three exact runtime rules, requires all four fixed runtime
+   request-tag values, rejects extra keys, and grants no `UntagResource`.
+   Check the real rule tags and planned request payload against those conditions
+   before applying this repair or starting another window. Supplementary rule
+   tags require separate permission review; never remove them to make a toggle
+   pass. IAM simulation is read-only evidence, not proof that the provider's
+   dependent authorization will pass live. The separately reviewed parked IAM
+   apply completed with matching policy readback and a no-change control plan;
+   live provider qualification remains pending.
    The mapping UUID is a coupled constant in `scripts/live_window.py` and the
    `ExactQueueTrigger` policy in `infra/live-control/iam.tf`. Compare both with
    the deployed central mapping before first use and after any replacement.
@@ -309,6 +320,30 @@ Retain both failing and passing attempts there. Public documentation records
 the outcome and its limits; it is insufficient input for an apply or recovery.
 Before another live window, review the exact private receipts, current controls,
 and fresh plans against the first-use gate.
+
+### Later supervised attempt, 2026-09-08 UTC
+
+Fresh full central and live-control plans reported no changes before the next
+authorized attempt. Activation recreated monitoring and partially enabled
+consumers, but rule updates failed. CloudTrail recorded `PutRule` denials for
+missing `events:TagResource`. The watcher stayed fenced and all three schedules
+remained disabled. An early-stop request preserved the same cleanup owner.
+
+Failure cleanup disabled the queue mapping, fenced all five functions, waited
+the required invocation interval, and removed the remaining alarms/dashboard.
+The cleanup build succeeded while the workflow correctly ended
+`LiveWindowFailed`. Independent readback and a full no-change central plan
+confirmed parking, preserved application and resource identities, and zero
+recorded unresolved delivery work. Approximate queue counts were zero; that
+does not establish an empty asynchronous backlog. Failed evidence stays
+retained without successful-test closeout. No replacement window was started.
+
+The narrowly scoped permission repair was then applied through a separately
+reviewed parked IAM plan. Only the constrained build-role statement changed;
+policy readback matched and a fresh control plan had no changes. Runtime
+controls remained parked. Live qualification is still required. Keep detailed receipts and
+timings in restricted evidence. A read-only plan did not exercise the missing
+write permission, so another no-change plan cannot by itself close this gate.
 
 ## Resource tags and billing activation
 
@@ -564,6 +599,9 @@ Keep that separation when reviewing operator access.
 References verified: 2026-09-07.
 
 - [EventBridge target permissions](https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-use-resource-based.html)
+- [EventBridge PutRule and tag authorization](https://docs.aws.amazon.com/eventbridge/latest/APIReference/API_PutRule.html)
+- [EventBridge actions and request-tag condition keys](https://docs.aws.amazon.com/service-authorization/latest/reference/list_events.html)
+- [Pinned provider rule-update implementation](https://github.com/hashicorp/terraform-provider-aws/blob/v6.58.0/internal/service/events/rule.go)
 - [Step Functions events](https://docs.aws.amazon.com/step-functions/latest/dg/eventbridge-integration.html)
 - [Execution-history retention](https://docs.aws.amazon.com/step-functions/latest/dg/service-quotas.html)
 - [Incomplete multipart lifecycle](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpu-abort-incomplete-mpu-lifecycle-config.html)

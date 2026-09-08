@@ -210,6 +210,28 @@ The [runbook](../runbooks/live-window.md#first-supervised-attempt-2026-09-07)
 records the failed activation, retries, grants, and successful recovery without
 treating that recovery as a successful live test.
 
+A later supervised attempt failed during rule updates because the tagged
+`PutRule` request required `events:TagResource`. The pinned provider sends
+tags even for a state update. Failure cleanup succeeded and preserved the
+activation failure as the workflow result; unpark/early-park remains unproved.
+The source repair limits the companion permission to the three exact runtime
+rules and the four fixed request-tag values, with no extra keys or tag-removal
+grant. Stored tags do not select the target or confer access. The same
+restriction also limits a direct tag request to the fixed payload.
+
+An ARN-only tag grant would permit arbitrary tag values on those rules. The
+request restriction avoids that broader capability but requires separate
+permission review if supplementary rule tags are introduced. Changing the
+provider or bypassing Terraform's rule updates would add a different lifecycle
+path. Keep the existing controller and plan validator unchanged. Review a
+parked maintenance plan before applying the IAM repair, then repeat supervised
+qualification from clean source. If the request conditions fail live, park and
+inspect the denial before changing the grant. Removing the companion statement
+is a separate parked rollback; it restores the known rule-update refusal.
+The separately reviewed parked IAM apply completed. Policy readback matched
+the constrained grant and a fresh control plan had no changes. Live provider
+qualification remains pending.
+
 Still required before first use:
 
 - Review of any IAM changes since the approved initial deployment; owner

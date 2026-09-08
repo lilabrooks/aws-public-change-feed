@@ -67,6 +67,24 @@ resource "aws_iam_role_policy" "build" {
         Resource = [for name in ["feed-watcher", "outbox-dispatcher", "recovery-reconciler"] : "arn:aws:events:us-east-1:${local.account}:rule/apcf-dev-${name}"]
       },
       {
+        # The pinned provider includes tags in PutRule, including state updates.
+        # Permit only the fixed runtime tag payload on these three exact rules.
+        Sid      = "ExactScheduleTags", Effect = "Allow", Action = ["events:TagResource"],
+        Resource = [for name in ["feed-watcher", "outbox-dispatcher", "recovery-reconciler"] : "arn:aws:events:us-east-1:${local.account}:rule/apcf-dev-${name}"]
+        Condition = {
+          StringEquals = {
+            "aws:RequestTag/project"       = "aws-public-change-feed"
+            "aws:RequestTag/deployment_id" = "dev"
+            "aws:RequestTag/managed_by"    = "terraform"
+            "aws:RequestTag/component"     = "runtime"
+          }
+          "ForAllValues:StringEquals" = {
+            "aws:TagKeys" = ["project", "deployment_id", "managed_by", "component"]
+          }
+          Null = { "aws:TagKeys" = "false" }
+        }
+      },
+      {
         Sid      = "TemporaryMonitoring", Effect = "Allow",
         Action   = ["cloudwatch:PutMetricAlarm", "cloudwatch:DeleteAlarms", "cloudwatch:TagResource", "cloudwatch:UntagResource", "cloudwatch:PutDashboard", "cloudwatch:DeleteDashboards"],
         Resource = ["arn:aws:cloudwatch:us-east-1:${local.account}:alarm:apcf-dev-*", "arn:aws:cloudwatch::${local.account}:dashboard/apcf-dev-operations"]
