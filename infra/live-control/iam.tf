@@ -33,6 +33,16 @@ resource "aws_iam_role_policy" "build" {
         Action = ["s3:GetReplicationConfiguration"], Resource = ["arn:aws:s3:::apcf-config-dev"]
       },
       {
+        # Bucket tag refresh uses a separate read action, outside s3:GetBucket*.
+        Sid    = "RefreshConfigTags", Effect = "Allow",
+        Action = ["s3:ListTagsForResource"], Resource = ["arn:aws:s3:::apcf-config-dev"]
+      },
+      {
+        # aws_s3_object refresh reads tags as well as the pinned artifact bytes.
+        Sid      = "RefreshArtifactTags", Effect = "Allow", Action = ["s3:GetObjectTagging"],
+        Resource = ["arn:aws:s3:::apcf-config-dev/apcf/application-artifacts/*"]
+      },
+      {
         Sid      = "ReadExactDeploymentObjects", Effect = "Allow", Action = ["s3:GetObject", "s3:GetObjectVersion"],
         Resource = ["arn:aws:s3:::apcf-config-dev/apcf/*", "${aws_s3_bucket.control.arn}/bundles/*"]
       },

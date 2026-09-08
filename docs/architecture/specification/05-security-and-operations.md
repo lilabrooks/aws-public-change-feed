@@ -1,9 +1,9 @@
 # 5. Security and operations
 
-## Proposed bounded live operation
+## Bounded live operation
 
 [ADR-030](../../adr/030-bounded-live-windows-and-terraform-parking.md) and the
-[live-window runbook](../../runbooks/live-window.md) define the proposed M4
+[live-window runbook](../../runbooks/live-window.md) define the accepted M4
 operator workflow. After its first-use gate, persistent dev defaults to parked
 through complete private Terraform inputs. The workflow owns bounded unpark,
 eligible monitoring, optional delivery preflight or observation, and shutdown.

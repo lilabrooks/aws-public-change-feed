@@ -1,8 +1,8 @@
 # 6. Acceptance and implementation sequence
 
-## Proposed live-window acceptance
+## Live-window acceptance
 
-The M4 / L-58 controller in proposed
+The M4 / L-58 controller in accepted
 [ADR-030](../../adr/030-bounded-live-windows-and-terraform-parking.md) adds these
 checks without repeating the accepted matching, recovery, or load cohorts:
 
@@ -58,6 +58,13 @@ checks without repeating the accepted matching, recovery, or load cohorts:
 - Before operational use, complete service-side state-machine validation, exact
   IAM/plan review, manual and deadline round trips, loss of the local waiter,
   and final parked Terraform convergence. Local mocks are not the live proof.
+- Bind the build role's S3 tag-refresh read to `apcf-config-dev` only. Removing
+  that read or widening its resource fails regression checks; it grants no S3
+  tag writes. Exercise provider refresh under the actual build role live.
+- Bind artifact-object tag reads to the configuration bucket's application
+  artifact prefix only, with no tag-write grant. Regression checks reject missing
+  read actions, widened prefixes, and blanket `s3:*` grants. Require a full read-only plan
+  under the build role before retrying recovery after a permission repair.
 - Verify failure-only notification patterns, exact-topic publication roles,
   minimal payload transforms, retained rule ownership, and failure-preserving
   cleanup notification states. Prove actual email receipt separately.

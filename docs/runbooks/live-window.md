@@ -1,9 +1,10 @@
 # Short live windows and parking
 
-Implementation for M4 / L-58, governed by proposed
+Implementation for M4 / L-58, governed by accepted
 [ADR-030](../adr/030-bounded-live-windows-and-terraform-parking.md). Initial
 parked migration and control-plane deployment completed on 2026-09-07. The
-live round trip and notification receipt remain unproved. Complete the
+live round trip remains unproved; build and terminal-failure emails have been
+received. Complete the
 first-use gate below before relying on automatic shutdown.
 
 ## Repeatable commands
@@ -128,8 +129,16 @@ unknown delivery work remains in its system of record, not purged.
 
 1. Review/accept ADR-030 and the control IAM, including read access needed by
    Terraform refresh and the extra exact delivery-preflight permissions. The
-   build role includes `s3:GetReplicationConfiguration` only on `apcf-config-dev`:
-   the pinned provider reads replication configuration during bucket refresh.
+   build role includes `s3:GetReplicationConfiguration` and
+   `s3:ListTagsForResource` only on `apcf-config-dev`: the pinned provider reads
+   replication configuration and bucket tags during refresh. The tag read does
+   not grant tag mutation. Artifact refresh also needs `s3:GetObjectTagging`
+   restricted to `apcf-config-dev/apcf/application-artifacts/*`, with no
+   object-tag write permission. This grant follows the locked central provider's
+   observed tag-read call, although both artifact data sources pin object
+   versions. Recheck that call and the scoped permissions when upgrading the
+   provider; `s3:GetObjectVersionTagging` has not been shown necessary by the
+   current live proof and is not granted speculatively.
    The mapping UUID is a coupled constant in `scripts/live_window.py` and the
    `ExactQueueTrigger` policy in `infra/live-control/iam.tf`. Compare both with
    the deployed central mapping before first use and after any replacement.
@@ -206,7 +215,17 @@ unknown delivery work remains in its system of record, not purged.
    Export `LIVE_CONFIG=/absolute/private/path/live.json` in your shell profile.
 6. Use a reviewed clean commit for the bundle. Complete a short manual
    unpark/early-park round trip, then a deadline run with the local waiter
-   terminated. Verify recreation and removal, both invocation boundaries,
+   terminated. For that deadline run, start `make live-test WINDOW=90m` and
+   verify readiness with `make live-status` from a separate terminal before
+   terminating only its verified local Python
+   waiter with `SIGKILL`. Ctrl-C/`SIGINT` enters the early-park handler and
+   cannot prove deadline cleanup. Do not stop an AWS build or workflow, kill
+   unrelated processes, or send `live-park` during the deadline proof. Record
+   the owner and timing fields before and after waiter loss; confirm the same
+   generation, execution, deadline, and `cleanup_at`, with no early stop
+   requested. A human must remain present to observe cleanup and handle a
+   failure; losing the waiter does not end supervision.
+   Verify recreation and removal, both invocation boundaries,
    preserved identities, explicit unresolved work, and a converged parked plan.
    Exercise a failed build/parking retry without manufacturing Slack traffic.
    Do not mark the automatic cleanup guarantee live-qualified before this proof.
@@ -244,16 +263,62 @@ placeholders do not prove empty work. Source fixes made after that snapshot
 need a newly reviewed clean bundle and fresh transition plans before live proof.
 Never reuse the initial migration plans for qualification.
 
-Failure notification resources are deployed, but actual receipt remains unproved.
+At initial deployment, failure notification resources were deployed but actual
+receipt was unproved. Later receipt evidence is recorded below.
 Keep a human supervising initial qualification, including the local-waiter-loss
 test, and do not use routine unattended windows until actual email receipt and
 the cleanup lifecycle are proved.
 
+### First supervised attempt, 2026-09-07
+
+The owner accepted ADR-030 and authorized a supervised window from reviewed
+clean source. Activation failed before applying runtime or monitoring changes.
+Terraform refresh exposed missing bucket-tag read permission; parking-only
+recovery then exposed a separate artifact object-tag read requirement. Each
+scoped IAM repair received separate owner approval. An initial diagnostic's
+Terraform plan failed; after both repairs, a complete read-only plan passed
+under the actual build role.
+
+Parking-only recovery succeeded on September 8 UTC using the original
+generation and immutable bundle. It recreated the 21 baseline alarms with
+verified shared tags while all runtime controls remained fenced. After the
+required 300-second invocation wait, it removed monitoring and passed full
+parked convergence. Independent readback confirmed disabled runtime triggers,
+zero reserved concurrency on all five functions, zero alarms, no dashboard,
+and terminal control builds and workflows. Recorded deliveries were posted,
+and all queues reported zero approximate counts; those counts do not prove
+Lambda's asynchronous backlog empty.
+
+The result was `parked` with outcome `activation_incomplete` and
+`retained_without_closeout`. Failed activation and diagnostic evidence remain
+protected. This proves parking-only recovery and baseline alarm recreation and
+removal. Live unpark, the full 28-alarm set, early parking from live state,
+deadline cleanup after local waiter loss, and eligible successful-test closeout
+remain unproved. No new live window followed the repair.
+
+The owner confirmed build-failure and terminal-failure emails. The terminal
+confirmation did not distinguish the workflow-event email from the direct
+exhausted-cleanup email. Direct publication succeeded; separate receipt
+confirmation for each terminal route and failure preservation when publication
+fails remain open. Inspect the existing emails before considering separately
+authorized fault injection.
+
+Detailed execution IDs, exact plan hashes and timestamps, state versions,
+diagnostic output, and readback receipts stay in restricted operator evidence.
+Retain both failing and passing attempts there. Public documentation records
+the outcome and its limits; it is insufficient input for an apply or recovery.
+Before another live window, review the exact private receipts, current controls,
+and fresh plans against the first-use gate.
+
 ## Resource tags and billing activation
 
 Terraform defines four shared tags on every resource supported by the locked
-provider. The tagging follow-up is source configuration until a separate
-maintenance apply and billing activation are verified.
+provider. The [September 7, 2026 maintenance apply](#tag-deployment-record-2026-09-07)
+verified tags on 47 existing resources. Subsequent Billing readback returned
+`Active` for `project` and `deployment_id`. At the last recorded check on
+September 8 UTC, `component` was absent from Billing's discoverable keys.
+Its activation and eventual cost attribution remain pending; keep the service
+parked during that discovery delay.
 
 | Key | Values and purpose |
 | --- | --- |
@@ -357,6 +422,26 @@ parked and regenerate from actual state before resuming. No stage was applied
 by the source-tagging change, and the later-stage/convergence proof remains
 open until maintenance is authorized.
 
+### Tag deployment record, 2026-09-07
+
+After the tagging PR merged, the owner authorized a separate maintenance apply
+from clean merged source with complete private inputs and the service parked.
+The staged procedure above restricted changes to reviewed ownership tags and
+preserved supplementary tags. Parked controls were checked after each apply.
+
+Direct readback verified tags on 47 existing resources across bootstrap,
+central, and live-control. Full untargeted plans for all three roots reported
+no changes. Non-tag configuration, resource identities, and outputs were
+preserved. No absent preflight resources, alarms, or dashboard were created,
+and the runtime stayed fenced.
+
+Restricted receipts retain the source revision, policy-inspection scope,
+approved saved-plan hashes, before/after state versions, metadata differences,
+and exact readbacks. Tagging did not run a live test or qualify automatic
+cleanup. Billing activation is separate; its status is recorded above.
+Later tag maintenance and the next live window still require fresh reviewed
+inputs and the applicable first-use gates.
+
 ## Costs and failure receipts
 
 Alarm/dashboard deletion removes those resources' future billable usage; actual
@@ -397,9 +482,21 @@ Duplicate notifications are possible, and both routes depend on the same SNS
 channel. AWS service events are best effort; these rules are not a delivery
 guarantee. They add no scheduled invocations, permanent metric alarms, or polling
 Lambda. Publication/delivery and retained storage may still incur usage charges.
-The new SNS state changes the previously validated ASL hash above. Repeat
-service-side definition validation, then prove failure-event and direct-route
-email receipt during the separately approved first-use exercise.
+The validated definition recorded in step 2 of the
+[first-use gate](#first-use-gate-and-private-configuration) already includes
+the exhausted-cleanup SNS state. Repeat service-side validation when the
+definition changes.
+
+The owner confirmed build and terminal-failure emails in the
+[supervised attempt](#first-supervised-attempt-2026-09-07). The remaining receipt
+check must distinguish the workflow-event and direct exhausted-cleanup routes;
+inspect the received failure emails first. Successful workflow executions do
+not exercise either terminal-failure route, and build-failure emails alone do
+not distinguish them. Failure preservation when exhausted-cleanup
+publishing fails also remains unproved live. Any deliberate fault injection
+needs a separately reviewed and authorized procedure, including restoration
+and verification of any changed configuration. It is not an implicit step in
+the next normal live window.
 
 Central is the only topic-policy owner. The EventBridge target role trusts only
 the two exact rules in this account and may publish only to the operations

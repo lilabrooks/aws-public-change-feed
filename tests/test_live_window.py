@@ -484,6 +484,28 @@ class LiveWindowTests(unittest.TestCase):
         self.assertIn('Resource = ["arn:aws:s3:::apcf-config-dev"]', statement)
         self.assertNotIn('"s3:Get*"', source)
 
+    def test_config_tag_refresh_permission_is_exact_read_only_bucket(self):
+        source = (ROOT / "infra/live-control/iam.tf").read_text()
+        found = re.search(r'Sid\s*= "RefreshConfigTags".*?\n      \}', source, re.S)
+        assert found is not None
+        statement = found.group()
+        self.assertRegex(statement, r'Action\s*= \["s3:ListTagsForResource"\]')
+        self.assertIn('Resource = ["arn:aws:s3:::apcf-config-dev"]', statement)
+        self.assertEqual(source.count('"s3:ListTagsForResource"'), 1)
+        for action in ('"s3:TagResource"', '"s3:UntagResource"', '"s3:PutBucketTagging"', '"s3:List*"', '"s3:*"'):
+            self.assertNotIn(action, source)
+
+    def test_artifact_tag_refresh_permission_is_read_only_artifact_prefix(self):
+        source = (ROOT / "infra/live-control/iam.tf").read_text()
+        found = re.search(r'Sid\s*= "RefreshArtifactTags".*?\n      \}', source, re.S)
+        assert found is not None
+        statement = found.group()
+        self.assertRegex(statement, r'Action\s*= \["s3:GetObjectTagging"\]')
+        self.assertIn('Resource = ["arn:aws:s3:::apcf-config-dev/apcf/application-artifacts/*"]', statement)
+        self.assertEqual(source.count('"s3:GetObjectTagging"'), 1)
+        for action in ('"s3:PutObjectTagging"', '"s3:DeleteObjectTagging"', '"s3:Get*"', '"s3:*"'):
+            self.assertNotIn(action, source)
+
     def test_mapping_uuid_is_bound_to_exact_update_permission(self):
         source = (ROOT / "infra/live-control/iam.tf").read_text()
         mapping_arns = re.findall(
