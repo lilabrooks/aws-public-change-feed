@@ -1,6 +1,7 @@
 """Cost-control refusals and lifecycle behavior without AWS mutations."""
 
 import copy
+import fnmatch
 import io
 import json
 import os
@@ -512,6 +513,75 @@ class LiveWindowTests(unittest.TestCase):
             r'arn:aws:lambda:us-east-1:\$\{local.account\}:event-source-mapping:([^"\n]+)', source
         )
         self.assertEqual(mapping_arns, [live.MAPPING])
+
+    def test_schedule_tag_permission_has_no_alternate_or_wildcard_grant(self):
+        source = (ROOT / "infra/live-control/iam.tf").read_text()
+        build = source.split('resource "aws_iam_role" "workflow"')[0]
+        self.assertNotIn("NotAction", build)
+        self.assertNotIn("NotResource", build)
+        actions = re.findall(r'\bAction\s*=\s*(\[[^\]]*\]|"[^"]+")', build, re.S)
+        self.assertEqual(len(actions), len(re.findall(r"\bAction\s*=", build)))
+        tag_actions = [
+            action
+            for expression in actions
+            for action in re.findall(r'"([^"]+)"', expression)
+            if any(
+                fnmatch.fnmatchcase(target, action.lower()) for target in ("events:tagresource", "events:untagresource")
+            )
+        ]
+        self.assertEqual(tag_actions, ["events:TagResource"])
+
+    @unittest.skipUnless(shutil.which("terraform"), "Terraform not installed")
+    def test_schedule_tag_permission_renders_exact_rules_and_fixed_request_tags(self):
+        source = (ROOT / "infra/live-control/iam.tf").read_text()
+        found = re.search(r'Sid\s*= "ExactScheduleTags".*?\n      \}', source, re.S)
+        assert found is not None
+        statement = "{" + found.group()
+        # Evaluate the real HCL statement without a provider, backend, or AWS call.
+        environment = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.startswith(("TF_VAR_", "TF_CLI_ARGS"))
+            and key not in {"TF_DATA_DIR", "TF_CLI_CONFIG_FILE", "TF_PLUGIN_CACHE_DIR"}
+        } | {"CHECKPOINT_DISABLE": "1", "TF_IN_AUTOMATION": "1"}
+        with tempfile.TemporaryDirectory() as directory:
+            (Path(directory) / "main.tf").write_text(
+                f'locals {{\n account = "{live.ACCOUNT}"\n permission = {statement}\n}}\n'
+            )
+            result = subprocess.run(
+                ["terraform", "console", "-no-color"],
+                cwd=directory,
+                env=environment,
+                input="jsonencode(local.permission)\n",
+                capture_output=True,
+                text=True,
+                check=True,
+                timeout=30,
+            )
+        actual = json.loads(json.loads(result.stdout))
+        tags = {
+            "project": "aws-public-change-feed",
+            "deployment_id": "dev",
+            "managed_by": "terraform",
+            "component": "runtime",
+        }
+        self.assertEqual(
+            actual,
+            {
+                "Sid": "ExactScheduleTags",
+                "Effect": "Allow",
+                "Action": ["events:TagResource"],
+                "Resource": [
+                    f"arn:aws:events:us-east-1:{live.ACCOUNT}:rule/{live.FUNCTIONS[name]}"
+                    for name in ("watcher", "dispatcher", "reconciler")
+                ],
+                "Condition": {
+                    "StringEquals": {f"aws:RequestTag/{key}": value for key, value in tags.items()},
+                    "ForAllValues:StringEquals": {"aws:TagKeys": list(tags)},
+                    "Null": {"aws:TagKeys": "false"},
+                },
+            },
+        )
 
     def test_controller_reads_worker_concurrency_from_canonical_deployment(self):
         path = ROOT / "infra/central/deployment.yaml"

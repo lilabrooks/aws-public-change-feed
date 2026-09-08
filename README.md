@@ -77,7 +77,7 @@ See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issue
 
 ## Parking and resource tags
 
-The [September 7, 2026 deployment record](docs/runbooks/live-window.md#initial-deployment-record-2026-09-07) confirms initial Terraform parking and deployment of the AWS-hosted control plane. [M4 / L-58](https://github.com/lilabrooks/aws-public-change-feed/issues/199) remains open: supervised unpark/early-park, deadline cleanup after local waiter loss, the remaining notification checks, and eligible successful-test closeout still need live proof. The owner accepted ADR-030 on September 7, 2026. Complete the [first-use gate](docs/runbooks/live-window.md#first-use-gate-and-private-configuration) before relying on unattended cleanup.
+The [September 7, 2026 deployment record](docs/runbooks/live-window.md#initial-deployment-record-2026-09-07) confirms initial Terraform parking and deployment of the AWS-hosted control plane. [Supervised unpark/early-park and eligible evidence closeout have now passed](docs/runbooks/live-window.md#successful-supervised-round-trip-2026-09-08-utc). Deadline cleanup after local waiter loss and the remaining notification checks still need proof, so M4 / L-58 is not complete. The owner accepted ADR-030 on September 7, 2026. Complete the [first-use gate](docs/runbooks/live-window.md#first-use-gate-and-private-configuration) before relying on unattended cleanup.
 
 Parking disables the `apcf-dev-feed-watcher`, `apcf-dev-outbox-dispatcher`, and `apcf-dev-recovery-reconciler` EventBridge rules and the `apcf-delivery-dev.fifo` mapping on `apcf-dev-slack-worker`. It sets reserved concurrency to zero on all five functions, including shadow, and **deletes the deployment's CloudWatch metric alarms and dashboard**. Eligible monitoring is recreated during activation.
 
@@ -85,7 +85,7 @@ Once in-flight work ends, ordinary runtime execution, queue polling, and applica
 
 ### Repeatable park, unpark, and testing
 
-The [first supervised attempt and recovery](docs/runbooks/live-window.md#first-supervised-attempt-2026-09-07) exposed missing S3 tag-read permissions. Both scoped repairs are applied, and a full read-only plan passed under the build role. Parking-only recovery then succeeded: the 21 baseline alarms were recreated with their tags and removed after the required wait. Dev remains parked. The owner received build and terminal-failure emails; unpark/early-park and deadline cleanup still need proof.
+The earlier attempts exposed missing S3 tag reads and a companion EventBridge tag permission for rule updates. The scoped repairs are applied. The successful retry reached verified live readiness with 28 alarms, then early-parked under the same cleanup owner. Both builds and the workflow succeeded; independent checks confirmed parked controls, absent monitoring, unchanged identities and rule tags, and no-change central/control plans. The controller created a verified closeout without deleting evidence. This manual round trip does not satisfy the separate deadline or L-57 fixed-observation proof. The [runbook records the outcomes and limits](docs/runbooks/live-window.md#successful-supervised-round-trip-2026-09-08-utc).
 
 After first-use qualification, set `LIVE_CONFIG` to the private operator JSON described in the runbook and use the repository's Python environment. These are separate operations, not a sequence to run together:
 

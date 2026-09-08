@@ -31,6 +31,14 @@ Schedule-state changes must leave the runtime-failure queue policy known and
 unchanged. Local JSON rendering preserves exact source-rule/account grants
 without a deferred policy-document data read; it grants no new permissions.
 Known or unknown policy changes still require separate review.
+The build role's companion `events:TagResource` grant is limited to the three
+exact runtime schedule ARNs. The pinned provider sends tags with `PutRule`
+state updates. Request conditions require all four fixed runtime tag keys and
+values, reject additional keys, and require a non-null tag-key set. No
+`events:UntagResource` permission is included. This permits a direct tag request
+only with that same fixed payload; the lifecycle validator still rejects tag
+changes. Supplementary rule tags require separate permission review before a
+later window. Deployment and actual provider authorization remain live gates.
 The mapping may retain an absent or empty metrics block across toggles. Its
 Terraform postcondition must reject enabled metrics in legacy mode and every
 phase except `stopping` and `parked`. Those shutdown phases permit fencing and
@@ -68,8 +76,10 @@ describe ownership, not whether a resource costs money or remains active.
 
 Terraform fixes these four keys while preserving supplementary input tags.
 Alarm recreation must include the same shared tags. Tags must not depend on
-`live_mode`, a deadline, or a session ID, and must not select mutation targets
-or grant permissions. Actual controls and the existing exact-resource lifecycle
+`live_mode`, a deadline, or a session ID. Stored tags must not select mutation
+targets or independently confer access. Request-tag conditions may further
+restrict an action already limited to exact resource ARNs; they do not replace
+that resource boundary. Actual controls and the existing exact-resource lifecycle
 allowlist remain authoritative. Tag changes require a separate reviewed
 maintenance plan while parked, with no active cleanup owner. Old immutable
 control bundles must not be reused across that maintenance boundary.

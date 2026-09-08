@@ -90,8 +90,16 @@ plans. The [runbook deployment record](../runbooks/live-window.md#initial-deploy
 states the exact evidence boundary. The later supervised attempt proved
 parking-only recovery, tagged baseline-alarm recreation/removal, and parked
 convergence under the build role. Build and terminal-failure emails were
-received. Live unpark/interruption/deadline cleanup, remaining notification
-checks, and eligible successful-test closeout remain unproved.
+received. Deadline cleanup after local waiter loss and remaining notification
+checks still require proof.
+The later attempt exposed the tagged EventBridge rule-update permission gap;
+failure cleanup passed. The constrained repair was applied through a separately
+reviewed parked IAM plan, with matching policy readback and no control-plan
+changes afterward. The subsequent supervised unpark/early-park passed with
+live readiness, successful rule/mapping updates in both directions, unchanged
+identities and rule tags, absent parked monitoring, and no-change central/control
+plans. Eligible evidence closeout passed without pruning objects. The manual
+round trip does not satisfy the separate fixed-observation or deadline proof.
 
 The [resource-tag policy](specification/05-security-and-operations.md#resource-ownership-and-cost-tags)
 groups supported Terraform resources by project, deployment, management, and

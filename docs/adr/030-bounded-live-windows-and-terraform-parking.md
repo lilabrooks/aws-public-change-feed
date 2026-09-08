@@ -210,18 +210,45 @@ The [runbook](../runbooks/live-window.md#first-supervised-attempt-2026-09-07)
 records the failed activation, retries, grants, and successful recovery without
 treating that recovery as a successful live test.
 
+A later supervised attempt failed during rule updates because the tagged
+`PutRule` request required `events:TagResource`. The pinned provider sends
+tags even for a state update. Failure cleanup succeeded and preserved the
+activation failure as the workflow result; that attempt did not prove unpark/early-park.
+The source repair limits the companion permission to the three exact runtime
+rules and the four fixed request-tag values, with no extra keys or tag-removal
+grant. Stored tags do not select the target or confer access. The same
+restriction also limits a direct tag request to the fixed payload.
+
+An ARN-only tag grant would permit arbitrary tag values on those rules. The
+request restriction avoids that broader capability but requires separate
+permission review if supplementary rule tags are introduced. Changing the
+provider or bypassing Terraform's rule updates would add a different lifecycle
+path. Keep the existing controller and plan validator unchanged. Review a
+parked maintenance plan before applying the IAM repair, then repeat supervised
+qualification from clean source. If the request conditions fail live, park and
+inspect the denial before changing the grant. Removing the companion statement
+is a separate parked rollback; it restores the known rule-update refusal.
+The separately reviewed parked IAM apply completed. Policy readback matched
+the constrained grant and a fresh control plan had no changes. The subsequent
+supervised unpark/early-park passed from clean source. CloudTrail confirmed
+tagged updates in both directions on all three rules and mapping requests
+without a metrics payload. Both builds and the same-owner workflow succeeded.
+Independent readback and no-change plans confirmed parking and preserved
+identities and rule tags. Eligible closeout passed without deleting evidence.
+This manual round trip does not prove deadline cleanup or the separate fixed
+observation. Detailed transition and timing evidence remains private.
+
 Still required before first use:
 
 - Review of any IAM changes since the approved initial deployment; owner
   acceptance of the trust decision is recorded above.
 - Remaining notification checks: distinguish receipt of each terminal route
   and prove failure preservation when exhausted-cleanup publishing fails.
-- Enabled-to-disabled schedule/mapping plans, live activation under the build role, and
-  the provider's mapping-update request behavior under `ignore_changes`.
-- Unpark/readiness, early park, deadline park after terminating the local waiter,
-  and final Terraform convergence after those live transitions.
-- Measured phase timings, separate test and parking outcomes, retained work,
-  any overrun, and verified successful evidence closeout when eligible.
+- Deadline park after terminating only the local waiter, with the same owner
+  and deadline and no early-stop request, followed by final Terraform convergence.
+- Deadline-run phase timings, separate test and parking outcomes, retained
+  work, any overrun, and verified successful evidence closeout when eligible.
+  The successful manual round trip does not establish worst-case budgets.
 
 References verified: 2026-09-07.
 
