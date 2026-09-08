@@ -3,8 +3,9 @@
 Implementation for M4 / L-58, governed by accepted
 [ADR-030](../adr/030-bounded-live-windows-and-terraform-parking.md). Initial
 parked migration and control-plane deployment completed on 2026-09-07. The
-live round trip remains unproved; build and terminal-failure emails have been
-received. Complete the
+supervised unpark/early-park round trip and eligible closeout have passed;
+deadline cleanup after local waiter loss and remaining notification checks
+are still open. Build and terminal-failure emails have been received. Complete the
 first-use gate below before relying on automatic shutdown.
 
 ## Repeatable commands
@@ -83,7 +84,8 @@ Python controller and the control Terraform root with the same timing inputs:
 | All parking attempts | 142m30s | Three 47-minute allowances plus 30- and 60-second retry delays |
 | Terminal cleanup failure | 143 minutes | All parking attempts plus the bounded 30-second notification task |
 
-The planned workload and provisioning allowance have not been measured live.
+The budgets remain conservative allowances. One supervised early-park round
+trip does not establish worst-case workload or provisioning time.
 The full retry allowance is **outside** the ordinary one-attempt cleanup reserve;
 emergency retries may run past the requested deadline. AWS provisioning, API
 delays, and orphan locks can exceed these allowances. No command guarantees an
@@ -149,7 +151,8 @@ unknown delivery work remains in its system of record, not purged.
    pass. IAM simulation is read-only evidence, not proof that the provider's
    dependent authorization will pass live. The separately reviewed parked IAM
    apply completed with matching policy readback and a no-change control plan;
-   live provider qualification remains pending.
+   the subsequent supervised round trip proved these rule updates live.
+   Repeat the permission and payload checks after relevant changes.
    The mapping UUID is a coupled constant in `scripts/live_window.py` and the
    `ExactQueueTrigger` policy in `infra/live-control/iam.tf`. Compare both with
    the deployed central mapping before first use and after any replacement.
@@ -341,9 +344,41 @@ retained without successful-test closeout. No replacement window was started.
 The narrowly scoped permission repair was then applied through a separately
 reviewed parked IAM plan. Only the constrained build-role statement changed;
 policy readback matched and a fresh control plan had no changes. Runtime
-controls remained parked. Live qualification is still required. Keep detailed receipts and
+controls remained parked. The successful retry is recorded below. Keep detailed receipts and
 timings in restricted evidence. A read-only plan did not exercise the missing
 write permission, so another no-change plan cannot by itself close this gate.
+
+### Successful supervised round trip, 2026-09-08 UTC
+
+After the scoped IAM apply, a clean reviewed source checkpoint passed parked
+readback, full no-change central/control plans, deployed IAM and workflow
+comparison, AWS definition validation, and a monitoring-only prepared plan.
+The manual window used the reviewed 90-minute ceiling. It ended early after
+live readiness and control evidence; it was not held open for the full window.
+
+Activation reached all three enabled schedules, the enabled FIFO mapping,
+expected runtime concurrency with shadow fenced, and 28 alarms. Early park
+kept the same generation, execution, deadline, and cleanup time. The unchanged
+controller validated its saved transition plans before applying them. Cleanup
+stopped acquisition, completed its two invocation waits and bounded drain,
+fenced every function and trigger, and removed monitoring. Both builds and the
+workflow succeeded without deadline overrun.
+
+CloudTrail confirmed tagged rule updates in both directions on all three
+schedules. Both mapping-update requests contained only the identifier and
+enable flag, with no metrics payload. Independent readback confirmed zero
+alarms, no dashboard, disabled triggers, unchanged application/resource
+identities and rule tags, and no-change central/control plans. The receipt
+recorded no unresolved delivery work. Approximate queue counts were zero;
+retained Lambda asynchronous work remains unobservable.
+
+The controller created an exact-version evidence closeout. Objects remain
+retained; no pruning was requested. Its `observation_complete` outcome labels
+this completed manual session, not L-57's separate fixed-observation cohort.
+That cohort, deadline cleanup after local waiter loss, and the remaining
+notification checks still require their own evidence. Keep receipts and
+measured phase timings private; this successful sample does not establish
+worst-case budgets or authorize unattended use.
 
 ## Resource tags and billing activation
 
