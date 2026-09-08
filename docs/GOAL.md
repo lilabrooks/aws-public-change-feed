@@ -73,6 +73,23 @@ evidence at the exact boundaries stated below. The repository's full check
 target runs the test suite, and the committed corpus scores precision 1.000
 and recall 1.000 across 29 true positives.
 
+**Short live windows.** Dev is parked between tests. The
+[September 8, 2026 L-57/L-58 evidence](evidence/l57-l58-supervised-live-window-2026-09-08.md)
+passed the fixed 20-minute observation and deadline cleanup after local waiter
+loss, alongside the earlier unpark/early-park and recovery proof. The scheduled
+cohort recorded the expected 1/20/4 invocations and heartbeats with zero
+scheduled-function errors or throttles; no new delivery posted in that cohort,
+and it was not extended.
+Final parking removed all 28 alarms and the dashboard, disabled the four
+triggers, fenced all five functions, and preserved retained identities.
+ADR-030's September 8 revision qualifies supervised short dev windows, with an
+operator available through terminal parked verification and recovery if needed.
+M4's live evidence passed; GitHub issues and milestones hold its closure state.
+[L-59's notification gate](runbooks/live-window.md#failure-notifications) holds the
+unperformed notification qualification before unattended use, outside M4.
+Per-use checks remain required, retained resources can still incur charges,
+and this result does not widen the M3 production-readiness boundary.
+
 **Corpus and evaluation harness.** Complete. `corpus/announcements.json` holds 47 labeled announcements, 26 of them negative examples, with 29 expected positive matches. `src/evaluation.py` reports precision and recall per service and risk type. Edited announcements, overlapping feeds, missing publication dates, and deterministic replay are covered by tests. `corpus/thresholds.json` sets global floors only, and the harness already supports per-pair overrides. The observed counts do not justify those overrides: four of the ten pairs with any positive carry only one or two true positives. ADR-018's accepted 2026-09-06 revision requires a reviewed disposition for every enabled pair, reports recall as undefined where no labeled positive exists, and retains the global floors and explicit revisit triggers. It does not extend the sample merely to obtain a positive.
 
 The repository owner selected the current 4-feed, 3-service, 4-risk-rule policy unchanged for production preflight on 2026-09-01. The [production policy evidence](evidence/production-policy.md) expands the review to all 12 configured service and risk-type pairs: 6 have no historical positive, 4 have one, and the remaining 2 have two and seven. Those limits remain explicit, the global floors still govern promotion, and L-43 accepted them within the passing M3 result.

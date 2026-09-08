@@ -3,6 +3,7 @@
 - Status: Accepted
 - Date: 2026-09-07
 - Owner: Lila Brooks
+- Revision accepted: 2026-09-08
 
 ## Context
 
@@ -126,7 +127,8 @@ CloudWatch log storage, Secrets Manager, DynamoDB storage/PITR, S3, and control
 storage remain. Monitoring savings depend on shared free allowances and account
 usage. Stopping custom-metric publishing also reduces metered runtime activity.
 Control builds and transitions cost when used, and frequent sessions can offset
-monitoring savings. Neither net savings nor build durations have been measured.
+monitoring savings. The September 8 deadline proof measured activation and
+parking build wall times; it did not measure net savings or worst-case costs.
 The control log group retains 14 days; application retention is unchanged.
 Successful, resolved sessions become eligible for exact-version bundle/evidence
 retirement 90 days after a verified closeout. `live-prune` remains a separate
@@ -156,6 +158,38 @@ it is not an independent delivery guarantee. Build alerts are early warnings,
 not proof that cleanup ultimately failed. Event delivery is best effort. Prove
 receipt with the actual confirmed subscription before unattended use.
 
+### Supervised-use qualification
+
+The owner accepted supervised short dev windows on 2026-09-08. An operator
+must remain available until the workflow and builds are terminal and independent
+readback confirms parked controls, removed monitoring, and classified retained
+work. Failed or uncertain cleanup requires operator recovery. The AWS owner
+still performs deadline cleanup when the local waiter is lost; this qualification
+does not permit leaving a window unattended.
+
+Reuse the confirmed build-failure email while the destination and mechanism
+remain unchanged. A terminal-failure email was also confirmed, but its route
+was not identified. Do not mark either the workflow-event or direct
+exhausted-cleanup route separately receipt-qualified. Failure preservation when
+the direct publish fails remains unproved live. The source and offline checks
+remain required, with their evidence kept distinct from live results.
+
+[L-59](https://github.com/lilabrooks/aws-public-change-feed/issues/205) gates
+unattended use on the remaining route-specific receipt and live failed-publish
+qualification. Inspect existing emails first; test only a still-missing path
+under a separately approved safe procedure. This keeps deliberate cleanup
+failure and changes to a shared notification dependency outside ordinary live
+testing. The alternative, completing the whole fault-injection campaign now,
+would add cost and operational risk without changing the supervised decision.
+
+Reassess affected evidence when the workflow, provider, control IAM, mapping
+identity, tags, or timing policy changes. Changes to the topic, subscription,
+notification routes or their permissions, or evidence of missed notifications,
+also require reassessment before relying on earlier receipt proof. Fresh plans,
+exact application/release checks, valid credentials, and per-use readbacks
+remain mandatory. Notification mechanisms, retention, IAM, and timing reserves
+are unchanged by this acceptance revision.
+
 The local waiter attempts closeout after verifying terminal success and parked
 controls. A subsequent unpark tries again before replacing the old ledger.
 `live-close` supplies the same explicit operation. Closeout requires exact owner
@@ -175,9 +209,10 @@ subsequently failed build. Keeping CodeBuild running throughout a window would
 bill idle time. Repeated workflow polling risks the execution-history limit.
 The callback task avoids both costs and history growth while retaining one owner.
 
-Before adopting the workflow, accept this trust decision, review the initial
-saved plans and IAM, and prove one bounded round trip plus loss of the local
-waiter. Until then the implementation is not a live-qualified shutdown guarantee.
+Initial adoption requires the accepted trust decision, reviewed saved plans
+and IAM, and a bounded round trip plus loss of the local waiter. Those lifecycle
+gates now have the supervised evidence below; they do not establish a shutdown
+guarantee under every AWS failure or qualify unattended use.
 Rollback first verifies the application parked and every owner terminal. Restore
 legacy operator controls explicitly with `live_mode=null` only under a reviewed
 plan. Never remove the control root while it owns a live session.
@@ -235,20 +270,23 @@ tagged updates in both directions on all three rules and mapping requests
 without a metrics payload. Both builds and the same-owner workflow succeeded.
 Independent readback and no-change plans confirmed parking and preserved
 identities and rule tags. Eligible closeout passed without deleting evidence.
-This manual round trip does not prove deadline cleanup or the separate fixed
-observation. Detailed transition and timing evidence remains private.
+That manual round trip did not itself prove deadline cleanup or the separate
+fixed observation. The later
+[September 8 deadline proof](../evidence/l57-l58-supervised-live-window-2026-09-08.md)
+passed both on clean source `5aed8a6e67b0e34be1ef94a40b6ad3c470169bbd`.
+The predeclared 20-minute cohort had the expected 1/20/4 scheduled invocations
+and heartbeats, zero scheduled-function errors/throttles, and no newly posted
+delivery. It ended without extension. After local waiter loss, the unchanged
+owner and deadline reached normal parking without an early-stop request.
+Both builds and the workflow succeeded, invocation boundaries were observed,
+monitoring was removed, and fresh central/control plans converged. Eligible
+closeout passed with objects retained. Detailed receipts remain private.
 
-Still required before first use:
-
-- Review of any IAM changes since the approved initial deployment; owner
-  acceptance of the trust decision is recorded above.
-- Remaining notification checks: distinguish receipt of each terminal route
-  and prove failure preservation when exhausted-cleanup publishing fails.
-- Deadline park after terminating only the local waiter, with the same owner
-  and deadline and no early-stop request, followed by final Terraform convergence.
-- Deadline-run phase timings, separate test and parking outcomes, retained
-  work, any overrun, and verified successful evidence closeout when eligible.
-  The successful manual round trip does not establish worst-case budgets.
+The lifecycle is qualified for supervised use within the stated limits.
+Per-use review and changed-mechanism requalification remain required.
+L-59 holds the unperformed notification checks before unattended use; they are
+deferred, not passed. No new live fault injection or retention change follows
+from this revision, and measured samples do not establish worst-case budgets.
 
 References verified: 2026-09-07.
 

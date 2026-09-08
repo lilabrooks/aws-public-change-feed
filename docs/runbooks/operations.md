@@ -6,6 +6,15 @@ This runbook covers the production path from public feed acquisition through Sla
 
 Record the deployment ID, AWS account, Region, dashboard, operational SNS topic, configuration bucket, source table, delivery table, queue, DLQ, and current on-call owner in the deployed runbook header.
 
+Persistent dev is parked between tests. Use the
+[live-window runbook](live-window.md#supervised-use-and-requalification) for its
+qualified supervised park/unpark process. Keep an operator available through
+terminal results and independent parked verification, and handle uncertain or
+failed cleanup. Unattended-use notification qualification remains deferred
+under [L-59](https://github.com/lilabrooks/aws-public-change-feed/issues/205).
+These controls preserve the production-path procedures and their separate
+authorization; do not overlap recovery or preflight with a live-window owner.
+
 ## First response
 
 1. Confirm the alarm, deployment, Region, component, and first failure time.

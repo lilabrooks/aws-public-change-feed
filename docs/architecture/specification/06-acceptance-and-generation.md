@@ -74,7 +74,17 @@ checks without repeating the accepted matching, recovery, or load cohorts:
   maintenance apply; simulation does not replace live provider qualification.
 - Verify failure-only notification patterns, exact-topic publication roles,
   minimal payload transforms, retained rule ownership, and failure-preserving
-  cleanup notification states. Prove actual email receipt separately.
+  cleanup notification states. Keep these checks separate from live receipt
+  evidence. For supervised short dev windows, reuse the confirmed unchanged
+  build-failure receipt and record the unidentified terminal-email route and
+  live failed-publication result as unverified. Require operator availability
+  through terminal results, independent parked verification, and recovery of
+  failed or uncertain cleanup. Before unattended use, complete
+  [L-59](https://github.com/lilabrooks/aws-public-change-feed/issues/205): inspect
+  existing terminal emails first, identify each required route's receipt, and
+  qualify live failed-publication preservation under separate authorization.
+  Do not repeat proven unchanged paths or introduce fault injection into an
+  ordinary live window. Changed notification mechanisms require reassessment.
 - Close only successful terminal sessions with exact owner input, complete
   converged receipts, and no recorded unresolved delivery or queue work. Allow
   a successful recovery owner; reject ambiguous receipts and changed ownership.
@@ -91,6 +101,12 @@ checks without repeating the accepted matching, recovery, or load cohorts:
 The fixed delivery protocol remains preview/hash/apply with one attempt and no
 extension of a quiet sample. Observation completion alone does not prove a
 positive match or replace the runtime acceptance criteria below.
+
+The [September 8 supervised qualification](../../evidence/l57-l58-supervised-live-window-2026-09-08.md)
+records the passing manual/deadline lifecycle and fixed L-57 observation for the
+exact deployment. Per-use gates and requalification after relevant changes
+remain mandatory; L-59's unperformed tests do not block supervised acceptance
+and are not reported as passing.
 
 ## Resource-tag acceptance
 
