@@ -76,6 +76,10 @@
       margin: 0;
     }
 
+    .site-note p + p {
+      margin-top: 12px;
+    }
+
     .site-rationale {
       margin-top: 48px;
     }
@@ -213,6 +217,10 @@
       text-transform: uppercase;
     }
 
+    .site-disclosure > .site-status-table {
+      margin-top: 0;
+    }
+
     .evidence-panel {
       padding: 8px 0 24px;
     }
@@ -236,6 +244,10 @@
     }
 
     @media (max-width: 760px) {
+      .compact-hero {
+        grid-template-columns: 1fr;
+      }
+
       .site-spec-row,
       .site-steps li {
         grid-template-columns: 1fr;
@@ -311,11 +323,11 @@
     <div class="compact-header-actions">
       <nav class="compact-nav" aria-label="Primary navigation">
         <a href="#value">Purpose</a>
+        <a href="#flow">Architecture</a>
         <a href="#mvp-demo">Demo</a>
         <a href="#readiness">Readiness</a>
-        <a href="#flow">System</a>
+        <a href="#contracts">Details</a>
         <a href="#evidence">Status</a>
-        <a href="#live-operation">Parking</a>
         <a href="#source">Source</a>
       </nav>
       <button class="compact-theme-toggle" type="button" data-theme-toggle hidden>Theme</button>
@@ -363,13 +375,94 @@
       </div>
     </section>
 
+    <section class="compact-section" id="flow">
+      <div class="compact-shell">
+        <div class="compact-section-head">
+          <p class="compact-eyebrow">Architecture</p>
+          <div>
+            <h2 class="compact-section-title">From public feed to durable Slack delivery.</h2>
+            <p class="compact-section-copy">Lambda runs the workflow. S3 stores immutable releases and feed snapshots, DynamoDB owns source and delivery state, and SQS FIFO carries destination-ordered work.</p>
+          </div>
+        </div>
+
+        <figure class="architecture-figure">
+          <div class="architecture-frame" role="region" aria-label="Scrollable architecture diagram" tabindex="0">
+            <img
+              class="architecture-diagram"
+              data-architecture-diagram
+              src="./architecture.svg"
+              width="1800"
+              height="780"
+              loading="lazy"
+              decoding="async"
+              alt="AWS Public Change Alerting processing flow. Approved public feeds, immutable releases, and an exact application package produce route-scoped candidates. DynamoDB stores candidate and delivery state, SQS FIFO carries destination-grouped work, Slack receives messages, and the reconciler queues due work or writes delivery_unknown for expired leases."
+            >
+          </div>
+          <figcaption>
+            The SVG is bound to its editable draw.io source by SHA-256. Scroll horizontally on smaller screens.
+            <span class="architecture-source-links"><a href="./architecture.drawio">Edit the draw.io source</a> · <a href="./architecture.svg">Open the SVG export</a></span>
+          </figcaption>
+        </figure>
+
+        <ol class="site-steps">
+          <li>
+            <span class="site-step-label">Acquire</span>
+            <p>Fetch approved feeds with TLS, DNS and IP checks, redirect refusal, size limits, parser limits, and per-feed checkpoints.</p>
+          </li>
+          <li>
+            <span class="site-step-label">Match</span>
+            <p>Normalize title and summary text, merge duplicate URLs across feeds, then apply service aliases, risk phrases, profiles, and routes.</p>
+          </li>
+          <li>
+            <span class="site-step-label">Persist</span>
+            <p>Write route-scoped candidates and delivery requests before advancing the feed checkpoint.</p>
+          </li>
+          <li>
+            <span class="site-step-label">Deliver</span>
+            <p>Queue due work by Slack destination. The worker paces requests and records Slack&rsquo;s observed outcome.</p>
+          </li>
+          <li>
+            <span class="site-step-label">Recover</span>
+            <p>Requeue due work and turn expired sending leases into <code>delivery_unknown</code>. Operator actions require the current state version.</p>
+          </li>
+        </ol>
+
+        <details class="site-disclosure">
+          <summary>Why delivery state lives in DynamoDB</summary>
+          <div class="evidence-panel">
+            <dl class="site-spec">
+              <div class="site-spec-row">
+                <dt>Watcher stops</dt>
+                <dd>A saved <code>pending_queue</code> record lets the dispatcher finish the handoff. If the write never committed, the old checkpoint makes the next watcher run rebuild it.</dd>
+              </div>
+              <div class="site-spec-row">
+                <dt>Message returns</dt>
+                <dd>The worker reads DynamoDB first. A <code>posted</code> record suppresses another Slack call, including after SQS FIFO&rsquo;s 5-minute send-deduplication window.</dd>
+              </div>
+              <div class="site-spec-row">
+                <dt>Slack says retry</dt>
+                <dd>For Slack <code>429</code>, the worker saves the returned retry time, acknowledges the current message, and lets the dispatcher queue a later attempt.</dd>
+              </div>
+              <div class="site-spec-row">
+                <dt>Answer is lost</dt>
+                <dd>Slack may accept a request just before the worker times out. The record becomes <code>delivery_unknown</code>, and automatic delivery stops pending operator review.</dd>
+              </div>
+            </dl>
+            <aside class="site-note" aria-label="Slack delivery guarantee">
+              <p>The service does not claim exactly-once Slack delivery. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004</a> and <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/007-central-slack-delivery-queue-and-worker.md">ADR-007</a> define the recovery boundary.</p>
+            </aside>
+          </div>
+        </details>
+      </div>
+    </section>
+
     <section class="compact-section" id="mvp-demo">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">M1, M2, and M3 complete</p>
+          <p class="compact-eyebrow">3:41 walkthrough</p>
           <div>
-            <h2 class="compact-section-title">See the service work, then follow the readiness decision.</h2>
-            <p class="compact-section-copy">One 3:41 video explains the Lambda workflow and service choices with AWS service icons, then covers live delivery results and lifecycle changes. A 48-second closing section summarizes the M3 rollback proof and readiness limits, starting at 2:54. All three milestones are closed. Private account and Slack details are omitted.</p>
+            <h2 class="compact-section-title">Watch the deployed service and readiness review.</h2>
+            <p class="compact-section-copy">The video covers the Lambda workflow, live delivery, recovery, load testing, and lifecycle work. Its readiness summary starts at 2:54. Private account and Slack details are omitted.</p>
           </div>
         </div>
 
@@ -400,20 +493,16 @@
 
         <dl class="site-spec mvp-evidence-meta">
           <div class="site-spec-row">
-            <dt>Evidence</dt>
-            <dd>M1 live delivery, recovery, load, and alarm records; M2 lifecycle changes; and the accepted 2026-09-07 M3 readiness assessment.</dd>
+            <dt>Coverage</dt>
+            <dd>M1 delivery and recovery evidence, M2 lifecycle changes, and the accepted 2026-09-07 M3 readiness assessment.</dd>
           </div>
           <div class="site-spec-row">
-            <dt>M1 live results</dt>
+            <dt>Live results</dt>
             <dd>4 runtime triggers enabled, 12 public-feed posts accepted by Slack, 2 recovery cases passed, 50 load messages created at 5 per minute, and alarm email receipt confirmed.</dd>
           </div>
           <div class="site-spec-row">
-            <dt>Boundary</dt>
-            <dd>M3 passed for one reviewed environment and destination at 300 delivery requests per hour. The readiness chapters cover evidence reuse, application rollback, restored operation, and the limits retained in the decision.</dd>
-          </div>
-          <div class="site-spec-row">
-            <dt>Attribution</dt>
-            <dd>Copyright © 2026 Lila Brooks applies to the walkthrough, slide deck, and downloadable media. They are licensed under <a rel="license" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/LICENSE">Apache-2.0</a>.</dd>
+            <dt>Scope</dt>
+            <dd>M3 passed for one reviewed environment and Slack destination at 300 delivery requests per hour.</dd>
           </div>
         </dl>
 
@@ -424,27 +513,28 @@
           <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/evidence/mvp-walkthrough.md">Read the transcript</a>
           <a class="compact-button" href="./media/walkthrough-v3/SHA256SUMS">Verify downloads</a>
         </div>
+        <p class="site-note">The walkthrough and downloads are copyright © 2026 Lila Brooks and licensed under <a rel="license" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/LICENSE">Apache-2.0</a>.</p>
       </div>
     </section>
 
     <section class="compact-section" id="readiness">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">How readiness was established</p>
+          <p class="compact-eyebrow">Readiness</p>
           <div>
-            <h2 class="compact-section-title">Every conclusion has a scope and a supporting record.</h2>
+            <h2 class="compact-section-title">How readiness was established.</h2>
             <p class="compact-section-copy">On 7 September 2026, the owner accepted readiness for one persistent-dev deployment: one environment, one Slack destination, 4 feeds, 3 services, 4 risk rules, and a 300-delivery/hour arrival envelope.</p>
           </div>
         </div>
         <div class="readiness-layout">
           <div>
-            <h3>Keep the evidence that still applies.</h3>
-            <p>Earlier exercises established matching results, Slack and alarm receipt, a fixed 50-message load cohort, configuration rollback, and bounded database recovery. Each claim was checked against changes since its own evidence baseline. Material differences received targeted checks; a quiet feed sample was accepted without waiting for a positive match.</p>
-            <h3>Close the missing application proof.</h3>
-            <p>With all 4 durable executors stopped, all 5 Lambdas moved to the qualified predecessor and back to the exact successor. Each version passed one shadow check: 4 feeds, 240 items, and the same 8 candidate identities. The stopped-state digests matched and the configuration pointer stayed fixed. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/evidence/l54-application-rollback-2026-09-07.md">Read the L-54 record.</a></p>
-            <h3>Restore normal operation and assess the result.</h3>
-            <p>One reviewed plan restored the original controls. A fixed scheduled window passed, all 28 alarms were healthy, and Terraform reported no changes. Required CI passed for the final source before the owner accepted readiness.</p>
-            <h3>Keep the limits visible.</h3>
+            <h3>Reuse checked evidence.</h3>
+            <p>Earlier exercises covered matching, Slack and alarm receipt, a fixed 50-message load cohort, configuration rollback, and bounded database recovery. Changes since each evidence baseline received targeted checks.</p>
+            <h3>Prove application rollback.</h3>
+            <p>With the 4 durable executors stopped, all 5 Lambdas moved to the qualified predecessor and back. Each version produced the same 8 candidate identities from 240 items across 4 feeds. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/evidence/l54-application-rollback-2026-09-07.md">Read the L-54 record.</a></p>
+            <h3>Restore and decide.</h3>
+            <p>A reviewed plan restored normal controls. The scheduled window passed, all 28 alarms were healthy, Terraform reported no changes, and required CI passed.</p>
+            <h3>Retain the limits.</h3>
             <p>Matching evidence remains thin, with 6 of 12 service and risk-type pairs carrying no historical positive. Slack outcomes can remain ambiguous. Recovery proved stopped restored-table binding and restart on primaries; live service on restored tables remains unproved. Another deployment or workload needs its own assessment.</p>
             <div class="compact-actions">
               <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/production-readiness.md">Follow the evidence</a>
@@ -464,25 +554,21 @@
         <div class="compact-section-head">
           <p class="compact-eyebrow">Contracts and tests</p>
           <div>
-            <h2 class="compact-section-title">Schemas fix the file shapes. Tests recompute the IDs.</h2>
-            <p class="compact-section-copy">A contract change updates schemas, examples, semantic validation, and regression tests in the same change.</p>
+            <h2 class="compact-section-title">The repository checks its public contract.</h2>
+            <p class="compact-section-copy">Contract changes update schemas, examples, semantic validation, and regression tests together.</p>
           </div>
         </div>
         <dl class="site-spec">
           <div class="site-spec-row">
-            <dt>Required behavior</dt>
+            <dt>Behavior</dt>
             <dd>Six specification chapters and 26 accepted ADRs define allowed feeds, state ownership, ID fields, delivery outcomes, and operator recovery.</dd>
           </div>
           <div class="site-spec-row">
-            <dt>Contracts</dt>
-            <dd>Eight strict JSON Schemas reject unknown fields. Cross-file checks confirm that referenced profiles, environments, and Slack routes exist and use compatible versions.</dd>
+            <dt>Shape and identity</dt>
+            <dd>Nine JSON Schemas reject unknown fields in owned objects. Semantic checks resolve cross-file references; tests recompute release, candidate, and request hashes from fixture bytes.</dd>
           </div>
           <div class="site-spec-row">
-            <dt>ID checks</dt>
-            <dd>Tests recompute release, candidate, and request hashes from committed fixture bytes. Reprocessing the same inputs must reproduce the same IDs.</dd>
-          </div>
-          <div class="site-spec-row">
-            <dt>Checks</dt>
+            <dt>Local gate</dt>
             <dd><code>make check</code> runs format, lint, type, schema, reference, corpus, unit, integration, Terraform, and page-drift checks.</dd>
           </div>
         </dl>
@@ -498,8 +584,8 @@
         <div class="compact-section-head">
           <p class="compact-eyebrow">Slack message</p>
           <div>
-            <h2 class="compact-section-title">The page&rsquo;s example is generated by the worker code.</h2>
-            <p class="compact-section-copy">The site passes the canonical candidate through <code>render_message</code>. Validation fails when the fixture, renderer output, or committed page differs.</p>
+            <h2 class="compact-section-title">Rendered from the canonical candidate.</h2>
+            <p class="compact-section-copy">The worker&rsquo;s <code>render_message</code> output is checked against the fixture and this page.</p>
           </div>
         </div>
         <details class="site-disclosure">
@@ -531,123 +617,38 @@ Recommended review action: Review supported Kubernetes versions and plan require
         </article>
         <!-- GENERATED_SLACK_SAMPLE_END -->
         </details>
-        <p class="site-note">The first controlled D0 run posted one public-feed candidate and recorded <code>posted</code>. In the later M1 cohort, Slack accepted 12 posts and DynamoDB recorded <code>posted</code> for all 12.</p>
-      </div>
-    </section>
-
-    <section class="compact-section" id="flow">
-      <div class="compact-shell">
-        <div class="compact-section-head">
-          <p class="compact-eyebrow">System</p>
-          <div>
-            <h2 class="compact-section-title">Fetch, match, write to DynamoDB, then queue for Slack.</h2>
-            <p class="compact-section-copy">Lambda runs the work. S3 stores immutable releases and feed snapshots. DynamoDB owns source and delivery state. SQS FIFO carries destination-ordered work to Slack.</p>
-          </div>
-        </div>
-
-        <figure class="architecture-figure">
-          <div class="architecture-frame">
-            <img
-              class="architecture-diagram"
-              data-architecture-diagram
-              src="./architecture.svg"
-              width="1800"
-              height="780"
-              loading="lazy"
-              decoding="async"
-              alt="AWS Public Change Alerting processing flow. Approved public feeds, immutable releases, and an exact application package produce route-scoped candidates. DynamoDB stores candidate and delivery state, SQS FIFO carries destination-grouped work, Slack receives messages, and the reconciler queues due work or writes delivery_unknown for expired leases."
-            >
-          </div>
-          <figcaption>
-            The editable draw.io source and SVG export share an SHA-256 value. Validation fails when they differ.
-            <span class="architecture-source-links"><a href="./architecture.drawio">Edit the draw.io source</a> · <a href="./architecture.svg">Open the SVG export</a></span>
-          </figcaption>
-        </figure>
-
-        <ol class="site-steps">
-          <li>
-            <span class="site-step-label">Acquire</span>
-            <p>Fetch approved hosts with TLS, DNS and IP checks, redirect rejection, byte limits, parser limits, and per-feed checkpoints.</p>
-          </li>
-          <li>
-            <span class="site-step-label">Match</span>
-            <p>Normalize title and summary text, merge duplicate URLs across feeds, then apply configured service aliases, risk phrases, profiles, and routes.</p>
-          </li>
-          <li>
-            <span class="site-step-label">Persist</span>
-            <p>Write route-scoped candidates and delivery requests before advancing the feed checkpoint.</p>
-          </li>
-          <li>
-            <span class="site-step-label">Deliver</span>
-            <p>Dispatch due work through SQS FIFO. The worker applies destination pacing and records the observed Slack outcome.</p>
-          </li>
-          <li>
-            <span class="site-step-label">Recover</span>
-            <p>The reconciler retries due work and turns expired sending leases into <code>delivery_unknown</code>. Operator commands require the current state version before closure or replay.</p>
-          </li>
-        </ol>
-
-        <div class="site-rationale">
-          <h3>What does the delivery record catch?</h3>
-          <p>SQS hands each request to a Lambda worker, and the worker calls Slack. Four concrete failures explain why the service keeps a separate DynamoDB record.</p>
-          <dl class="site-spec">
-            <div class="site-spec-row">
-              <dt>Watcher stops</dt>
-              <dd>The watcher saves a <code>pending_queue</code> record before moving the feed checkpoint. If it stops before calling SQS, the dispatcher finds the saved record and queues it. If the save never finished, the next watcher run rebuilds the candidate from the old checkpoint.</dd>
-            </div>
-            <div class="site-spec-row">
-              <dt>Message returns</dt>
-              <dd>Lambda can receive the same SQS message again. The worker checks DynamoDB first. A <code>posted</code> record makes it acknowledge the message without posting to Slack twice, even after SQS FIFO&rsquo;s 5-minute send-deduplication window.</dd>
-            </div>
-            <div class="site-spec-row">
-              <dt>Slack says retry</dt>
-              <dd>When Slack returns <code>429</code> with a retry time, the worker saves that time and acknowledges the current queue message. The dispatcher queues a new attempt later. The Lambda does not sit idle and sleep.</dd>
-            </div>
-            <div class="site-spec-row">
-              <dt>Slack answer is lost</dt>
-              <dd>Slack may accept a post just before the worker times out. Post-MVP recovery evidence confirmed the state transition and zero additional calls for the controlled expired record; it did not prove that a naturally expired network attempt sent nothing. The record becomes <code>delivery_unknown</code>, and automatic delivery stops until an operator checks Slack. A found post can be recorded, a conclusive no-match can authorize one audited replay, and an inconclusive search leaves the record unchanged.</dd>
-            </div>
-          </dl>
-          <aside class="site-note" aria-label="Slack delivery guarantee">
-            <p>A direct SQS-to-Lambda-to-Slack path is smaller when repeated posts and a short outcome history are acceptable. This service keeps the record so those four failures have a saved next step. It does not claim exactly-once Slack delivery. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004</a> and <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/007-central-slack-delivery-queue-and-worker.md">ADR-007</a> define the boundary.</p>
-          </aside>
-        </div>
       </div>
     </section>
 
     <section class="compact-section" id="decisions">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">Required rules</p>
+          <p class="compact-eyebrow">Technical boundaries</p>
           <div>
-            <h2 class="compact-section-title">Public feeds only. DynamoDB owns delivery history.</h2>
-            <p class="compact-section-copy">26 accepted ADRs define input scope, ID fields, state transitions, retries, and operator recovery.</p>
+            <h2 class="compact-section-title">Rules the runtime must preserve.</h2>
+            <p class="compact-section-copy">The accepted ADRs define scope, identity, state ownership, recovery, and Slack outcomes.</p>
           </div>
         </div>
         <dl class="site-spec">
           <div class="site-spec-row">
-            <dt>Inputs</dt>
-            <dd>The runtime reads public feeds and static profiles. It has no customer-account credentials, resource discovery, telemetry, or remediation access. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/017-public-feed-only-product-scope.md">ADR-017</a></dd>
+            <dt>Scope</dt>
+            <dd>The runtime reads public feeds and static profiles. It has no customer-account credentials, resource discovery, telemetry, or remediation access. Matches remain potentially relevant until an operator checks the account. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/017-public-feed-only-product-scope.md">ADR-017</a></dd>
           </div>
           <div class="site-spec-row">
-            <dt>Candidate IDs</dt>
-            <dd>Candidate IDs include the announcement revision, service, risk, route, audience, and release. Reprocessing the same inputs produces the same ID. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/002-route-scoped-slack-delivery-and-dedupe.md">ADR-002</a></dd>
-          </div>
-          <div class="site-spec-row">
-            <dt>Delivery state</dt>
-            <dd>DynamoDB stores each request and outcome. SQS FIFO carries ready work in order for each Slack destination. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/007-central-slack-delivery-queue-and-worker.md">ADR-007</a></dd>
+            <dt>Identity and handoff</dt>
+            <dd>Candidate IDs bind the announcement revision, service, risk, route, audience, and release. DynamoDB stores every request and outcome; SQS FIFO carries destination-ordered work. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/002-route-scoped-slack-delivery-and-dedupe.md">ADR-002</a> <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/007-central-slack-delivery-queue-and-worker.md">ADR-007</a></dd>
           </div>
           <div class="site-spec-row">
             <dt>Source-state lifecycle</dt>
-            <dd>Active feed checkpoints do not expire. Announcement and response-page history use exact-release TTL metadata. Legacy rows use a bounded conditional migration under a temporary scan role that is removed after the result is recorded. Removed feeds use exact-feed retirement and compaction plans under a permanent session-tagged role; same-name restoration requires the original URL hash. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/025-source-state-and-response-page-retirement.md">ADR-025</a></dd>
+            <dd>Active feed checkpoints do not expire. Announcement history and response-page markers use a 730-day retention window based on their latest observation. Removed feeds require reviewed retirement and compaction plans; same-name restoration requires the original URL hash. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/025-source-state-and-response-page-retirement.md">ADR-025</a></dd>
           </div>
           <div class="site-spec-row">
-            <dt>DynamoDB recovery</dt>
-            <dd>Both primary state tables use 35-day point-in-time recovery. The central source also enables DynamoDB deletion protection on that pair; isolated preflight tables keep it disabled so their reviewed teardown can still remove them. One proof records restore-request identity, complete restored-table verification, a disabled-trigger cutover, rollback to the primary pair, trigger restoration, and separately authorized cleanup. A CloudTrail-only role supplies digest-bound request evidence when an active table omits its restore summary; that evidence does not establish table contents by itself. L-41&rsquo;s dev recovery proof is complete: it traversed all six stages, and all four disposable restore tables were deleted and confirmed absent. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/027-dynamodb-point-in-time-recovery.md">ADR-027</a> <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md">ADR-028</a></dd>
+            <dt>Recovery evidence</dt>
+            <dd>Both primary tables use 35-day point-in-time recovery and deletion protection. Preflight tables disable deletion protection for reviewed teardown. A CloudTrail-only role supplies digest-bound request evidence when DynamoDB omits its restore summary; that evidence does not establish table contents by itself. L-41&rsquo;s dev recovery proof is complete, and all four disposable restore tables were deleted and confirmed absent. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/027-dynamodb-point-in-time-recovery.md">ADR-027</a> <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/028-separate-cloudtrail-evidence-for-dynamodb-restore-identity.md">ADR-028</a></dd>
           </div>
           <div class="site-spec-row">
-            <dt>Slack timeout</dt>
-            <dd>A timeout becomes <code>delivery_unknown</code>. An operator checks Slack before choosing closure or one audited retry. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004</a></dd>
+            <dt>Unknown Slack outcome</dt>
+            <dd>An expired send lease becomes <code>delivery_unknown</code> and receives no automatic retry. The controlled exercise proved the transition with zero additional Slack calls; it did not prove that a naturally expired network attempt sent nothing. An operator checks Slack before closure or one audited replay; an inconclusive search leaves the record unchanged. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/adr/004-explicit-slack-delivery-guarantees.md">ADR-004</a></dd>
           </div>
         </dl>
 
@@ -663,79 +664,44 @@ Recommended review action: Review supported Kubernetes versions and plan require
         <div class="compact-section-head">
           <p class="compact-eyebrow">Status</p>
           <div>
-            <h2 class="compact-section-title">The project moves from one live Slack post to a production decision.</h2>
-            <p class="compact-section-copy">D0, M1, M2, and M3 are complete. Dev is parked between live tests; <a href="#live-operation">supervised short-window qualification passed; unattended use remains gated.</a></p>
+            <h2 class="compact-section-title">Scoped readiness passed. Dev remains supervised.</h2>
+            <p class="compact-section-copy">D0, M1, M2, and M3 are complete. Dev is parked between live tests; <a href="#live-operation">the M4 short-window proof passed, and unattended use remains gated.</a></p>
           </div>
         </div>
-        <table class="site-status-table">
-          <tbody>
-            <tr>
-              <th scope="row">D0 · Closed</th>
-              <td>D0 sent one real public AWS announcement through the deployed dev service to Slack. The watcher created the candidate and delivery record, the dispatcher queued it through SQS FIFO, the worker posted it, and DynamoDB recorded <code>posted</code>. The other 11 requests stayed queued for M1.</td>
-            </tr>
-            <tr>
-              <th scope="row">M1 · Closed</th>
-              <td>M1 ran the whole dev service on schedule and exercised delivery, recovery, load, and alarms. All 4 triggers were enabled, all 12 public-feed posts reached Slack, both recovery cases passed, the fixed load run created 50 records at 5 per minute, and the owner confirmed alarm-email receipt.</td>
-            </tr>
-            <tr>
-              <th scope="row">M2 · Closed</th>
-              <td>M2 set rules for old feed data, removed feeds, saved responses, and known recovery failures. New writes now include 730-day expiry dates, and a one-time migration updated 164 older rows. Exact-feed plans now cover retirement, post-retention tombstone compaction, and reviewed same-URL restoration; no live feed has been retired. Immutable configuration releases now have a bounded preview/apply retirement command that protects retained manifest references and operator-declared evidence, keeps at least 400 days and the newest 10 releases, rechecks state, and deletes exact versions only; no live release retirement has run. Retained-source replay now binds one saved response, one retained pointer version, explicit routes, and inspected durable state into a reviewed plan. It fills missing records, suppresses existing candidates, and cannot access feed checkpoints; no live source replay has run. Combined source-state reads now require an explicit feed or announcement type. Host-set promotion pauses and verifies all 4 triggers, while Terraform-output capture fails closed and preserves a failed temporary for review. Watcher failures now have one terminal classification: a bounded stop emits <code>IncompleteRuns</code>, while a later unexpected fault supersedes that provisional marker with <code>WatcherFaults</code>. The post-MVP recovery review retained <code>delivery_unknown</code> for expired Slack send leases. The controlled exercise proved the transition without another call, while the byte-send outcome of a natural timeout remains unknown.</td>
-            </tr>
-            <tr>
-              <th scope="row">M3 · Passed</th>
-              <td>The owner accepted production readiness on 2026-09-07 for the exact reviewed deployment and its 300-delivery/hour arrival envelope. L-54 closed the application rollback gap; the final L-43 assessment connects earlier evidence, targeted checks, restored operation, and passing CI to every applicable criterion. <a href="#readiness">See how readiness was established and what remains outside the claim.</a></td>
-            </tr>
-          </tbody>
-        </table>
-        <div class="site-note">
-          <p>Accepted ADR-029 defines L-52&rsquo;s package repair: a stable input manifest inside each new ZIP, exact source-member checks before publication, an S3-computed SHA-256, and a Linux target import gate. The owner accepted the 2026-09-06 revisions to ADR-018, ADR-026, and ADR-027. Each completed L-54 publication, deployment, invocation, and saved-plan apply received its own exact-action authorization. Any later live mutation keeps that boundary. Signed hosted-build provenance remains a revisit condition if the deployment gains another publisher, CI publication, an external artifact consumer, or a production policy requiring cryptographic build origin.</p>
-          <p>The repository includes separate operator controls for retained-source replay, delivery replay, DLQ movement, package retirement, and configuration-release retirement.</p>
-        </div>
-      </div>
-    </section>
-
-    <section class="compact-section" id="live-operation">
-      <div class="compact-shell">
-        <div class="compact-section-head">
-          <p class="compact-eyebrow">Live operation</p>
-          <div>
-            <h2 class="compact-section-title">Park between tests. Restore only for a bounded live window.</h2>
-            <p class="compact-section-copy">Supervised short-window qualification passed on September 8, 2026: unpark/early-park, deadline cleanup after losing the local waiter, and the fixed live observation. <a href="https://github.com/lilabrooks/aws-public-change-feed/issues/199">M4 / L-58</a> records the lifecycle result and closure state. Unattended use remains gated by <a href="https://github.com/lilabrooks/aws-public-change-feed/issues/205">L-59</a>, outside M4. Earlier readiness results retain their original scope.</p>
-            <p class="compact-section-copy">Merging a PR runs repository checks and publishes this GitHub Pages site. Applying Terraform changes to AWS is a separate operator action.</p>
-          </div>
-        </div>
-        <dl class="site-spec">
-          <div class="site-spec-row">
-            <dt>Park</dt>
-            <dd>Disable the watcher, outbox-dispatcher, and recovery-reconciler EventBridge rules and the delivery FIFO mapping on the Slack worker. Set reserved concurrency to zero on all five functions, including shadow. Delete deployment CloudWatch metric alarms and the dashboard; recreate eligible monitoring during activation. Application log/metric publishing stops after in-flight runtime work ends.</dd>
-          </div>
-          <div class="site-spec-row">
-            <dt>Retain</dt>
-            <dd>Keep packages, releases, queues, durable delivery state, secrets, logs and their retention, and DynamoDB PITR. Retained log/S3/DynamoDB storage, PITR, secrets, and control resources can still incur charges. Builds and requests add usage while operating. Failure-only notification rules remain available while parked. Unpark can resume retained asynchronous work; parking does not purge it or prove an empty async queue.</dd>
-          </div>
-          <div class="site-spec-row">
-            <dt>Unpark and test</dt>
-            <dd>With reviewed private <code>LIVE_CONFIG</code> inputs and fresh per-use checks, use <code>make live-unpark WINDOW=90m</code> for a manual session, or <code>make live-test WINDOW=90m</code> for observation followed by parking. Add <code>CASE=delivery</code> for the one-attempt delivery proof. <code>make live-park</code> requests early cleanup; <code>make live-status</code> reads controls and the owner/deadline. These are separate operations. Keep an operator available through terminal results and verified parking, with recovery for failed or uncertain cleanup. Park when evidence is complete; never extend a quiet sample for a match.</dd>
-          </div>
-          <div class="site-spec-row">
-            <dt>Window limits</dt>
-            <dd>User-selected durations include setup and cleanup: ordered values such as <code>90m</code>, <code>2h</code>, or <code>1h30m</code>, with minimums of 68 minutes for manual/observation and 78 minutes for delivery, up to 364 days. Repeated unpark keeps the original deadline. Step Functions owns cleanup beyond the local terminal&rsquo;s lifetime, but AWS delays, retries, and recovery failures can overrun the target. Measured early-park and deadline samples do not establish worst-case budgets or net savings. Unchanged short tests need not repeat the first-use deadline-loss protocol.</dd>
-          </div>
-          <div class="site-spec-row">
-            <dt>Resource tags</dt>
-            <dd>Terraform defines <code>project=aws-public-change-feed</code>, the actual <code>deployment_id</code>, <code>managed_by=terraform</code>, and <code>component</code> values <code>runtime</code>, <code>storage</code>, <code>monitoring</code>, or <code>live-control</code>. <strong>Live tags were applied and verified on September 7, 2026:</strong> 47 existing resources, all three full Terraform plans reporting no changes, and the service still parked. The queue mapping is tagged explicitly; alarms receive shared tags when recreated. Locked-provider exceptions such as dashboard tagging are tested. Later tag changes use separate parked maintenance and a fresh reviewed bundle. Routine toggles reject tag changes; actual AWS controls establish shutdown. AWS Billing reports <code>project</code> and <code>deployment_id</code> Active; <code>component</code> discovery and cost attribution remain pending. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md#tag-deployment-record-2026-09-07">Read the tag deployment record.</a></dd>
-          </div>
-        </dl>
-        <div class="site-note">
-          <p>The owner accepted ADR-030&rsquo;s supervised-use revision on September 8. The fixed 20-minute observation recorded the expected 1/20/4 watcher/dispatcher/reconciler invocations and heartbeats, zero scheduled-function errors/throttles, and no newly posted delivery. The quiet cohort ended without extension. The unchanged AWS owner then parked through its deadline path without an early-stop request, with successful builds/workflow, removed monitoring, preserved identities, and no-change plans. Eligible closeout passed without deleting evidence.</p>
-          <p>The owner confirmed a build-failure email and an unidentified terminal-failure email. The workflow-event and direct exhausted-cleanup routes are not separately receipt-qualified; failed-publication preservation remains unproved live. L-59 begins with existing emails and requires separate approval for any further fault injection. Both terminal routes share SNS and remain best effort. Control logs retain 14 days; exact-version retirement remains separately approved after 90 days from verified closure. Application retention and PITR are unchanged. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md#supervised-use-and-requalification">Read supervision and requalification requirements.</a> Exact receipts and private inputs stay in restricted evidence.</p>
-        </div>
+        <details class="site-disclosure">
+          <summary>Milestone history</summary>
+          <table class="site-status-table">
+            <tbody>
+              <tr>
+                <th scope="row">D0 · Closed</th>
+                <td>One real public AWS announcement passed through the deployed service to Slack, and DynamoDB recorded <code>posted</code>.</td>
+              </tr>
+              <tr>
+                <th scope="row">M1 · Closed</th>
+                <td>Scheduled delivery, both recovery cases, the fixed 50-message load run, and alarm-email receipt passed in dev. All 12 public-feed posts reached Slack.</td>
+              </tr>
+              <tr>
+                <th scope="row">M2 · Closed</th>
+                <td>Retention, retirement, saved-response replay, and named recovery repairs were completed. The repository includes separate operator controls for retained-source replay, delivery replay, DLQ movement, package retirement, and configuration-release retirement.</td>
+              </tr>
+              <tr>
+                <th scope="row">M3 · Passed</th>
+                <td>The owner accepted readiness on 2026-09-07 for the exact dev deployment and its 300-delivery/hour arrival envelope. <a href="#readiness">Read the evidence and limits.</a></td>
+              </tr>
+              <tr>
+                <th scope="row">M4 · Proof passed</th>
+                <td>Fixed observation, early parking, and deadline cleanup after loss of the local waiter passed on 2026-09-08. Unattended use remains outside this result.</td>
+              </tr>
+            </tbody>
+          </table>
+        </details>
+        <aside class="site-note" id="live-operation" aria-label="Current operating mode">
+          <p><strong>Current mode: parked.</strong> Parking disables all 4 runtime triggers, sets reserved concurrency to zero on all 5 Lambdas, and removes the deployment alarms and dashboard. Packages, queues, durable state, secrets, logs, and DynamoDB PITR remain and can still incur charges.</p>
+          <p>Live windows require an operator through verified parking. Step Functions owns deadline cleanup beyond the local terminal, though AWS delays or failures can overrun the requested window. <a href="https://github.com/lilabrooks/aws-public-change-feed/issues/205">L-59</a> holds the unperformed notification checks required before unattended use.</p>
+        </aside>
         <div class="compact-actions">
-          <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md">Read setup, proof gates, and recovery</a>
-          <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md#resource-tags-and-billing-activation">Read tagging and billing procedure</a>
-        </div>
-        <div class="site-note">
-          <p>The successful retry reached verified live readiness with 28 alarms, then early-parked under the same cleanup owner. Both builds and the workflow succeeded. CloudTrail confirmed rule and FIFO mapping updates in both directions, with no mapping metrics payload. Independent checks confirmed disabled triggers, all five functions fenced, zero alarms, no dashboard, unchanged identities and rule tags, and no-change central/control plans. Eligible closeout passed without deleting evidence. This manual round trip established early parking. The later September 8 record above separately passed deadline cleanup and the L-57 fixed observation. <a href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md#successful-supervised-round-trip-2026-09-08-utc">Read the successful early-park round trip.</a></p>
+          <a class="compact-button compact-button-primary" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/runbooks/live-window.md">Read the live-window runbook</a>
+          <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/evidence/l57-l58-supervised-live-window-2026-09-08.md">Read the M4 evidence</a>
         </div>
       </div>
     </section>
