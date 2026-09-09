@@ -5,210 +5,238 @@
 [![Public site](https://github.com/lilabrooks/aws-public-change-feed/actions/workflows/pages.yml/badge.svg?branch=main)](https://lilabrooks.github.io/aws-public-change-feed/)
 [![License: Apache 2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-AWS Public Change Alerting reads approved AWS RSS and Atom feeds. It matches announcement titles and summaries against configured service aliases and risk phrases, maps each match to static environment profiles, and sends a route-specific review candidate to Slack.
+AWS Public Change Alerting watches approved AWS RSS and Atom feeds for changes that may need review. It matches announcement text against your service catalog and risk rules, maps each result to configured environments, and sends a route-scoped candidate to Slack.
 
-Each candidate includes the matched text, service, risk type, mapped environments, Slack destination, announcement revision, and configuration release. Public feed matches are **potentially relevant**. Operators confirm account or resource impact with their existing AWS tools.
+Matches are **potentially relevant**. The service uses public announcements and static environment profiles; operators confirm actual account or resource impact with their existing AWS tools.
 
 [![Processing overview: approved AWS feeds pass through the watcher, matching and routing, DynamoDB, SQS FIFO, and Slack delivery; recovery writes back to DynamoDB.](docs/assets/readme-overview.svg)](https://lilabrooks.github.io/aws-public-change-feed/)
 
-[Open the full system diagram and generated Slack message.](https://lilabrooks.github.io/aws-public-change-feed/)
+[Open the system diagram, walkthrough, and generated Slack message.](https://lilabrooks.github.io/aws-public-change-feed/)
+
+## Contents
+
+- [Project status](#project-status)
+- [Run locally](#run-locally)
+- [Deploy your own copy](#deploy-your-own-copy)
+- [How it works](#how-it-works)
+- [Repository map](#repository-map)
+- [Documentation](#documentation)
+- [License](#license)
 
 ## Project status
 
-GitHub Issues and milestones hold the current backlog state.
+The application, Terraform roots, contracts, and test suite are implemented. The exact reviewed dev deployment passed its production-readiness gate for one environment, one Slack destination, four feeds, three services, four risk rules, and 300 deliveries per hour.
 
-Dev is parked between live tests. [Supervised short-window qualification passed on September 8, 2026](docs/evidence/l57-l58-supervised-live-window-2026-09-08.md); unattended use remains gated. The [parking and resource-tagging workflow](#parking-and-resource-tags) describes the controls and retained costs. The completed milestones below record earlier evidence; they do not mean the service runs continuously.
+For that gate, the owner selected the current 4-feed, 3-service, 4-risk-rule policy unchanged.
 
-| Milestone | State | Purpose |
+That evidence applies only to the recorded dev deployment. Six of its 12 enabled service/risk pairs have no historical positive, Slack delivery has an explicit `delivery_unknown` state, and the recovery proof covers stopped restore and restart rather than live service on restored tables. [Read the full assessment and its limits.](docs/production-readiness.md)
+
+Dev runs only during supervised short windows and is parked between tests. [L-59](https://github.com/lilabrooks/aws-public-change-feed/issues/205) must pass before unattended use.
+
+<details>
+<summary>Milestone history</summary>
+
+| Milestone | State | Recorded result |
 | --- | --- | --- |
-| [D0: first live Slack delivery](https://github.com/lilabrooks/aws-public-change-feed/milestone/1) | Closed | Send one real public AWS announcement through the deployed dev service and record the Slack result. |
-| [M1: dev MVP](https://github.com/lilabrooks/aws-public-change-feed/milestone/2) | Closed | Run the dev service on schedule and exercise delivery, recovery, the fixed load case, and alarm notification. |
-| [M2: lifecycle and replay](https://github.com/lilabrooks/aws-public-change-feed/milestone/3) | Closed | Set expiry and retirement rules for feed state and releases, add saved-response replay, and fix named recovery failures. |
-| [M3: production-readiness proof](https://github.com/lilabrooks/aws-public-change-feed/milestone/4) | Closed | The exact reviewed dev deployment passed its production-readiness gate for one environment, one destination, four feeds, three services, four risk rules, and the 300-delivery/hour envelope. |
-| [M4: bounded live confirmation and cost shutdown](https://github.com/lilabrooks/aws-public-change-feed/milestone/5) | Supervised live proof passed | Confirm the unchanged dev deployment in a fixed observation, then verify repeatable supervised early parking and deadline cleanup after local waiter loss. |
+| [D0](https://github.com/lilabrooks/aws-public-change-feed/milestone/1) | Closed | First live public-feed candidate reached Slack and DynamoDB recorded `posted`. |
+| [M1](https://github.com/lilabrooks/aws-public-change-feed/milestone/2) | Closed | Scheduled delivery, recovery, load, and alarm exercises completed in dev. |
+| [M2](https://github.com/lilabrooks/aws-public-change-feed/milestone/3) | Closed | Retention, retirement, saved-response replay, and named recovery repairs completed. |
+| [M3](https://github.com/lilabrooks/aws-public-change-feed/milestone/4) | Closed | The exact dev deployment passed its bounded production-readiness review. |
+| [M4](https://github.com/lilabrooks/aws-public-change-feed/milestone/5) | Supervised proof passed | Fixed observation, early parking, and deadline cleanup after local waiter loss passed. |
 
-### D0: first live Slack delivery
+The [goal](docs/GOAL.md), [readiness evidence](docs/evidence/m3-production-readiness-assessment-2026-09-06.md), and [September 8 live-window record](docs/evidence/l57-l58-supervised-live-window-2026-09-08.md) carry the detailed results. GitHub Issues and milestones hold current backlog state.
 
-D0 sent one real public AWS announcement through the deployed dev service to Slack.
-
-- The first active dev configuration release was published and loaded with the exact application package.
-- The watcher created a candidate and delivery record. The dispatcher sent the request through SQS FIFO, the worker posted it, and DynamoDB recorded `posted`.
-- One request was sent while the other 11 stayed durably queued for M1. The owner confirmed the complete message in Slack.
-- A missing active manifest was separated from a denied read, and one Lambda security false positive caused by use-case prose was removed before the live run.
-
-### M1: dev MVP
-
-M1 ran the whole dev service on schedule and exercised delivery, recovery, load, and alarms.
-
-- All 4 runtime triggers were enabled in dev. The 12-message public-feed cohort reached Slack with 1 network attempt and an HTTP 200 response per post, and DynamoDB recorded `posted` for all 12.
-- The recovery exercise moved one `pending_queue` record to `posted` with 1 Slack attempt and one expired `sending` record to `delivery_unknown` with 0 Slack attempts.
-- The fixed load run created 5 records per minute for 10 minutes and stopped at 50 records.
-- The owner confirmed receipt of the alarm email.
-- Pull requests and weekly CI scan all 3 pinned Python dependency manifests and tracked plaintext for high and critical findings. Terraform scans run separately for the bootstrap, central, and preflight entry points. Classified findings remain visible, and any change from their exact reviewed baseline fails the job.
-
-### M2: lifecycle and replay
-
-M2 set rules for old feed data, removed feeds, saved responses, and known recovery failures.
-
-- The post-MVP policy review kept the current 4 feeds, matching rules, message limits, and retention periods.
-- Announcement history now expires 730 days after its latest observation. Response-page completion records get the same 730-day window. Active feed checkpoints stay until a reviewed feed-retirement operation.
-- On 2026-08-30, the one-time migration added retention dates to 76 announcement rows and 88 response-page rows. It left the 4 active feed checkpoints alone and removed the temporary table-scan role after verification.
-- [L-48](https://github.com/lilabrooks/aws-public-change-feed/issues/159) adds exact-feed preview/apply plans for retirement, post-retention tombstone compaction, and reviewed same-URL restoration. The permanent operator role can read and conditionally update only the session-tagged feed key. Repository tests simulate the 730-day boundary; no live feed has been retired or restored.
-- [L-14](https://github.com/lilabrooks/aws-public-change-feed/issues/92) adds reviewed deletion of old configuration and inventory releases. It preserves the active release, at least the newest 10, and every release still needed for delivery review, replay, investigation, or rollback. Eligible releases are at least 400 days old, and deletion accepts only an unchanged reviewed plan. The command has local simulated coverage; no live release retirement has run.
-- [L-35](https://github.com/lilabrooks/aws-public-change-feed/issues/122) adds a preview-first command that replays one exact retained feed response through the runtime parser, normalizer, matcher, and candidate builder during the 30-day raw-snapshot window. Its saved plan binds the response digest, retained pointer version, durable-state fingerprint, operator, purpose, and expected routes. Apply fills missing state, suppresses existing candidates, and has no permission to read or write feed checkpoints.
-- State and package cleanup removed the unused `dynamodb:TransactWriteItems` IAM action, tests that `__pycache__` directories and loose `.pyc` files stay out of Lambda packages, and requires every combined source-state read to name either a feed or announcement record explicitly.
-- The deployment runbook now changes the infrastructure host allowlist and configuration feed-host set in one paused sequence. It reads back all 4 trigger states, records the alarm exposure that survives the pause, and restores the recorded states after the release and deployed host sets agree.
-- Terraform-output capture now stops on command, shape, or move failure; refuses to overwrite either capture path; and preserves a failed temporary as evidence until an owner-reviewed move releases the path for a new capture ID.
-- Watcher failures now receive one terminal classification: a bounded stop emits `IncompleteRuns`, while a later unexpected fault replaces that provisional marker with `WatcherFaults`. The post-MVP recovery review retained `delivery_unknown` for expired Slack send leases. The controlled exercise proved the transition without another call, while the byte-send outcome of a natural timeout remains unknown.
-
-### M3: production-readiness proof
-
-M3 established production readiness for the exact reviewed service and dev
-deployment. Repository-supported ceilings and a different deployment remain
-outside this evidence claim.
-
-- [L-40](https://github.com/lilabrooks/aws-public-change-feed/issues/145) selected the current 4-feed, 3-service, 4-risk-rule policy unchanged for production preflight. Its [evidence record](docs/evidence/production-policy.md) retains all 12 service and risk-type pairs, including 6 with no historical positive, and keeps the global thresholds without inventing pair-specific floors.
-- [L-41](https://github.com/lilabrooks/aws-public-change-feed/issues/146) has complete operational evidence for ADR-027 and ADR-028. The successful dev proof restored both DynamoDB tables from one evidence-bound point, measured a 298-second recovery point against the 5-minute target, verified both complete inventories and required settings, moved every runtime reference to the restored pair with triggers disabled, rolled back to the primary pair, and restored all four triggers within the 4-hour recovery-time boundary. All seven relevant alarms returned to `OK`, the final Terraform plan reported no changes, and all four disposable restore tables from both attempts were deleted and confirmed absent. Its accepted limit is stopped restore and primary-table restart, not service operation on restored tables.
-- [L-42](https://github.com/lilabrooks/aws-public-change-feed/issues/147) ended with the bounded `incomplete` disposition permitted by its issue contract. Its [public evidence record](docs/evidence/l42-shadow-and-rollback-2026-09-06.md) binds the reviewed plans, invocations, state comparisons, and restricted evidence manifest. The shadow evaluator passed three identity refusals and three valid samples across the forward, rolled-back, and restored configurations. Each valid sample normalized 240 items and produced the same 8 candidates and candidate digest without changing source-state, delivery, or raw-snapshot state. Configuration rollback and restoration passed. Application rollback did not run because no distinct eligible predecessor existed at that point.
-- [L-54](https://github.com/lilabrooks/aws-public-change-feed/issues/191) now has a [passing application-rollback record](docs/evidence/l54-application-rollback-2026-09-07.md). The qualified `c88b49c8…` predecessor and genuine `1ae996ca…` successor each passed an exact five-function transition and bounded shadow check while all durable execution was stopped. The stopped-state comparison matched, the original concurrency and four triggers were restored, one fixed natural scheduled window passed, all 28 alarms reached `OK`, and Terraform converged with no changes.
-- [L-43](https://github.com/lilabrooks/aws-public-change-feed/issues/148) resolved every applicable criterion for the exact reviewed dev deployment and reused earlier notification, Slack, capacity, corpus, and recovery evidence only where the mechanism comparison supported it. Final candidate `91f8db0e9b1f6cd6a1889face54589feaef295c0` passed all required checks in [PR #196](https://github.com/lilabrooks/aws-public-change-feed/pull/196), and the owner accepted the terminal disposition `passed`.
-- [L-44](https://github.com/lilabrooks/aws-public-change-feed/issues/149) reconciles that result across the goal, architecture status, README, public site, evidence record, GitHub issues, and M3 milestone. The recorded limits remain part of the passing result.
-
-See the [open issues](https://github.com/lilabrooks/aws-public-change-feed/issues) for the current work queue. The [goal](docs/GOAL.md) defines product scope, completion criteria, evidence, and the limits of the passing production-readiness result.
-
-## Parking and resource tags
-
-The [September 8 qualification record](docs/evidence/l57-l58-supervised-live-window-2026-09-08.md) confirms supervised unpark/early-park, deadline cleanup after local waiter loss, the fixed L-57 observation, and eligible evidence closeout. The owner accepted the supervised-use revision to ADR-030 that day. [L-59](https://github.com/lilabrooks/aws-public-change-feed/issues/205) holds the remaining notification qualification before unattended use, outside M4.
-
-Parking disables the `apcf-dev-feed-watcher`, `apcf-dev-outbox-dispatcher`, and `apcf-dev-recovery-reconciler` EventBridge rules and the `apcf-delivery-dev.fifo` mapping on `apcf-dev-slack-worker`. It sets reserved concurrency to zero on all five functions, including shadow, and **deletes the deployment's CloudWatch metric alarms and dashboard**. Eligible monitoring is recreated during activation.
-
-Once in-flight work ends, ordinary runtime execution, queue polling, and application log/metric publishing stop. Packages, releases, queues, delivery state, secrets, log groups and retention, and DynamoDB PITR are preserved. Retained logs, S3, DynamoDB storage/PITR, Secrets Manager, and control resources can still incur charges; operating the controller also uses billable builds and requests. Failure-only notification rules remain available while parked. Parking does not purge work, and unpark can resume retained asynchronous invocations.
-
-### Repeatable park, unpark, and testing
-
-The fixed 20-minute observation recorded the expected 1/20/4 watcher/dispatcher/reconciler invocations and heartbeats, with zero scheduled-function errors or throttles. No new delivery posted in that cohort, and the sample was not extended. The same AWS cleanup owner later parked on its deadline path without the local waiter or an early-stop request. Independent readbacks and no-change plans confirmed removed monitoring, disabled controls, and preserved application identities.
-
-Set `LIVE_CONFIG` to the private operator JSON described in the runbook and follow its [per-use checks](docs/runbooks/live-window.md#supervised-use-and-requalification). An operator stays available through terminal results and verified parking, and handles failed or uncertain cleanup. Use the repository's Python environment. These are separate operations, not a sequence to run together:
-
-| Command | Effect |
-| --- | --- |
-| `make live-status` | Read controls, monitoring, retained work, owner/deadline, and residual cost categories without enabling anything. |
-| `make live-unpark WINDOW=90m` | Activate a bounded manual session and wait for verified readiness. |
-| `make live-test WINDOW=90m` | Run bounded scheduled observation, then wait for parking. |
-| `make live-test CASE=delivery WINDOW=90m` | Run the existing one-attempt delivery proof and park when it finishes, including a quiet or refused result. |
-| `make live-park` | Request early cleanup; a repeat call on a verified parked service makes no changes. |
-
-`WINDOW` accepts ordered durations such as `90m`, `2h`, and `1h30m`. Current limits are 68 minutes minimum for manual/observation, 78 minutes for delivery, and 364 days maximum, including setup and one cleanup reserve. Early completion starts cleanup promptly; a repeated unpark retains the original deadline. AWS delays or emergency retries can exceed it, so it is not an exact billing cutoff. Step Functions owns cleanup beyond the local terminal's lifetime. Keep windows supervised and never extend a quiet sample to obtain a match. The completed deadline proof need not be repeated for each unchanged short test.
-
-### Static ownership and cost tags
-
-Terraform defines `project=aws-public-change-feed`, the actual `deployment_id`, `managed_by=terraform`, and `component=runtime|storage|monitoring|live-control` on resources supported by the locked provider. The queue mapping is tagged explicitly, recreated alarms receive the shared monitoring tags, and tests check provider exceptions such as the dashboard. Tags stay unchanged during park/unpark; the controller verifies actual AWS controls.
-
-**Live tags were applied and verified on September 7, 2026:** 47 existing resources across bootstrap, central, and live-control, with all three full Terraform plans reporting no changes and the service still parked. The [tag deployment record](docs/runbooks/live-window.md#tag-deployment-record-2026-09-07) separates that operator apply from the PR merge. Merging a PR runs repository checks and publishes GitHub Pages; it does not apply Terraform to AWS.
-
-AWS Billing reports `project` and `deployment_id` Active. `component` is still awaiting discovery; its activation and eventual cost attribution remain pending. Tags alone cannot account for every charge. Later tag changes follow the [separate maintenance procedure](docs/runbooks/live-window.md#resource-tags-and-billing-activation) while parked, with no active cleanup owner. Use a fresh reviewed post-maintenance control bundle for the next live window; routine toggles reject tag changes.
-
-The [live-window runbook](docs/runbooks/live-window.md) owns setup, timing budgets, failure recovery, and separately approved control-evidence retirement. It summarizes qualification outcomes and open gates; exact execution receipts and private inputs stay in restricted operator evidence. No data-retention or PITR change is part of parking.
-
-## Service walkthrough
-
-[![AWS Public Change Alerting: delivery, lifecycle, and readiness.](site/media/walkthrough-v3/poster.png)](https://lilabrooks.github.io/aws-public-change-feed/)
-
-The 3:41 walkthrough explains the five Lambda roles, why DynamoDB owns delivery state, and how S3, SQS, CloudWatch, and CloudTrail support the service. It then covers the M1 live results and M2 lifecycle changes, with a 48-second M3 conclusion starting at 2:54. The opening shows all three milestones closed. Private account and channel details are omitted.
-
-[Watch with captions](https://lilabrooks.github.io/aws-public-change-feed/) · [Open the MVP slides as PDF](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf) · [Download the MVP PowerPoint](site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx) · [Read the transcript and recorded results](docs/evidence/mvp-walkthrough.md)
-
-## Processing path
-
-1. The watcher fetches configured public hosts with TLS, DNS and IP checks, redirect refusal, byte limits, and parser limits.
-2. Feed items are normalized and duplicate URLs are merged across sources.
-3. Service aliases and risk phrases are matched against each title and summary.
-4. Static profiles map matches to environments and Slack routes.
-5. DynamoDB stores the candidate and delivery request before the feed checkpoint advances.
-6. The dispatcher sends due work through SQS FIFO. The worker posts to Slack and writes the observed outcome back to DynamoDB.
-7. The reconciler retries eligible work and converts expired sending leases to `delivery_unknown`.
-
-## Why DynamoDB and SQS both exist
-
-Four failure cases explain the delivery table:
-
-- **The watcher stops before queueing the alert.** It saves the candidate and a `pending_queue` record before moving the feed checkpoint. The dispatcher finds that saved record and sends it to SQS. If the save never finished, the old checkpoint makes the next watcher run rebuild the same candidate.
-- **The same SQS message arrives again.** The worker checks DynamoDB before calling Slack. A `posted` record means the message has already completed, so the worker acknowledges the queue message without posting twice. This check still works after SQS FIFO's 5-minute send-deduplication window has passed.
-- **Slack asks the service to retry later.** The worker records the next allowed attempt time in `next_action_at` and acknowledges the current queue message. The dispatcher sends a new queue message when that time arrives. The Lambda does not sleep while it waits.
-- **Slack may have posted the message, but the worker lost the response.** A timeout or stopped Lambda can leave the record in `sending`. When its lease expires, the reconciler changes it to `delivery_unknown`. Automatic delivery stops until an operator checks Slack and records what happened.
-
-A direct SQS-to-Lambda-to-Slack path is a smaller design for notifications that can tolerate repeated posts and limited outcome history. This project requires missed, delayed, duplicate, and ambiguous work to remain visible. [ADR-004](docs/adr/004-explicit-slack-delivery-guarantees.md) defines the Slack outcome rules, and [ADR-007](docs/adr/007-central-slack-delivery-queue-and-worker.md) defines the outbox and queue boundary. The service does not claim exactly-once Slack delivery.
-
-## Required runtime rules
-
-| Rule | Effect |
-| --- | --- |
-| Public inputs only | The runtime has no customer-account credentials, resource discovery, telemetry, or remediation access. |
-| Stable IDs | The same announcement revision, service, risk, route, audience, and release produce the same candidate ID. |
-| Immutable releases | Every candidate points to exact configuration, inventory, and application versions. |
-| DynamoDB owns delivery state | SQS FIFO carries ready work; it does not replace the durable outbox or outcome history. |
-| Slack uncertainty stays visible | A timeout becomes `delivery_unknown`. An operator checks Slack before closure or one audited retry. |
-| Credentials stay with the worker | Feed content, configuration, candidates, fixtures, and logs contain no Slack secret values. |
-
-The [numbered specification and 26 accepted ADRs](docs/architecture/README.md) define these rules in full.
+</details>
 
 ## Run locally
 
 Python 3.12 or newer is required.
 
 ```bash
+git clone https://github.com/lilabrooks/aws-public-change-feed.git
+cd aws-public-change-feed
 python3.12 -m venv .venv
 . .venv/bin/activate
 make install
 make check
 ```
 
-`make check` runs formatting, Python and YAML lint, type checks, schema and cross-file validation, corpus scoring, the full unit-test suite, and whitespace checks. It validates the Terraform roots when Terraform is installed and runs TFLint with its AWS ruleset when TFLint is installed. CI requires both tools, tests Terraform 1.15.8 and the minimum supported 1.10.0 release, and checks every pull request's committed diff for Git whitespace errors.
+`make check` runs formatting checks, Python and YAML lint, type checks, contract validation, corpus scoring, tests, and whitespace checks. It also validates Terraform and runs TFLint when those tools are installed. CI requires both tools and tests Terraform 1.10.0 as the minimum supported release.
 
-Useful focused commands:
-
-| Command | Result |
+| Command | Use |
 | --- | --- |
-| `make validate` | Validates contracts, local references, the public page, and corpus thresholds. |
-| `make evaluate-corpus` | Scores matching with the reviewed [`config/dev.yaml`](config/dev.yaml) policy. |
-| `make screen-feeds` | Fetches the configured public feeds through the runtime acquisition path and reports current matches. |
-| `make references-online` | Checks external links with Lychee. |
-| `make terraform-clean` | Removes the root `.terraform` working directories under `infra/bootstrap`, `infra/central`, and `infra/preflight`. |
+| `make evaluate-corpus` | Score the matcher against the labeled corpus and approved thresholds. |
+| `make screen-feeds` | Fetch the configured public feeds through the runtime acquisition path. |
+| `make references-online` | Check external links with Lychee. |
+| `make terraform-clean` | Remove generated `.terraform` directories from all four Terraform roots. |
 
-The corpus evaluator and feed screener accept `--root` and `--config`. Relative paths resolve from `--root`; absolute paths are accepted. The Make targets select [`config/dev.yaml`](config/dev.yaml) explicitly.
+`make screen-feeds` uses the public network. `make references-online` uses the network and requires Lychee. None of these commands deploy infrastructure or send a Slack message.
 
-`make screen-feeds` and `make references-online` use the network. Feed screening reads public sources and does not require AWS credentials. Online reference checks require the `lychee` executable.
+The corpus evaluator and feed screener accept `--root` and `--config`. Relative paths resolve from `--root`; absolute paths are accepted. The Make targets select [`config/dev.yaml`](config/dev.yaml).
 
-Terraform cleanup is event-driven. Use `make terraform-clean` after a backend or account change, when stale initialization causes failures, or to reclaim local disk. The target preserves every `.terraform.lock.hcl`, local and remote state, Terraform configuration, and other files. Rerun `terraform init` in each affected root with the intended backend settings before planning or applying.
+## Deploy your own copy
+
+Self-hosting is a reviewed AWS deployment, with automatic triggers kept off until the Slack preflight passes. It creates billable resources and stores internal environment metadata in AWS. The tracked deployment files describe this repository's dev environment, so a fork needs its own identifiers and evidence.
+
+You need:
+
+- Python 3.12+, Terraform `>= 1.10.0, < 2.0.0`, TFLint, and an authenticated AWS CLI.
+- An AWS identity allowed to apply the bootstrap and central roots, including their IAM resources.
+- Globally unique S3 bucket names, an AWS account and Region, and an operational-notification email address.
+- A Slack app with an incoming webhook for the target channel. Slack treats the webhook URL as a secret.
+
+### 1. Set your deployment and matching policy
+
+Use [`examples/deployment.yaml`](examples/deployment.yaml) as the field guide, then edit these tracked inputs:
+
+- [`infra/central/deployment.yaml`](infra/central/deployment.yaml): deployment ID, Region, configuration bucket, notification aliases, Slack routes, environment metadata, feed and Slack host allowlists, and scale limits.
+- [`config/dev.yaml`](config/dev.yaml): feeds, services, aliases, profiles, environment policy, and risk rules. Every deployment environment needs one matching policy entry.
+- [`infra/bootstrap/backend.tf`](infra/bootstrap/backend.tf) and [`infra/central/backend.tf`](infra/central/backend.tf): literal state bucket and Region. Terraform backends can't read variables.
+
+The bootstrap buckets are derived as `apcf-state-<deployment_id>` and `apcf-concurrency-<deployment_id>`. Pick a short deployment ID that produces valid, globally unique names, or revise the naming rules and their tests. The configuration bucket must also be globally unique. Keep the deployment feed-host allowlist equal to the host set in the runtime configuration.
+
+Environment account IDs and Regions are static review context. They grant no customer-account access.
+
+Treat [`infra/live-control/`](infra/live-control/) as an optional, deployment-specific root. It contains fixed account, Region, resource, and IAM values for the recorded dev environment and needs a reviewed port before another deployment can use it. The core bootstrap and central roots do not depend on it.
+
+Run the full local gate after editing:
+
+```bash
+REQUIRE_TERRAFORM=1 REQUIRE_TFLINT=1 make check
+```
+
+### 2. Create and migrate the remote-state bucket
+
+The bootstrap root creates the bucket that later stores its own state. Follow the comment in [`infra/bootstrap/backend.tf`](infra/bootstrap/backend.tf): temporarily comment out its backend block, then run a local-state apply with your values.
+
+```bash
+terraform -chdir=infra/bootstrap init -input=false
+terraform -chdir=infra/bootstrap plan -input=false -out=bootstrap.tfplan \
+  -var='deployment_id=<globally-unique-id>' \
+  -var='region=<aws-region>'
+terraform -chdir=infra/bootstrap apply bootstrap.tfplan
+terraform -chdir=infra/bootstrap output state_bucket_name
+```
+
+Restore the backend block with the new bucket and Region, update the central backend to match, then migrate bootstrap state:
+
+```bash
+terraform -chdir=infra/bootstrap init -migrate-state -input=false
+```
+
+Review the generated backend policy and grant it to the principal that will run Terraform. The [architecture baseline](docs/adr/006-terraform-and-python-implementation-baseline.md) defines the state and lockfile permissions.
+
+The bootstrap root also creates the versioned ADR-019 concurrency-test bucket and an `apcf_concurrency_test` IAM user. It creates no access key. Both are part of the repository's real-S3 promotion test contract.
+
+### 3. Apply the central foundation with triggers disabled
+
+Keep private values in an untracked file outside the repository. Its `operational_sns_subscription_endpoints` keys must exactly match the aliases in `deployment.yaml`.
+
+```json
+{
+  "operational_sns_subscription_endpoints": {
+    "primary-email": "operator@example.com"
+  },
+  "delivery_triggers_enabled": false,
+  "reconciler_trigger_enabled": false
+}
+```
+
+Initialize, review a saved plan, and apply those exact bytes:
+
+```bash
+terraform -chdir=infra/central init -input=false
+terraform -chdir=infra/central plan -input=false \
+  -var-file=/absolute/private/path/central.tfvars.json \
+  -out=central-foundation.tfplan
+terraform -chdir=infra/central apply central-foundation.tfplan
+```
+
+This first apply creates the configuration bucket, DynamoDB tables, queues, roles, notification topic, and Slack credential container. Lambda functions remain absent until exact package inputs are supplied. Confirm the SNS subscription before depending on alarm email.
+
+### 4. Add the Slack credential
+
+Create an [incoming webhook in Slack](https://docs.slack.dev/messaging/sending-messages-using-incoming-webhooks/) for the channel named by the route. Set that route's `credential_secret_id` in `deployment.yaml` before the central apply.
+
+After Terraform creates the container, store the **whole webhook URL** as its value:
+
+- For `secrets_manager`, add a value to the named secret with the AWS console or [`PutSecretValue`](https://docs.aws.amazon.com/cli/latest/reference/secretsmanager/put-secret-value.html).
+- For `ssm_parameter_store`, replace Terraform's placeholder with a `SecureString` value using the AWS console or [`PutParameter`](https://docs.aws.amazon.com/cli/latest/reference/ssm/put-parameter.html).
+
+Keep the webhook out of Git, Terraform variables, shell history, logs, and saved plans.
+
+<details>
+<summary>Bot-token mode</summary>
+
+The deployment schema also supports `bot_token`. Set `workspace_id` and `bot_token_secret_id`, use `channel_id` on each route, and remove `approved_webhook_hosts` plus per-route `credential_secret_id`. Each `destination_key` must be the lowercase `<workspace_id>-<channel_id>` pair. Store the whole bot token in the deployment's selected secret store.
+
+</details>
+
+### 5. Publish the application package and create the Lambdas
+
+Build the package, then publish it under the central root's release-publisher role:
+
+```bash
+python3 scripts/build_lambda_package.py --output build/slack-worker.zip
+python3 scripts/publish_lambda_artifact.py \
+  --bucket <config-bucket> \
+  --prefix <application-artifact-prefix> \
+  --package build/slack-worker.zip
+```
+
+Record the returned digest, S3 VersionId, and checksum. Set the worker, watcher, and dispatcher digest/VersionId pairs to that object, then set `worker_artifact_checksum_sha256`. Set the reconciler pair and `reconciler_artifact_checksum_sha256` from the same publication. Re-plan and apply with both trigger flags still `false`.
+
+### 6. Publish configuration, test Slack, then enable schedules
+
+Follow the operations runbook in this order:
+
+1. [Capture fresh central Terraform outputs](docs/runbooks/operations.md#terraform-output-capture-and-recovery).
+2. [Preview and apply one immutable configuration release](docs/runbooks/operations.md#configuration-release-publication). Only `status=completed` makes the release usable.
+3. [Run the disabled-trigger delivery preflight](docs/runbooks/operations.md#application-package-rollout-and-rollback). Its apply step can fetch live feeds and send one real candidate to Slack when the fixed sample contains a bounded match.
+4. Confirm the candidate in the named Slack channel. Keep a quiet or refused sample as its actual result; do not extend it to obtain a match.
+5. Review and apply a second central plan with `delivery_triggers_enabled=true`. Enable `reconciler_trigger_enabled` only after completing its separate checks in the same runbook.
+
+Preserve each reviewed plan, digest, release ID, package version, preflight result, and trigger readback. The [operations runbook](docs/runbooks/operations.md) owns rollback, recovery, delivery reconciliation, feed changes, and retirement procedures.
+
+## How it works
+
+1. The watcher fetches approved public feeds with URL, DNS, TLS, redirect, size, and parser controls.
+2. It normalizes items and merges duplicate announcement URLs across feeds.
+3. Deterministic service aliases and risk phrases match title and summary text.
+4. Static profiles map each match to potentially relevant environments and Slack routes.
+5. DynamoDB stores the candidate and delivery request before the feed checkpoint advances.
+6. The dispatcher sends due work through SQS FIFO; the worker posts to Slack and records the outcome.
+7. The reconciler repairs eligible work and changes expired send leases to `delivery_unknown`.
+
+<details>
+<summary>Why DynamoDB and SQS are both required</summary>
+
+DynamoDB is the delivery system of record. It keeps candidates, outbox work, dedupe state, retries, and ambiguous outcomes after SQS's deduplication window ends. SQS carries ready work and preserves per-destination ordering. A known `posted` record suppresses another Slack call; an uncertain call stops at `delivery_unknown` until an operator checks Slack.
+
+[ADR-004](docs/adr/004-explicit-slack-delivery-guarantees.md) defines Slack outcomes. [ADR-007](docs/adr/007-central-slack-delivery-queue-and-worker.md) defines the outbox and queue boundary.
+
+</details>
 
 ## Repository map
 
 | Path | Contents |
 | --- | --- |
 | [`src/aws_public_change_feed/`](src/aws_public_change_feed/) | Feed acquisition, matching, candidates, releases, delivery, and recovery. |
-| [`infra/`](infra/) | Terraform roots for bootstrap, persistent service resources, and isolated live exercises. |
-| [`schemas/`](schemas/) and [`examples/`](examples/) | 8 strict JSON Schemas and one cross-file contract bundle. |
-| [`config/`](config/) | Reviewed environment and matching policy. |
-| [`corpus/`](corpus/) | Labeled announcements and accepted precision and recall thresholds. |
-| [`site/`](site/) | GitHub Pages source, public MVP media, editable draw.io diagram, SVG export, and generated Slack example. |
+| [`infra/`](infra/) | Bootstrap, central service, isolated preflight, and deployment-specific live-control Terraform. |
+| [`config/`](config/) and [`corpus/`](corpus/) | Reviewed policy, labeled announcements, and matching thresholds. |
+| [`schemas/`](schemas/) and [`examples/`](examples/) | Strict contracts and the canonical cross-file example bundle. |
 | [`scripts/`](scripts/) and [`tests/`](tests/) | Validators, operator commands, regression tests, and service-mock tests. |
-| [`docs/`](docs/) | Product goal, specification, ADRs, runbooks, agent-tooling notes, and supporting assets. |
+| [`docs/`](docs/) | Product goal, specification, ADRs, runbooks, evidence, and supporting assets. |
+| [`site/`](site/) | GitHub Pages source, diagrams, generated Slack sample, and walkthrough media. |
 
 ## Documentation
 
-- [Public system page](https://lilabrooks.github.io/aws-public-change-feed/): system diagram, processing summary, contract checks, and generated Slack output.
-- [Product goal](docs/GOAL.md): scope, exclusions, quality bar, and completion criteria.
-- [Architecture index](docs/architecture/README.md): 6 specification chapters, 26 accepted ADRs, and the schema-to-example map.
-- [Repository checks](docs/repository-file-checks.md): local, CI, security, and operator-only checks, plus a diagram of the 4 CI workflows.
-- [DynamoDB PITR recovery decision](docs/adr/027-dynamodb-point-in-time-recovery.md): the 35-day two-table mechanism, safety boundaries, staged proof, implemented checks, and completed L-41 evidence.
-- [Operations runbook](docs/runbooks/operations.md): deployment, alarms, recovery, replay, rollback, and incident procedures.
-- [Live windows and parking](docs/runbooks/live-window.md): bounded unpark/test/park commands, remaining qualification gates, retained costs, resource tags, and billing activation.
-- [Agent tooling notes](docs/agent-tooling.md): repository-specific AWS documentation and research boundaries.
-- [Service walkthrough](docs/evidence/mvp-walkthrough.md): one video covering the MVP and readiness decision, captions, transcript, and artifact hashes.
-- [How readiness was established](docs/production-readiness.md): the decision, evidence reuse, rollback proof, and retained limits.
-- [Final M3 assessment](docs/evidence/m3-production-readiness-assessment-2026-09-06.md): each criterion, baseline, relevant change, and final disposition.
-- [Production policy evidence](docs/evidence/production-policy.md): exact policy inputs, corpus results, pair-level sample limits, and revisit conditions.
-- [L-42 shadow and rollback evidence](docs/evidence/l42-shadow-and-rollback-2026-09-06.md): live shadow results, configuration rollback and restoration, runtime recovery, retained artifact audit, evidence limits, and successor issues.
+- [Product goal](docs/GOAL.md): outcome, scope, quality bar, and current evidence.
+- [Architecture index](docs/architecture/README.md): six specification chapters, 26 accepted ADRs, and the contract map.
+- [Operations runbook](docs/runbooks/operations.md): publication, preflight, rollback, replay, alarms, and recovery.
+- [Live windows and parking](docs/runbooks/live-window.md): the current dev-only supervised control path and retained costs.
+- [Repository checks](docs/repository-file-checks.md): local and CI checks, tool requirements, and security scanning.
+- [Public system page](https://lilabrooks.github.io/aws-public-change-feed/): diagram, walkthrough, and generated Slack output.
 
 Changes to product scope, trust boundaries, identity, state ownership, delivery guarantees, or version policy require an ADR. Run `make check` before opening a pull request.
 
@@ -218,4 +246,4 @@ Copyright 2026 Lila Brooks.
 
 Licensed under the [Apache License 2.0](LICENSE). Redistributed copies and derivative works must preserve the attribution in [NOTICE](NOTICE).
 
-References verified: 2026-08-29.
+References verified: 2026-09-08.
