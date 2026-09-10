@@ -86,8 +86,9 @@ This file is the shared instruction source. Codex reads it directly; `CLAUDE.md`
 Three differences between the hosts are deliberate:
 
 - `CLAUDE.md` also imports `docs/GOAL.md` and `docs/architecture/README.md` so Claude Code loads them automatically. Codex has no import mechanism, so it follows the read order above. Both hosts end up with the same material; only the loading differs.
-- The AWS MCP server is declared twice, in `.mcp.json` for Claude Code and `.codex/config.toml` for Codex, because the hosts read different files and share no format. A change to one needs the same change to the other. Codex loads project configuration for trusted projects only, so trust the project if the server does not appear.
+- The AWS MCP server is declared twice, in `.mcp.json` for Claude Code and `.codex/config.toml` for Codex, because the hosts read different files and share no format. A change to one needs the same change to the other. Treat both tracked declarations as closed contracts: the only server is `aws-mcp`, its endpoint must equal the one recorded in `docs/agent-tooling.md`, and neither entry may add a process, arguments, environment, headers, token source, or authentication configuration. Codex loads project configuration for trusted projects only, so trust the project if the server does not appear.
 - `.claude/settings.json` denies reading `.env` files and denies the server's four account-capable tools. Codex has no equivalent project setting, so those controls protect Claude Code sessions only. On Codex the tools are merely unusable while nobody authenticates, which is a weaker guarantee. Treat both as a convenience rather than an enforced boundary on either host, keep secrets out of the repository regardless, and do not authenticate the server.
+- `tests/test_agent_config.py` enforces the parsed adapter structure, the documented endpoint, and the exact Claude deny names. It cannot inspect or constrain user-global host configuration, so do not treat a passing repository check as evidence about host-global MCP or Agent Toolkit state.
 
 ## Repository layout
 
