@@ -11,6 +11,20 @@ The AWS MCP server, declared once per host because the two read different files 
 
 A change to one needs the same change to the other. [`tests/test_agent_config.py`](../tests/test_agent_config.py) fails when they drift.
 
+The tracked declarations are closed contracts. Both contain only the `aws-mcp`
+server at the exact endpoint below. The Claude entry contains only `type` (with
+value `http`) and `url`; the Codex entry contains only `url`. Focused regressions
+mutate and reject process launchers, arguments, environment values, static and
+environment-backed headers, token or authentication settings, endpoint and
+server-key changes, extra servers, and each missing required Claude deny.
+
+That enforcement ends at the repository boundary. The tests read the tracked
+adapters, Claude settings, this document, and the shared instructions. They
+cannot inspect or constrain a user-global MCP entry, Agent Toolkit installation,
+cached credential, or other host-global state. A passing check proves the
+tracked adapters contain no credential source or authentication override. It
+does not prove the host is unauthenticated.
+
 Endpoint `https://aws-mcp.us-east-1.api.aws/mcp` over HTTP, **used unauthenticated**. This replaced the AWS Knowledge server on 2026-08-04; see the migration note below for why and what it cost.
 
 The server exposes nine tools, and they do not all behave the same way without credentials:
@@ -251,7 +265,7 @@ What it cost is honest to state: the tool surface went from five read-only tools
 
 The corpus-boundary question in the first draft is settled. Codex reviewed it, the rule held, and its wording was too broad twice over: it read as forbidding announcement research rather than reserving two fields, and it claimed a single acquisition path for a corpus that ADR-018 lets carry authored fixtures. Narrowed above. The property to preserve in any future revision is unchanged — historical corpus text equals what the matcher sees in production.
 
-References verified: 2026-08-04.
+References verified: 2026-09-09.
 
 - [AWS MCP server setup, including the switch recommendation](https://docs.aws.amazon.com/agent-toolkit/latest/userguide/getting-started-aws-mcp-server.html)
 - [AWS MCP server general availability](https://aws.amazon.com/blogs/aws/the-aws-mcp-server-is-now-generally-available/)
@@ -259,3 +273,4 @@ References verified: 2026-08-04.
 - [AWS Knowledge MCP server](https://awslabs.github.io/mcp/servers/aws-knowledge-mcp-server)
 - [S3 conditional writes](https://docs.aws.amazon.com/AmazonS3/latest/userguide/conditional-writes.html)
 - [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp)
+- [Codex configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference)
