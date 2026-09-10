@@ -1,6 +1,8 @@
 import hashlib
 import io
 import json
+import os
+import re
 import shutil
 import statistics
 import subprocess
@@ -347,6 +349,34 @@ class CommittedCorpusTests(unittest.TestCase):
 
 
 class CommandPolicyTests(unittest.TestCase):
+    CONFIG_PATH_HELP = "policy path, relative to --root unless absolute (default: config/dev.yaml)"
+
+    @staticmethod
+    def normalize_help(text):
+        soft_hyphen_wraps_removed = re.sub(r"(?<=\w)-\r?\n[ \t]+(?=\w)", "-", text)
+        return " ".join(soft_hyphen_wraps_removed.split())
+
+    def run_help(self, script, columns):
+        result = subprocess.run(
+            [sys.executable, script, "--help"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=os.environ | {"COLUMNS": str(columns)},
+        )
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return self.normalize_help(result.stdout)
+
+    def assert_config_path_help(self, text):
+        self.assertIn(self.CONFIG_PATH_HELP, text)
+
+    def assert_help_is_terminal_width_independent(self, script):
+        narrow = self.run_help(script, 40)
+        normal = self.run_help(script, 100)
+        self.assertEqual(narrow, normal)
+        self.assert_config_path_help(narrow)
+
     def test_make_recipes_select_the_dev_policy_explicitly(self):
         lines = (ROOT / "Makefile").read_text(encoding="utf-8").splitlines()
         expected = {
@@ -358,21 +388,30 @@ class CommandPolicyTests(unittest.TestCase):
                 position = lines.index(target)
                 self.assertEqual(lines[position + 1], recipe)
 
-    def test_readme_and_cli_help_document_both_config_path_forms(self):
+    def test_readme_documents_both_config_path_forms(self):
         text = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn("Relative paths resolve from `--root`", text)
         self.assertRegex(text, r"absolute paths\s+are accepted")
-        for script in ("scripts/evaluate_corpus.py", "scripts/screen_feeds.py"):
-            with self.subTest(script=script):
-                result = subprocess.run(
-                    [sys.executable, script, "--help"],
-                    cwd=ROOT,
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                )
-                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("relative to --root unless absolute", result.stdout)
+
+    def test_evaluator_help_is_terminal_width_independent(self):
+        self.assert_help_is_terminal_width_independent("scripts/evaluate_corpus.py")
+
+    def test_feed_screen_help_is_terminal_width_independent(self):
+        self.assert_help_is_terminal_width_independent("scripts/screen_feeds.py")
+
+    def test_evaluator_help_check_rejects_lost_absolute_path_wording(self):
+        help_text = self.run_help("scripts/evaluate_corpus.py", 100)
+        missing_absolute_wording = help_text.replace(" unless absolute", "")
+        self.assertNotEqual(missing_absolute_wording, help_text)
+        with self.assertRaises(AssertionError):
+            self.assert_config_path_help(missing_absolute_wording)
+
+    def test_feed_screen_help_check_rejects_lost_absolute_path_wording(self):
+        help_text = self.run_help("scripts/screen_feeds.py", 100)
+        missing_absolute_wording = help_text.replace(" unless absolute", "")
+        self.assertNotEqual(missing_absolute_wording, help_text)
+        with self.assertRaises(AssertionError):
+            self.assert_config_path_help(missing_absolute_wording)
 
 
 class CorpusRejectionTests(unittest.TestCase):
