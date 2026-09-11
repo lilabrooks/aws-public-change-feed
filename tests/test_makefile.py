@@ -9,7 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 MAKEFILE = ROOT / "Makefile"
 # An enclosing `make check VAR=value` passes VAR and make's own flags to every
 # nested make through MAKEFLAGS; MAKEOVERRIDES and MFLAGS can travel with it.
-ENCLOSING_MAKE_VARIABLES = ("MAKEFLAGS", "MAKEOVERRIDES", "MFLAGS")
+# GNU make 4.x also reads operator-supplied GNUMAKEFLAGS.
+MAKE_ENVIRONMENT_VARIABLES = ("MAKEFLAGS", "GNUMAKEFLAGS", "MAKEOVERRIDES", "MFLAGS")
 
 
 class WhitespaceGateTests(unittest.TestCase):
@@ -34,7 +35,7 @@ class WhitespaceGateTests(unittest.TestCase):
         environment.pop("CHECK_DIFF_BASE", None)
         environment.pop("CHECK_DIFF_HEAD", None)
         if not inherit_enclosing_make:
-            for name in ENCLOSING_MAKE_VARIABLES:
+            for name in MAKE_ENVIRONMENT_VARIABLES:
                 environment.pop(name, None)
         if base is not None:
             command.extend((f"CHECK_DIFF_BASE={base}", "CHECK_DIFF_HEAD=HEAD"))
@@ -47,7 +48,9 @@ class WhitespaceGateTests(unittest.TestCase):
             fixture = directory / "fixture.txt"
 
             fixture.write_text("bad trailing space \n", encoding="utf-8")
-            self.assertNotEqual(self.run_whitespace(directory).returncode, 0)
+            working_result = self.run_whitespace(directory)
+            self.assertNotEqual(working_result.returncode, 0)
+            self.assertIn("trailing whitespace", working_result.stdout)
 
             self.commit(directory, "bad committed whitespace")
             with patch.dict(
@@ -71,7 +74,13 @@ class WhitespaceGateTests(unittest.TestCase):
     def test_enclosing_make_overrides_do_not_reach_the_gate(self):
         # `make check CHECK_DIFF_BASE=<sha>` exports this, naming a commit the fixture
         # repository lacks. The inheriting run proves the running make still honors it.
-        with patch.dict(os.environ, {"MAKEFLAGS": " -- CHECK_DIFF_BASE=outer-make-base"}):
+        with patch.dict(
+            os.environ,
+            {
+                "MAKEFLAGS": " -- CHECK_DIFF_BASE=outer-make-base",
+                "GNUMAKEFLAGS": " -- CHECK_DIFF_BASE=outer-gnu-base",
+            },
+        ):
             with tempfile.TemporaryDirectory() as raw_directory:
                 directory = Path(raw_directory)
                 self.create_repository(directory)
