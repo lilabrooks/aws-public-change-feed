@@ -130,7 +130,10 @@ and are not reported as passing.
 
 ## Contract acceptance
 
-- Given a clean checkout, the six canonical examples load as one bundle, every document passes its paired JSON Schema, and all cross-document semantic checks pass.
+- Given a clean checkout, the six canonical release and delivery examples load
+  as one bundle, every document passes its paired JSON Schema, and all
+  cross-document semantic checks pass. The separate illustrative Lambda
+  package manifest passes its own schema and known-answer checks.
 - Given documents that pass their schemas individually but disagree on projections, references, routes, or release data, bundle validation fails.
 - Given an example edit that changes release or event identity inputs without recalculating dependent hashes, bundle validation fails.
 - Given an unknown field in any owned object, validation fails.

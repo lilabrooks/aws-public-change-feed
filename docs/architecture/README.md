@@ -138,9 +138,22 @@ ADR numbers 003, 005, 008, and 012 were superseded when ADR-017 narrowed the pro
 | Approved matching thresholds | [`corpus-thresholds.schema.json`](../../schemas/corpus-thresholds.schema.json) | [`thresholds.json`](../../corpus/thresholds.json) |
 | Lambda package provenance | [`lambda-package-manifest.schema.json`](../../schemas/lambda-package-manifest.schema.json) | [`lambda-package-manifest.json`](../../examples/lambda-package-manifest.json) |
 
+The Lambda package manifest example uses fixed synthetic package inputs to show
+the strict document shape; an independent known answer pins its canonical
+encoding. Package tests recompute the manifest for the current real source tree
+and bind the reviewed builder, lock, handler, and target identities separately,
+so an ordinary source edit does not turn the public example into a volatile
+build record.
+
 [`validate_config.py`](../../scripts/validate_config.py) enforces schema and cross-document rules. [`test_validate_config.py`](../../tests/test_validate_config.py) keeps a regression case for each rejected mutation.
 
-The six files under [`examples/`](../../examples/) form one executable contract bundle. The validator loads them together, checks each file against the contract in the same table row, and then verifies their shared projections, references, release hashes, deterministic identities, routes, retention rules, and size limits. This proves both individual file shape and cross-file behavior.
+The six release and delivery files under [`examples/`](../../examples/) form one
+executable contract bundle. The Lambda package manifest is the separate
+illustrative example described above. The validator loads the six bundle files
+together, checks each against its paired contract, and then verifies their
+shared projections, references, release hashes, deterministic identities,
+routes, retention rules, and size limits. This proves both individual file
+shape and cross-file behavior.
 
 Tests create mutations from this canonical valid bundle and confirm that each invalid change is rejected. A contract edit updates every affected schema, example, semantic validator, and regression test in the same change. Edits that affect release, candidate, or request identity also recalculate every dependent hash.
 

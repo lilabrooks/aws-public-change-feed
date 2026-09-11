@@ -609,6 +609,14 @@ only after the inventory and plan digest still match. Each deletion names the
 exact VersionId and recorded ETag, then proves absence with an exact-version
 read. Partial, refused, failed, and ambiguous outcomes never report success.
 
+The committed public manifest example uses fixed synthetic package inputs. It
+documents the strict field contract without recording the current runtime tree;
+an independent known answer pins its canonical JSON representation. Tests
+recompute each real package manifest from its source bytes and separately bind
+reviewed builder, lock, handler, and target identities. Runtime-source changes
+therefore move the real manifest and package digest while the illustrative
+example stays fixed.
+
 Terraform requires the selected S3 SHA-256 checksum for every shared-runtime
 and reconciler package except the single L-53 legacy digest and VersionId named
 in ADR-026's accepted 2026-09-06 revision. That exception is eligible only after the

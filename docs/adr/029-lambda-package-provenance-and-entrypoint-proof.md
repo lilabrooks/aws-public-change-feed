@@ -64,6 +64,14 @@ The manifest uses UTF-8 JSON with sorted keys, compact separators,
 `ensure_ascii=False`, and no trailing newline. Unknown fields are refused. The
 manifest never contains the package ZIP digest because that would be recursive.
 
+The committed public manifest example documents this field shape with fixed
+synthetic source, lock, builder, and handler inputs. An independent test encodes
+that document under the canonical JSON rules and pins the resulting bytes.
+Current-package tests separately recompute the manifest from every real source
+member and bind the reviewed lock, builder, handler, and target identities. An
+ordinary runtime-source edit therefore changes the built manifest and ZIP digest
+without rewriting the illustrative example.
+
 The manifest also excludes the Git commit and tree, branch, dirty status,
 timestamp, host identity, and observed Python, pip, or zlib versions. Those
 values can change without changing package-producing content. Publication
@@ -222,6 +230,12 @@ check.
 
 ## Verification
 
+- The public example validates against the closed schema and recomputes from
+  fixed synthetic inputs; an independent known answer pins its canonical bytes.
+- A separate current-source test recomputes the real source-tree digest and
+  binds the reviewed lock, builder, handler list, handler digest, and target.
+- An in-memory runtime-source mutation changes both the generated manifest and
+  package digest while remaining distinct from the public example.
 - Independent known-answer tests recompute manifest bytes, the source-tree
   digest, handler digest, and hex-to-base64 package checksum from literals.
 - Every pre-write publication refusal asserts that no S3 write occurred.
