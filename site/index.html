@@ -568,6 +568,10 @@
             <dd>Nine JSON Schemas reject unknown fields in owned objects. Semantic checks resolve cross-file references; tests recompute release, candidate, and request hashes from fixture bytes.</dd>
           </div>
           <div class="site-spec-row">
+            <dt>Package manifest</dt>
+            <dd>The public Lambda manifest example uses fixed synthetic inputs to document its strict shape; a known-answer test pins its canonical encoding. Package tests separately recompute manifests from the current source tree and bind the reviewed builder, lock, handler, and target identities.</dd>
+          </div>
+          <div class="site-spec-row">
             <dt>Local gate</dt>
             <dd><code>make check</code> runs format, lint, type, schema, reference, corpus, unit, integration, Terraform, and page-drift checks.</dd>
           </div>

@@ -1,16 +1,13 @@
 {
-  "builder_contract_sha256": "355323a1b2179ac6875d606337eb21fb4ebb78bd98dcf70e5958305b2945f8ed",
+  "builder_contract_sha256": "db54ebad164c4536adc63cb6b1c5b6c6f2b3b98e2bbfb0af54b91ecde8084678",
   "contract_version": 1,
-  "requirements_lambda_sha256": "8a7431e06d3af0e67a29e7942a22cbeb50feab8a853a4163d8d27b771698f3eb",
+  "requirements_lambda_sha256": "3485536ea23cbda1829c992bdb7be9969439487db3d4a989eea273dce6997cd5",
   "runtime_entrypoints": [
-    "aws_public_change_feed.dispatcher_runtime.lambda_handler",
-    "aws_public_change_feed.recovery_runtime.lambda_handler",
-    "aws_public_change_feed.shadow_runtime.lambda_handler",
-    "aws_public_change_feed.slack_worker_runtime.lambda_handler",
-    "aws_public_change_feed.watcher_runtime.lambda_handler"
+    "aws_public_change_feed.example.lambda_handler",
+    "aws_public_change_feed.example.worker_handler"
   ],
-  "runtime_entrypoints_sha256": "8d934863e4305f466c8e4982215f37b48222fee3cb18635509fae7163156cf29",
-  "source_tree_sha256": "6270babcd76e421398e9ffc76336eac328f19320c12078c44ed8276e894428bd",
+  "runtime_entrypoints_sha256": "a8fa86b8bd8a0b546e10f42526be7c6e853d64fa272f13059ae09be12e29e235",
+  "source_tree_sha256": "c01e72855c4e956b4dfb53bbb2228025bdfa6ea58f47f0f8ce019b2950847adb",
   "target": {
     "architecture": "x86_64",
     "implementation": "cp",

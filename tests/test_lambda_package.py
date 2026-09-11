@@ -5,6 +5,7 @@ import hashlib
 import io
 import json
 import re
+import shutil
 import struct
 import sys
 import tempfile
@@ -133,17 +134,114 @@ class FakeS3:
 
 
 class LambdaPackageTests(unittest.TestCase):
-    def test_canonical_manifest_example_matches_source_and_schema(self):
+    def test_stable_manifest_example_matches_schema_and_independent_known_answers(self):
+        example = json.loads((ROOT / "examples/lambda-package-manifest.json").read_text(encoding="utf-8"))
+        schema = json.loads((ROOT / "schemas/lambda-package-manifest.schema.json").read_text(encoding="utf-8"))
+        source_path = b"aws_public_change_feed/example.py"
+        source_body = (
+            b"def lambda_handler(event, context):\n    return {}\n\n"
+            b"def worker_handler(event, context):\n    return {}\n"
+        )
+        framed_source = (
+            struct.pack(">Q", len(source_path)) + source_path + struct.pack(">Q", len(source_body)) + source_body
+        )
+        entrypoints = [
+            "aws_public_change_feed.example.lambda_handler",
+            "aws_public_change_feed.example.worker_handler",
+        ]
+        expected = {
+            "builder_contract_sha256": hashlib.sha256(b"synthetic builder contract\n").hexdigest(),
+            "contract_version": 1,
+            "requirements_lambda_sha256": hashlib.sha256(b"synthetic-runtime==1.0.0\n").hexdigest(),
+            "runtime_entrypoints": entrypoints,
+            "runtime_entrypoints_sha256": hashlib.sha256("\0".join(entrypoints).encode()).hexdigest(),
+            "source_tree_sha256": hashlib.sha256(framed_source).hexdigest(),
+            "target": {
+                "architecture": "x86_64",
+                "implementation": "cp",
+                "platform": "manylinux2014_x86_64",
+                "python_version": "3.12",
+            },
+        }
+
+        jsonschema.Draft202012Validator(schema).validate(example)
+        self.assertEqual(example, expected)
+        canonical = json.dumps(example, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode()
+        self.assertEqual(
+            hashlib.sha256(canonical).hexdigest(),
+            "8fae44b1adbbb7d2acaddee48c4b1b4d4c0ccc616e2027d4a717589259a6b180",
+        )
+
+    def test_current_source_manifest_matches_reviewed_package_inputs(self):
         source = {
             path.relative_to(ROOT / "src").as_posix(): path.read_bytes()
             for path in (ROOT / "src/aws_public_change_feed").rglob("*")
             if path.is_file() and "__pycache__" not in path.parts and path.suffix != ".pyc"
         }
-        example = json.loads((ROOT / "examples/lambda-package-manifest.json").read_text(encoding="utf-8"))
-        schema = json.loads((ROOT / "schemas/lambda-package-manifest.schema.json").read_text(encoding="utf-8"))
+        source_digest = hashlib.sha256()
+        for path in sorted(source, key=lambda value: value.encode("utf-8")):
+            path_bytes = path.encode()
+            body = source[path]
+            source_digest.update(struct.pack(">Q", len(path_bytes)))
+            source_digest.update(path_bytes)
+            source_digest.update(struct.pack(">Q", len(body)))
+            source_digest.update(body)
+        expected = {
+            "builder_contract_sha256": "355323a1b2179ac6875d606337eb21fb4ebb78bd98dcf70e5958305b2945f8ed",
+            "contract_version": 1,
+            "requirements_lambda_sha256": "8a7431e06d3af0e67a29e7942a22cbeb50feab8a853a4163d8d27b771698f3eb",
+            "runtime_entrypoints": [
+                "aws_public_change_feed.dispatcher_runtime.lambda_handler",
+                "aws_public_change_feed.recovery_runtime.lambda_handler",
+                "aws_public_change_feed.shadow_runtime.lambda_handler",
+                "aws_public_change_feed.slack_worker_runtime.lambda_handler",
+                "aws_public_change_feed.watcher_runtime.lambda_handler",
+            ],
+            "runtime_entrypoints_sha256": "8d934863e4305f466c8e4982215f37b48222fee3cb18635509fae7163156cf29",
+            "source_tree_sha256": source_digest.hexdigest(),
+            "target": {
+                "architecture": "x86_64",
+                "implementation": "cp",
+                "platform": "manylinux2014_x86_64",
+                "python_version": "3.12",
+            },
+        }
 
-        jsonschema.Draft202012Validator(schema).validate(example)
-        self.assertEqual(example, json.loads(manifest_bytes(source)))
+        self.assertEqual(json.loads(manifest_bytes(source)), expected)
+
+    def test_runtime_source_change_changes_manifest_and_package_without_changing_the_public_example(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            source_package = root / "aws_public_change_feed"
+            shutil.copytree(
+                ROOT / "src/aws_public_change_feed",
+                source_package,
+                ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+            )
+            original_package = root / "original.zip"
+            changed_package = root / "changed.zip"
+            with (
+                patch("build_lambda_package.SOURCE_PACKAGE", source_package),
+                patch("build_lambda_package.subprocess.run") as install,
+            ):
+                build(original_package)
+                changed_source = source_package / "normalize.py"
+                changed_source.write_bytes(changed_source.read_bytes() + b"\nSOURCE_CHANGE_FIXTURE = True\n")
+                build(changed_package)
+
+            self.assertEqual(install.call_count, 2)
+            original_bytes = original_package.read_bytes()
+            changed_bytes = changed_package.read_bytes()
+        with zipfile.ZipFile(io.BytesIO(original_bytes)) as archive:
+            original_manifest = json.loads(archive.read(MANIFEST_PATH))
+        with zipfile.ZipFile(io.BytesIO(changed_bytes)) as archive:
+            changed_manifest = json.loads(archive.read(MANIFEST_PATH))
+        public_example = json.loads((ROOT / "examples/lambda-package-manifest.json").read_text(encoding="utf-8"))
+
+        self.assertNotEqual(original_manifest["source_tree_sha256"], changed_manifest["source_tree_sha256"])
+        self.assertNotEqual(hashlib.sha256(original_bytes).digest(), hashlib.sha256(changed_bytes).digest())
+        self.assertNotEqual(public_example, original_manifest)
+        self.assertNotEqual(public_example, changed_manifest)
 
     def test_source_tree_digest_has_an_independent_known_answer(self):
         path = b"aws_public_change_feed/a.py"
