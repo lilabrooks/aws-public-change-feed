@@ -6,6 +6,7 @@ import unittest
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from unittest.mock import Mock
 
 import boto3
 from moto import mock_aws
@@ -68,15 +69,82 @@ class DynamoDBFeedStateTests(unittest.TestCase):
     def tearDown(self):
         self.aws.stop()
 
-    def claim(self, *, owner="invocation-a", now=100, lease=460):
-        return self.store.claim(
+    def claim(self, *, owner="invocation-a", now=100, lease=460, store=None, url=FEED_URL):
+        target = self.store if store is None else store
+        return target.claim(
             "aws-whats-new",
-            FEED_URL,
+            url,
             owner=owner,
             attempted_at=NOW,
             lease_expires_at=lease,
             now=now,
         )
+
+    def counted_store(self):
+        client = Mock(wraps=self.client)
+        return client, DynamoDBFeedStateStore(client, TABLE)
+
+    def assert_claim_calls(self, client, *, reads):
+        self.assertEqual(client.update_item.call_count, 1)
+        self.assertEqual(client.get_item.call_count, reads)
+        self.assertEqual([entry[0] for entry in client.method_calls], ["update_item"] + ["get_item"] * reads)
+        for read_call in client.get_item.call_args_list:
+            self.assertIs(read_call.kwargs["ConsistentRead"], True)
+
+    def test_new_claim_uses_one_update_without_a_read(self):
+        client, store = self.counted_store()
+
+        self.assertIsNotNone(self.claim(store=store))
+
+        self.assert_claim_calls(client, reads=0)
+
+    def test_expired_same_url_takeover_uses_one_update_without_a_read(self):
+        self.assertIsNotNone(self.claim())
+        before = self.store.load("aws-whats-new")
+        assert before is not None
+        expiry = before.lease_expires_at
+        assert expiry is not None
+        client, store = self.counted_store()
+
+        takeover = self.claim(store=store, owner="invocation-b", now=expiry, lease=expiry + 360)
+
+        assert takeover is not None
+        self.assertEqual(takeover.lease_owner, "invocation-b")
+        self.assert_claim_calls(client, reads=0)
+
+    def test_live_contention_uses_one_update_and_one_consistent_read(self):
+        self.assertIsNotNone(self.claim())
+        before = self.store.load("aws-whats-new")
+        assert before is not None
+        expiry = before.lease_expires_at
+        assert expiry is not None
+        client, store = self.counted_store()
+
+        self.assertIsNone(self.claim(store=store, owner="invocation-b", now=expiry - 1, lease=expiry + 359))
+
+        self.assert_claim_calls(client, reads=1)
+        self.assertEqual(self.store.load("aws-whats-new"), before)
+
+    def test_expired_url_mismatch_uses_one_update_and_one_consistent_read(self):
+        self.assertIsNotNone(self.claim())
+        before = self.store.load("aws-whats-new")
+        assert before is not None
+        self.assertEqual(before.lease_owner, "invocation-a")
+        expiry = before.lease_expires_at
+        assert expiry is not None
+        client, store = self.counted_store()
+
+        with self.assertRaisesRegex(ValueError, "stored feed_url does not match"):
+            self.claim(
+                store=store,
+                url="https://aws.amazon.com/another-feed/",
+                owner="invocation-b",
+                now=expiry,
+                lease=expiry + 360,
+            )
+
+        self.assert_claim_calls(client, reads=1)
+        self.assertEqual(self.store.load("aws-whats-new"), before)
 
     def test_claim_uses_the_exact_feed_key_and_sets_first_attempt_once(self):
         claimed = self.claim()
@@ -333,6 +401,28 @@ class FeedStateClaimParityTests(unittest.TestCase):
                 )
                 with self.assertRaisesRegex(ValueError, "stored feed_url does not match"):
                     self.claim(store, changed_url, owner="invocation-b", now=101, lease=461)
+
+    def test_changed_feed_url_is_an_invariant_failure_after_lease_expiry(self):
+        changed_url = "https://aws.amazon.com/another-feed/"
+        for label, store in self.stores:
+            with self.subTest(store=label):
+                self.assertIsNotNone(self.claim(store))
+                before = store.load("aws-whats-new")
+                assert before is not None
+                self.assertEqual(before.lease_owner, "invocation-a")
+                expiry = before.lease_expires_at
+                assert expiry is not None
+
+                with self.assertRaisesRegex(ValueError, "stored feed_url does not match"):
+                    self.claim(
+                        store,
+                        changed_url,
+                        owner="invocation-b",
+                        now=expiry,
+                        lease=expiry + 360,
+                    )
+
+                self.assertEqual(store.load("aws-whats-new"), before)
 
     def test_same_url_contention_and_released_reclaim_stay_valid(self):
         for label, store in self.stores:
