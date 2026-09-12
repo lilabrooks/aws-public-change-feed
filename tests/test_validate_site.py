@@ -290,7 +290,7 @@ class SiteValidatorTests(unittest.TestCase):
         )
         self.assertNotIn("packages accumulate until it exists", page)
 
-    def test_m2_and_m3_status_match_the_completed_milestones(self):
+    def test_milestone_status_matches_the_completed_work(self):
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         goal = (ROOT / "docs/GOAL.md").read_text(encoding="utf-8")
         walkthrough = (ROOT / "docs/evidence/mvp-walkthrough.md").read_text(encoding="utf-8")
@@ -298,10 +298,14 @@ class SiteValidatorTests(unittest.TestCase):
 
         self.assertIn("milestone/3) | Closed |", readme)
         self.assertIn("milestone/4) | Closed |", readme)
-        self.assertIn("D0, M1, M2, and M3 are complete.", page)
+        self.assertIn("milestone/6) | Closed |", readme)
+        self.assertIn("the offline M5 maintenance milestone is closed", page)
         self.assertIn("M2 · Closed", page)
         self.assertIn("M3 · Passed", page)
+        self.assertIn("M5 · Closed", page)
         self.assertIn("76 announcement rows and 88 response-page rows", goal)
+        self.assertIn("**Offline maintenance readiness.**", goal)
+        self.assertIn("product scope nor its operating mode", goal)
         self.assertIn("M3 later passed production readiness", walkthrough)
         for stale_claim in (
             "Remaining work will make each source-state load",
@@ -310,6 +314,8 @@ class SiteValidatorTests(unittest.TestCase):
             "M2 · Open",
             "M3 is open",
             "M3 · Open",
+            "M5 is open",
+            "M5 · Open",
             "Production readiness remains open under M3.",
             "under M2 and M3",
             "built locally but have not yet run against the table",

@@ -669,7 +669,7 @@ Recommended review action: Review supported Kubernetes versions and plan require
           <p class="compact-eyebrow">Status</p>
           <div>
             <h2 class="compact-section-title">Scoped readiness passed. Dev remains supervised.</h2>
-            <p class="compact-section-copy">D0, M1, M2, and M3 are complete. Dev is parked between live tests; <a href="#live-operation">the M4 short-window proof passed, and unattended use remains gated.</a></p>
+            <p class="compact-section-copy">D0 through M3 are complete, the M4 short-window proof passed, and the offline M5 maintenance milestone is closed. Dev is parked between live tests; <a href="#live-operation">unattended use remains gated.</a></p>
           </div>
         </div>
         <details class="site-disclosure">
@@ -695,6 +695,10 @@ Recommended review action: Review supported Kubernetes versions and plan require
               <tr>
                 <th scope="row">M4 · Proof passed</th>
                 <td>Fixed observation, early parking, and deadline cleanup after loss of the local waiter passed on 2026-09-08. Unattended use remains outside this result.</td>
+              </tr>
+              <tr>
+                <th scope="row">M5 · Closed</th>
+                <td>Offline maintenance tightened tracked agent-adapter guards, made CLI help contract tests terminal-width independent, separated the stable package-manifest example from real-source verification, and added expired feed-lease parity plus exact claim call-count coverage. It required no AWS activation. <a href="https://github.com/lilabrooks/aws-public-change-feed/milestone/6">Read the milestone.</a></td>
               </tr>
             </tbody>
           </table>
