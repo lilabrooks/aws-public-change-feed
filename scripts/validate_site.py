@@ -32,7 +32,7 @@ MVP_VIDEO_URL = (
     f"https://github.com/lilabrooks/aws-public-change-feed/releases/download/mvp-evidence-v2/{MVP_VIDEO_NAME}"
 )
 MVP_VIDEO_SHA256 = "adfdd7c7ef8c1071e2b848b49c93e6f75a6003a331f3fc2a31ee54dcb43c5bd7"
-WALKTHROUGH_DIR = Path("site/media/walkthrough-v3")
+WALKTHROUGH_DIR = Path("site/media/walkthrough-v4")
 WALKTHROUGH_FILES = {
     "aws-public-change-alerting-walkthrough-web.mp4",
     "aws-public-change-alerting-walkthrough.mp4",
@@ -40,7 +40,7 @@ WALKTHROUGH_FILES = {
     "chapters.vtt",
     "poster.png",
     "poster.svg",
-    *(f"scene-{number:02d}.svg" for number in range(1, 9)),
+    *(f"scene-{number:02d}.svg" for number in range(1, 11)),
 }
 ACCEPTED_ADR_COUNT_RE = re.compile(r"(?<![0-9])([0-9]+) accepted ADRs")
 ADR_INDEX_LINK_RE = re.compile(
@@ -513,7 +513,7 @@ def validate_repository(root: Path) -> list[str]:
             errors.append(f"{PAGE_PATH}: MVP video is missing attributes: {', '.join(missing_attributes)}")
         if video.get("preload") != "metadata":
             errors.append(f"{PAGE_PATH}: MVP video must preload metadata only")
-        if video.get("poster") != "./media/walkthrough-v3/poster.png":
+        if video.get("poster") != "./media/walkthrough-v4/poster.png":
             errors.append(f"{PAGE_PATH}: MVP video must use the reviewed poster")
         if video.get("width") != "1920" or video.get("height") != "1080":
             errors.append(f"{PAGE_PATH}: MVP video dimensions must be 1920 by 1080")
@@ -525,14 +525,14 @@ def validate_repository(root: Path) -> list[str]:
         if expected_reference not in page_references:
             errors.append(f"{PAGE_PATH}: missing architecture artifact link: {expected_reference}")
     for expected_reference in (
-        "./media/walkthrough-v3/aws-public-change-alerting-walkthrough.mp4",
-        "./media/walkthrough-v3/aws-public-change-alerting-walkthrough-web.mp4",
-        "./media/walkthrough-v3/captions.vtt",
-        "./media/walkthrough-v3/chapters.vtt",
+        "./media/walkthrough-v4/aws-public-change-alerting-walkthrough.mp4",
+        "./media/walkthrough-v4/aws-public-change-alerting-walkthrough-web.mp4",
+        "./media/walkthrough-v4/captions.vtt",
+        "./media/walkthrough-v4/chapters.vtt",
         "./readiness.svg",
         "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf",
         "./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx",
-        "./media/walkthrough-v3/SHA256SUMS",
+        "./media/walkthrough-v4/SHA256SUMS",
     ):
         if expected_reference not in page_references:
             errors.append(f"{PAGE_PATH}: missing walkthrough reference: {expected_reference}")

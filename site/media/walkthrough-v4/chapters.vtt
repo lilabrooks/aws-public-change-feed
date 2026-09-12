@@ -1,0 +1,41 @@
+WEBVTT
+
+1
+00:00:00.000 --> 00:00:26.100
+Architecture, delivery, and operations
+
+2
+00:00:26.100 --> 00:01:00.200
+How the Lambda jobs connect
+
+3
+00:01:00.200 --> 00:01:45.433
+Why these services have separate jobs
+
+4
+00:01:45.433 --> 00:02:11.167
+Delivery, recovery, and load
+
+5
+00:02:11.167 --> 00:02:37.200
+Retention and source replay
+
+6
+00:02:37.200 --> 00:02:59.400
+What the matching score supports
+
+7
+00:02:59.400 --> 00:03:23.333
+Application rollback proof
+
+8
+00:03:23.333 --> 00:03:47.233
+The readiness result and its limits
+
+9
+00:03:47.233 --> 00:04:33.533
+Supervised windows with durable cleanup
+
+10
+00:04:33.533 --> 00:05:09.233
+Maintenance that preserves the contracts

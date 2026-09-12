@@ -1,24 +1,23 @@
-# Service walkthrough: delivery, lifecycle, and readiness
+# Service walkthrough: architecture, delivery, and operations
 
-One walkthrough covers the completed M1, M2, and M3 milestones. Slides 2 and 3
-explain the runtime architecture, shared state, and operational evidence. The
-remaining scenes cover the recorded live results, lifecycle changes, and
-application rollback proof.
-The opening and narration describe the completed project at the reviewed dev
-boundary. Private AWS account and Slack details are omitted.
+A 5:09 walkthrough explains public-feed matching, the five Lambda roles,
+state ownership, and measured delivery, recovery, and load results. It retains
+the retention, replay, corpus, and application-rollback details, then adds
+supervised operation and the four offline maintenance improvements.
+Private AWS account and Slack details are omitted.
 
 ## Watch or download
 
 - [Watch the narrated video with captions](https://lilabrooks.github.io/aws-public-change-feed/)
-- [Download the 1080p MP4](../../site/media/walkthrough-v3/aws-public-change-alerting-walkthrough.mp4)
+- [Download the 1080p MP4](../../site/media/walkthrough-v4/aws-public-change-alerting-walkthrough.mp4)
 - [Open the original MVP slides as PDF](../../site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf)
 - [Download the original MVP PowerPoint](../../site/media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx)
-- [Read the WebVTT captions](../../site/media/walkthrough-v3/captions.vtt)
-- [Verify the current media hashes](../../site/media/walkthrough-v3/SHA256SUMS)
+- [Read the WebVTT captions](../../site/media/walkthrough-v4/captions.vtt)
+- [Verify the current media hashes](../../site/media/walkthrough-v4/SHA256SUMS)
 
 The site plays a 720p copy and links the 1080p download. The complete narration
 uses the original voice setup: Kokoro 0.9.4, Kokoro-82M, American English,
-`af_heart`, speed 1.0. The [media notes](../../site/media/walkthrough-v3/README.md)
+`af_heart`, speed 1.0. The [media notes](../../site/media/walkthrough-v4/README.md)
 record the chapter timings, editable frames, and explicit A-W-S pronunciation
 rule. Playback does not invoke the model.
 
@@ -40,17 +39,28 @@ and [final assessment](m3-production-readiness-assessment-2026-09-06.md).
 The video summarizes those records; it does not expand their claims.
 
 The historical MVP release and its nine-slide PDF and PowerPoint remain
-unchanged. This current walkthrough has a revised opening, eight technical
-scenes, and a complete replacement narration.
+unchanged. This revision retains the technical narration from scenes 2–8,
+replaces the opening, and adds two operations and maintenance scenes.
+
+The [September 8 supervised-window record](l57-l58-supervised-live-window-2026-09-08.md)
+and accepted [ADR-030](../adr/030-bounded-live-windows-and-terraform-parking.md)
+own the M4 claims. Its quiet fixed cohort is scheduled-health evidence, with
+no new post and no extension. An operator remains available through terminal
+parked verification; unattended notification qualification remains pending.
+M5’s closed issues record [tracked adapter guards](https://github.com/lilabrooks/aws-public-change-feed/issues/118),
+[CLI help contracts](https://github.com/lilabrooks/aws-public-change-feed/issues/108),
+[manifest verification](https://github.com/lilabrooks/aws-public-change-feed/issues/194),
+and [feed-claim parity and call counts](https://github.com/lilabrooks/aws-public-change-feed/issues/65).
 
 ## Narration transcript
 
-### 1. Delivery, lifecycle, and readiness
+### 1. Architecture, delivery, and operations
 
-AWS Public Change Alerting matches public AWS announcements to configured
-services and risk phrases, then sends the results to Slack. M1 proved
-delivery, M2 added retention and replay controls, and M3 established readiness
-for the reviewed deployment.
+AWS Public Change Alerting matches public AWS announcements to configured services and risk phrases, then sends route-scoped candidates to Slack.
+
+Each candidate preserves the matched text, potentially relevant environments, and exact configuration release.
+
+The architecture keeps feed checkpoints, queued work, and Slack outcomes traceable through delivery and recovery.
 
 ### 2. How the Lambda jobs connect
 
@@ -74,7 +84,7 @@ timestamp a recovery request used. It doesn't prove restored contents.
 Terraform defines the resources and scoped IAM roles, including access to
 Slack credentials.
 
-### 4. What M1 exercised
+### 4. Delivery, recovery, and load
 
 M1's live cohort produced twelve Slack posts, each with one network attempt,
 and twelve posted records in DynamoDB. A separate recovery exercise completed
@@ -82,7 +92,7 @@ a pending delivery and moved an expired send lease to delivery unknown without
 another Slack call. The fixed load run created fifty records in ten minutes.
 The owner also received the alarm email.
 
-### 5. What M2 changed
+### 5. Retention and source replay
 
 M2 addressed what happens as history accumulates. The migration added expiry
 dates to one-hundred-and-sixty-four old rows, leaving the four active
@@ -97,7 +107,7 @@ false positives or false negatives, on forty-seven labeled items. That passes
 the global thresholds. But six configured pairs have no historical positive,
 so that score doesn't establish recall on real AWS wording for those pairs.
 
-### 7. The remaining rollback proof
+### 7. Application rollback proof
 
 M3 reused earlier evidence where the changes still supported it. The missing
 test was application rollback. With durable execution paused, we switched all
@@ -113,4 +123,30 @@ Terraform showed no changes. The owner accepted readiness for one environment
 and Slack destination at three-hundred delivery requests per hour. Live
 service on restored tables remains unproved.
 
-References verified: 2026-09-06.
+### 9. Supervised windows with durable cleanup
+
+M4 qualified supervised short dev windows.
+
+Step Functions owns the deadline; CodeBuild applies reviewed Terraform plans to activate and park the service.
+
+The fixed twenty-minute observation recorded one watcher, twenty dispatcher, and four reconciler invocations, with matching heartbeats and no scheduled-function errors or throttles.
+
+It produced no new Slack posts and ended without extension.
+
+Deadline cleanup survived local waiter loss, disabling four triggers, fencing five functions, and removing twenty-eight alarms and the dashboard.
+
+An operator remains available through parked verification; unattended notification qualification is still pending.
+
+### 10. Maintenance that preserves the contracts
+
+M5 tightened four maintenance checks without activating AWS.
+
+Tracked agent adapters reject credential-bearing configuration, and CLI help tests tolerate terminal wrapping while still requiring the documented wording.
+
+A stable synthetic package manifest is checked separately from current-source verification.
+
+Feed-claim tests now cover expired-lease URL mismatch and exact DynamoDB update and read counts.
+
+These changes preserve the service contracts and supervised operating boundary.
+
+References verified: 2026-09-12.
