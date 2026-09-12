@@ -10,14 +10,14 @@
   <meta property="og:title" content="AWS Public Change Alerting">
   <meta property="og:description" content="Matches public AWS feed items to configured services and risk phrases, then queues route-scoped Slack review candidates.">
   <meta property="og:url" content="https://lilabrooks.github.io/aws-public-change-feed/">
-  <meta property="og:image" content="https://lilabrooks.github.io/aws-public-change-feed/media/walkthrough-v3/poster.png">
-  <meta property="og:image:alt" content="AWS Public Change Alerting: delivery, lifecycle, and readiness.">
+  <meta property="og:image" content="https://lilabrooks.github.io/aws-public-change-feed/media/walkthrough-v4/poster.png">
+  <meta property="og:image:alt" content="AWS Public Change Alerting: architecture, delivery, and operations.">
   <meta property="og:image:width" content="1920">
   <meta property="og:image:height" content="1080">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="AWS Public Change Alerting">
-  <meta name="twitter:description" content="One walkthrough of public-feed delivery and the evidence used to establish scoped production readiness.">
-  <meta name="twitter:image" content="https://lilabrooks.github.io/aws-public-change-feed/media/walkthrough-v3/poster.png">
+  <meta name="twitter:description" content="Public-feed matching, the five Lambda roles, durable Slack delivery, measured results, and supervised operation.">
+  <meta name="twitter:image" content="https://lilabrooks.github.io/aws-public-change-feed/media/walkthrough-v4/poster.png">
   <link rel="canonical" href="https://lilabrooks.github.io/aws-public-change-feed/">
   <link rel="license" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/LICENSE">
   <link rel="stylesheet" href="./compact-theme.css">
@@ -459,10 +459,10 @@
     <section class="compact-section" id="mvp-demo">
       <div class="compact-shell">
         <div class="compact-section-head">
-          <p class="compact-eyebrow">3:41 walkthrough</p>
+          <p class="compact-eyebrow">5:09 walkthrough</p>
           <div>
-            <h2 class="compact-section-title">Watch the deployed service and readiness review.</h2>
-            <p class="compact-section-copy">The video covers the Lambda workflow, live delivery, recovery, load testing, and lifecycle work. Its readiness summary starts at 2:54. Private account and Slack details are omitted.</p>
+            <h2 class="compact-section-title">Architecture, delivery, and operations.</h2>
+            <p class="compact-section-copy">The video traces the five Lambda roles, DynamoDB state, SQS delivery, exact S3 releases, and measured recovery and load results. Rollback and readiness start at 2:59; supervised operation and maintenance start at 3:47. Private account and Slack details are omitted.</p>
           </div>
         </div>
 
@@ -473,45 +473,45 @@
             controls
             playsinline
             preload="metadata"
-            poster="./media/walkthrough-v3/poster.png"
+            poster="./media/walkthrough-v4/poster.png"
             width="1920"
             height="1080"
-            aria-label="Narrated service walkthrough: delivery, lifecycle, and readiness"
+            aria-label="Narrated service walkthrough: architecture, delivery, and operations"
           >
-            <source src="./media/walkthrough-v3/aws-public-change-alerting-walkthrough-web.mp4" type="video/mp4">
+            <source src="./media/walkthrough-v4/aws-public-change-alerting-walkthrough-web.mp4" type="video/mp4">
             <track
               default
               kind="captions"
               srclang="en"
               label="English"
-              src="./media/walkthrough-v3/captions.vtt"
+              src="./media/walkthrough-v4/captions.vtt"
             >
-            <track kind="chapters" srclang="en" label="Chapters" src="./media/walkthrough-v3/chapters.vtt">
-            Your browser cannot play this video. <a href="./media/walkthrough-v3/aws-public-change-alerting-walkthrough.mp4">Download the MP4</a> instead.
+            <track kind="chapters" srclang="en" label="Chapters" src="./media/walkthrough-v4/chapters.vtt">
+            Your browser cannot play this video. <a href="./media/walkthrough-v4/aws-public-change-alerting-walkthrough.mp4">Download the MP4</a> instead.
           </video>
         </div>
 
         <dl class="site-spec mvp-evidence-meta">
           <div class="site-spec-row">
             <dt>Coverage</dt>
-            <dd>M1 delivery and recovery evidence, M2 lifecycle changes, and the accepted 2026-09-07 M3 readiness assessment.</dd>
+            <dd>Public-feed matching and architecture; delivery, recovery, retention, replay, and scoped readiness evidence; M4 supervised operation and M5 maintenance improvements.</dd>
           </div>
           <div class="site-spec-row">
             <dt>Live results</dt>
-            <dd>4 runtime triggers enabled, 12 public-feed posts accepted by Slack, 2 recovery cases passed, 50 load messages created at 5 per minute, and alarm email receipt confirmed.</dd>
+            <dd>The M1 cohort recorded 12 public-feed posts, 2 recovery cases, 50 load messages at 5 per minute, and alarm email receipt. M4’s fixed 20-minute cohort had 1/20/4 scheduled invocations and heartbeats, with no new post; deadline parking passed after local waiter loss.</dd>
           </div>
           <div class="site-spec-row">
             <dt>Scope</dt>
-            <dd>M3 passed for one reviewed environment and Slack destination at 300 delivery requests per hour.</dd>
+            <dd>M3 passed for one reviewed environment and Slack destination at 300 delivery requests per hour. Dev is parked between supervised windows; unattended notification qualification remains pending.</dd>
           </div>
         </dl>
 
         <div class="compact-actions">
           <a class="compact-button compact-button-primary" href="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pdf">Open MVP slides (PDF)</a>
           <a class="compact-button" href="./media/mvp-evidence-v2/aws-public-change-alerting-mvp-evidence-v2.pptx">Download MVP PowerPoint</a>
-          <a class="compact-button" href="./media/walkthrough-v3/aws-public-change-alerting-walkthrough.mp4">Download 1080p video</a>
+          <a class="compact-button" href="./media/walkthrough-v4/aws-public-change-alerting-walkthrough.mp4">Download 1080p video</a>
           <a class="compact-button" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/docs/evidence/mvp-walkthrough.md">Read the transcript</a>
-          <a class="compact-button" href="./media/walkthrough-v3/SHA256SUMS">Verify downloads</a>
+          <a class="compact-button" href="./media/walkthrough-v4/SHA256SUMS">Verify downloads</a>
         </div>
         <p class="site-note">The walkthrough and downloads are copyright © 2026 Lila Brooks and licensed under <a rel="license" href="https://github.com/lilabrooks/aws-public-change-feed/blob/main/LICENSE">Apache-2.0</a>.</p>
       </div>

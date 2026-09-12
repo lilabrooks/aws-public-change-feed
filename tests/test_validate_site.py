@@ -187,6 +187,16 @@ class SiteValidatorTests(unittest.TestCase):
             errors = validator.validate_repository(root)
         self.assertTrue(any("digest mismatch for captions.vtt" in error for error in errors))
 
+    def test_changed_operations_frames_are_rejected_by_the_hash_manifest(self):
+        for name in ("scene-09.svg", "scene-10.svg"):
+            with self.subTest(name=name):
+                directory, root = self.make_repository()
+                with directory:
+                    frame = root / validator.WALKTHROUGH_DIR / name
+                    frame.write_text(frame.read_text() + "<!-- changed frame -->\n")
+                    errors = validator.validate_repository(root)
+                self.assertTrue(any(f"digest mismatch for {name}" in error for error in errors))
+
     def test_a_second_unmarked_video_is_rejected(self):
         directory, root = self.make_repository()
         with directory:
