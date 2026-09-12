@@ -90,6 +90,15 @@ unperformed notification qualification before unattended use, outside M4.
 Per-use checks remain required, retained resources can still incur charges,
 and this result does not widen the M3 production-readiness boundary.
 
+**Offline maintenance readiness.**
+[M5](https://github.com/lilabrooks/aws-public-change-feed/milestone/6) is
+complete. Its four repository-only changes reject credential-bearing rewrites
+of tracked agent adapters, keep CLI help contract tests independent of terminal
+width, separate the stable package-manifest example from real-source
+verification, and cover expired feed-lease URL parity with exact DynamoDB claim
+call counts. The milestone required no AWS activation and changed neither the
+product scope nor its operating mode.
+
 **Corpus and evaluation harness.** Complete. `corpus/announcements.json` holds 47 labeled announcements, 26 of them negative examples, with 29 expected positive matches. `src/evaluation.py` reports precision and recall per service and risk type. Edited announcements, overlapping feeds, missing publication dates, and deterministic replay are covered by tests. `corpus/thresholds.json` sets global floors only, and the harness already supports per-pair overrides. The observed counts do not justify those overrides: four of the ten pairs with any positive carry only one or two true positives. ADR-018's accepted 2026-09-06 revision requires a reviewed disposition for every enabled pair, reports recall as undefined where no labeled positive exists, and retains the global floors and explicit revisit triggers. It does not extend the sample merely to obtain a positive.
 
 The repository owner selected the current 4-feed, 3-service, 4-risk-rule policy unchanged for production preflight on 2026-09-01. The [production policy evidence](evidence/production-policy.md) expands the review to all 12 configured service and risk-type pairs: 6 have no historical positive, 4 have one, and the remaining 2 have two and seven. Those limits remain explicit, the global floors still govern promotion, and L-43 accepted them within the passing M3 result.
@@ -275,3 +284,5 @@ recorded boundaries.
 ## Completion criteria
 
 The goal is complete when a clean checkout can build and deploy the service, a production-like environment passes all automated and operator-confirmed preflight checks, public announcements produce reproducible route-scoped candidates, Slack delivery and recovery behave according to the accepted ADRs, and the documentation matches the implemented system.
+
+References verified: 2026-09-11.

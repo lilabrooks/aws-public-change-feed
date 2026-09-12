@@ -43,6 +43,7 @@ Dev runs only during supervised short windows and is parked between tests. [L-59
 | [M2](https://github.com/lilabrooks/aws-public-change-feed/milestone/3) | Closed | Retention, retirement, saved-response replay, and named recovery repairs completed. |
 | [M3](https://github.com/lilabrooks/aws-public-change-feed/milestone/4) | Closed | The exact dev deployment passed its bounded production-readiness review. |
 | [M4](https://github.com/lilabrooks/aws-public-change-feed/milestone/5) | Supervised proof passed | Fixed observation, early parking, and deadline cleanup after local waiter loss passed. |
+| [M5](https://github.com/lilabrooks/aws-public-change-feed/milestone/6) | Closed | Offline maintenance tightened tracked agent-adapter guards, CLI help tests, package-manifest verification, and feed-claim parity and call-count coverage. |
 
 The [goal](docs/GOAL.md), [readiness evidence](docs/evidence/m3-production-readiness-assessment-2026-09-06.md), and [September 8 live-window record](docs/evidence/l57-l58-supervised-live-window-2026-09-08.md) carry the detailed results. GitHub Issues and milestones hold current backlog state.
 
@@ -246,4 +247,4 @@ Copyright 2026 Lila Brooks.
 
 Licensed under the [Apache License 2.0](LICENSE). Redistributed copies and derivative works must preserve the attribution in [NOTICE](NOTICE).
 
-References verified: 2026-09-08.
+References verified: 2026-09-11.
