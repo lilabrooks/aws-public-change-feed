@@ -1,20 +1,21 @@
 scanner:
   version: "0.74.0"
-  observed_at: "2026-09-03"
-  observed_commit: 1d2c3f685b193b1ecd14d2a34ac99c0155d1be01
+  observed_at: "2026-09-13"
+  observed_commit: 925aa73185cea497ea6f25d7f29c5c8d16999358
   check_bundle_digest: sha256:1583562f8b90ed2a071b99f0e5ffff6b57e4ceb6ca3e4796577b4e6a339eb74c
 
 scan_roots:
   bootstrap: infra/bootstrap
   central: infra/central
   preflight: infra/preflight
+  live-control: infra/live-control
 
 totals:
-  findings: 33
+  findings: 38
   severity:
-    HIGH: 10
-    MEDIUM: 2
-    LOW: 21
+    HIGH: 11
+    MEDIUM: 3
+    LOW: 24
 
 # This inventory classifies every root-scoped source finding. It is not an
 # ignore list: the workflow prints each finding and fails on any changed count,
@@ -22,7 +23,7 @@ totals:
 classifications:
   - class: accepted_managed_encryption
     status: accepted_by_architecture
-    finding_count: 24
+    finding_count: 27
     rationale: >-
       Chapter 05 permits or requires the managed encryption represented by
       these resources: S3 AES256, DynamoDB AWS-owned encryption, the account
@@ -45,6 +46,9 @@ classifications:
           - scan_root: preflight
             path: infra/central/s3.tf
             count: 1
+          - scan_root: live-control
+            path: infra/live-control/main.tf
+            count: 1
       - id: AWS-0025
         severity: LOW
         occurrences:
@@ -54,6 +58,9 @@ classifications:
           - scan_root: preflight
             path: infra/central/dynamodb.tf
             count: 2
+          - scan_root: live-control
+            path: infra/live-control/main.tf
+            count: 1
       - id: AWS-0017
         severity: LOW
         occurrences:
@@ -63,6 +70,9 @@ classifications:
           - scan_root: preflight
             path: infra/central/log_groups.tf
             count: 5
+          - scan_root: live-control
+            path: infra/live-control/main.tf
+            count: 1
       - id: AWS-0098
         severity: LOW
         occurrences:
@@ -115,12 +125,21 @@ classifications:
 
   - class: unresolved_hardening
     status: open
-    finding_count: 6
+    finding_count: 8
     rationale: >-
-      S3 access logging and SNS topic encryption are not established by the
-      current architecture. This CI reports them without silently accepting,
-      suppressing, or expanding issue 129 into an infrastructure decision.
+      S3 access logging, SNS topic encryption, and live-control ledger PITR
+      are not established by the current architecture. ADR-030's retained
+      ownership ledger is not covered by the isolated preflight PITR exception;
+      deletion protection and no TTL do not establish point-in-time recovery.
+      These findings remain open pending separate infrastructure decisions.
+      L-62 tracks them: https://github.com/lilabrooks/aws-public-change-feed/issues/217.
     findings:
+      - id: AWS-0024
+        severity: MEDIUM
+        occurrences:
+          - scan_root: live-control
+            path: infra/live-control/main.tf
+            count: 1
       - id: AWS-0089
         severity: LOW
         occurrences:
@@ -135,6 +154,9 @@ classifications:
             count: 1
           - scan_root: preflight
             path: infra/central/s3.tf
+            count: 1
+          - scan_root: live-control
+            path: infra/live-control/main.tf
             count: 1
       - id: AWS-0095
         severity: HIGH

@@ -170,7 +170,7 @@ Tests create mutations from this canonical valid bundle and confirm that each in
 │   │   └── specification/       Normative requirements, in order
 │   ├── adr/                     Decision records and superseded archive
 │   └── runbooks/                Operational procedures
-├── infra/                       Terraform roots (bootstrap, central, and isolated preflight built)
+├── infra/                       Terraform roots (bootstrap, central, preflight, and live-control)
 ├── schemas/                     JSON Schema contracts
 ├── config/                      Reviewed environment policy inputs
 ├── examples/                    Canonical executable contract fixtures
