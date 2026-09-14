@@ -69,6 +69,8 @@ jobs:
             --exit-code 0 --format json --output trivy-terraform-central.json infra/central
           trivy config --config trivy.yaml --severity LOW,MEDIUM,HIGH,CRITICAL \
             --exit-code 0 --format json --output trivy-terraform-preflight.json infra/preflight
+          trivy config --config trivy.yaml --severity LOW,MEDIUM,HIGH,CRITICAL \
+            --exit-code 0 --format json --output trivy-terraform-live-control.json infra/live-control
 
       - name: Compare Terraform findings with the reviewed baseline
         run: |
@@ -76,4 +78,5 @@ jobs:
             --baseline .github/trivy-terraform-baseline.yml \
             --result bootstrap=trivy-terraform-bootstrap.json \
             --result central=trivy-terraform-central.json \
-            --result preflight=trivy-terraform-preflight.json
+            --result preflight=trivy-terraform-preflight.json \
+            --result live-control=trivy-terraform-live-control.json

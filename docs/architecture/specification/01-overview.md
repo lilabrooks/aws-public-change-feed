@@ -58,10 +58,12 @@ Repairs pending dispatch, re-enqueues eligible work, converts stale `sending` le
 
 Deploy shared resources in one AWS account and Region chosen by the operator. Customer account IDs and Regions are inventory metadata only. No organization membership or cross-account trust is required.
 
-Two Terraform roots exist:
+Four Terraform roots exist:
 
 - `infra/bootstrap` provisions the remote-state bucket.
 - `infra/central` decodes a reviewed deployment input and provisions the service resources.
+- `infra/preflight` instantiates the central module for isolated runtime exercises.
+- `infra/live-control` provisions the durable owner and build resources for bounded live windows.
 
 The initial implementation uses Lambda, EventBridge Scheduler, DynamoDB, S3, SQS FIFO, Secrets Manager or Parameter Store, CloudWatch, and SNS. Equivalent substitutions need an accepted ADR because they affect state ownership or delivery guarantees.
 

@@ -128,6 +128,26 @@ and are not reported as passing.
 - Billing-tag activation and eventual report attribution are separate operator
   checks. Source coverage and Terraform validation do not prove either one.
 
+## Terraform security scan acceptance
+
+- Trivy scans every root in the Makefile's `TERRAFORM_ROOTS` inventory as a
+  separate entry point, at LOW through CRITICAL severity. Each JSON output
+  reaches the baseline comparator under its own root name.
+- The inventory has one literal assignment and equals the immediate `infra/`
+  directories containing Terraform source files. Appended assignments and
+  source roots missing from the inventory fail the tests.
+- Workflow tests compare scan commands, comparator inputs, and baseline roots
+  against that inventory. A missing, extra, or duplicate scan or comparator
+  input fails, including when a new Terraform root is added.
+- The reviewed baseline classifies every finding. Changed findings fail the
+  comparison. Tests load the committed baseline through the comparator, bind
+  rule IDs and statuses to their reviewed classifications, restrict the PITR
+  exception to preflight, and check occurrence paths against each root's source
+  files, including preflight's central module. The security job and its steps
+  must remain unconditional and may not tolerate errors.
+  Open hardening findings remain explicit. Source scans do not
+  establish applied IAM permissions, encryption, recovery, or lifecycle state.
+
 ## Contract acceptance
 
 - Given a clean checkout, the six canonical release and delivery examples load

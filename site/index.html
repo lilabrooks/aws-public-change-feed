@@ -578,7 +578,7 @@
         </dl>
 
         <aside class="site-note" aria-label="What automated checks cover">
-          <p>These checks show that code and committed contracts agree. Controlled AWS runs test deployed paths separately.</p>
+          <p>These checks show that code and committed contracts agree. CI also scans all four Terraform roots with Trivy and compares findings against a reviewed baseline. Tests tie scan coverage to the inventory and source directories, preserve reviewed finding classifications, and reject disabled or non-blocking security steps. Controlled AWS runs test deployed paths separately.</p>
         </aside>
       </div>
     </section>

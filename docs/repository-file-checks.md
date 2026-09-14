@@ -26,13 +26,13 @@ That expands to Python format and lint checks, YAML lint, type checking, contrac
 | `make validate-site` | Yes, through `make validate` | Check the public HTML page, generated sample, diagram, media, README coupling, and ADR index/count contract. |
 | `make evaluate-corpus` | Yes, through `make validate` | Score the matcher and enforce the approved corpus thresholds. |
 | `make test` | Yes | Run the full `unittest` suite. |
-| `make terraform-check` | Yes | Run Terraform formatting, backend-disabled initialization, and validation in all 3 roots. |
-| `make tflint-check` | Yes | Run TFLint and its AWS plugin in all 3 roots. Local absence skips unless required mode is set. |
+| `make terraform-check` | Yes | Run Terraform formatting, backend-disabled initialization, and validation in all 4 roots. |
+| `make tflint-check` | Yes | Run TFLint and its AWS plugin in all 4 roots. Local absence skips unless required mode is set. |
 | `make whitespace` | Yes | Run Git's whitespace-error check on the working tree and, in CI, the pull-request commit range. |
 | `make references-online` | No | Run local reference validation, then check external links with Lychee. |
 | `make screen-feeds` | No | Fetch the reviewed public feeds through the runtime acquisition path and report current rule matches. |
 
-`make format`, `make generate-slack-sample`, `make clean`, and `make terraform-clean` change files or remove generated caches, so they are maintenance targets rather than checks.
+`make install`, `make format`, `make generate-slack-sample`, `make clean`, and `make terraform-clean` change files or remove generated caches, so they are maintenance targets rather than checks.
 
 ## Python
 
@@ -46,9 +46,23 @@ That expands to Python format and lint checks, YAML lint, type checking, contrac
 
 CI installs the exact versions in [`requirements-dev.txt`](../requirements-dev.txt) and runs with Python 3.12. Local `make check` uses `python3` unless `PYTHON` is overridden.
 
+## Lambda package checks
+
+The quality workflow runs these commands before `make check`:
+
+```bash
+python scripts/build_lambda_package.py --output build/lambda-target.zip
+python -m venv --without-pip build/lambda-import-venv
+build/lambda-import-venv/bin/python scripts/verify_lambda_package_imports.py --package build/lambda-target.zip
+```
+
+The builder installs the exact [`requirements-lambda.txt`](../requirements-lambda.txt) closure with `--no-deps`, binary wheels only, and a CPython 3.12 `manylinux2014_x86_64` target. It packages the runtime source and provenance manifest into a deterministic ZIP. The verifier validates the package, extracts it, imports all five configured handlers, and checks that each is a synchronous callable accepting event and context arguments. CI runs the imports on Linux in a new environment without pip or development packages.
+
+The package unit tests also cover archive structure, manifest identity, source agreement, dependency locks, and handler contracts. The target build and isolated import commands are separate CI steps outside `make check`; reproducing target imports requires compatible Linux x86_64 Python 3.12.
+
 ## Shell and command snippets
 
-Executable shell code lives in Make recipes and GitHub Actions `run` blocks. The tracked tree contains 0 standalone `.sh`, `.bash`, `.zsh`, or `.fish` files.
+Executable shell code lives in Make recipes, GitHub Actions `run` blocks, and [`infra/live-control/buildspec.yml`](../infra/live-control/buildspec.yml) commands. The tracked tree contains 0 standalone `.sh`, `.bash`, `.zsh`, or `.fish` files.
 
 Make and CI execute those snippets as part of the targets and jobs that contain them. [`tests/test_makefile.py`](../tests/test_makefile.py) exercises the whitespace and cleanup recipes, while workflow tests inspect action pins, triggers, permissions, and exact command wiring.
 
@@ -58,26 +72,28 @@ ShellCheck, shfmt, `bash -n`, and actionlint are absent. YAML lint treats workfl
 
 | Check | Files | What it rejects |
 | --- | --- | --- |
-| `make lint-yaml` | [`.yamllint.yaml`](../.yamllint.yaml), [`examples/`](../examples/), [`.github/dependabot.yml`](../.github/dependabot.yml), and [`.github/workflows/`](../.github/workflows/) | YAML syntax and the configured yamllint rules: 120-character lines, except non-breakable inline mappings, plus lowercase `true` and `false`. A document-start marker is optional. |
+| `make lint-yaml` | [`.yamllint.yaml`](../.yamllint.yaml), [`examples/`](../examples/), [`.github/dependabot.yml`](../.github/dependabot.yml), [`.github/workflows/`](../.github/workflows/), and [`infra/live-control/buildspec.yml`](../infra/live-control/buildspec.yml) | YAML syntax and the configured yamllint rules: 120-character lines, except non-breakable inline mappings, plus lowercase `true` and `false`. A document-start marker is optional. |
 | `make validate-config` | [`examples/deployment.yaml`](../examples/deployment.yaml), [`examples/config.yaml`](../examples/config.yaml), and [`infra/central/deployment.yaml`](../infra/central/deployment.yaml) | Duplicate mapping keys, malformed YAML, JSON Schema violations, unknown fields, unsupported formats or versions, and the cross-document rules listed in the JSON section below. |
 | `make evaluate-corpus` | [`config/dev.yaml`](../config/dev.yaml) | A policy that cannot load services and risk rules or cannot meet the corpus thresholds. The command uses this file as matcher input; it is not a schema-validation pass over the policy. |
 | `make terraform-check` | [`infra/central/deployment.yaml`](../infra/central/deployment.yaml) and [`infra/preflight/deployment.yaml`](../infra/preflight/deployment.yaml), through Terraform `yamldecode` calls | YAML that Terraform cannot decode and values rejected by the Terraform root's variable checks, preconditions, or checks. |
 | `make test` | Workflow, scanner, baseline, deployment, and policy YAML used by targeted tests | GitHub Action references without a full 40-character commit SHA and readable version comment, inconsistent action pins, changed workflow permissions or triggers, changed Trivy policy or baseline accounting, and repository-specific deployment or policy drift covered by the tests. |
 
-The direct yamllint target's complete path list is [`.yamllint.yaml`](../.yamllint.yaml), [`examples/`](../examples/), [`.github/dependabot.yml`](../.github/dependabot.yml), and [`.github/workflows/`](../.github/workflows/). [`config/dev.yaml`](../config/dev.yaml), both infrastructure deployment files, [`trivy.yaml`](../trivy.yaml), and [`.github/trivy-terraform-baseline.yml`](../.github/trivy-terraform-baseline.yml) receive the targeted checks named above.
+[`config/dev.yaml`](../config/dev.yaml), both infrastructure deployment files, [`trivy.yaml`](../trivy.yaml), and [`.github/trivy-terraform-baseline.yml`](../.github/trivy-terraform-baseline.yml) receive the targeted checks named above.
 
 ## Terraform
 
-The 3 Terraform roots are [`infra/bootstrap`](../infra/bootstrap/), [`infra/central`](../infra/central/), and [`infra/preflight`](../infra/preflight/).
+The 4 Terraform roots are [`infra/bootstrap`](../infra/bootstrap/), [`infra/central`](../infra/central/), [`infra/preflight`](../infra/preflight/), and [`infra/live-control`](../infra/live-control/).
 
 | Check | What runs | What it rejects |
 | --- | --- | --- |
 | `make terraform-check` | `terraform fmt -check`, `terraform init -backend=false -input=false -lockfile=readonly`, and `terraform validate` in each root | Noncanonical HCL formatting, initialization failures, provider-lock drift, invalid syntax, bad references, type errors, and failed static validation rules. Backend access is disabled. |
 | `make tflint-check` | `tflint --init` once, then TFLint in each root with [`.tflint.hcl`](../.tflint.hcl) | Core TFLint findings and AWS ruleset findings. Module calls are included, and the AWS plugin version is pinned in the TFLint configuration. |
 | `make test` | [`tests/test_terraform_contracts.py`](../tests/test_terraform_contracts.py) and related contract tests | Cross-file rules that `terraform validate` cannot prove, including backend and lockfile boundaries, IAM resource/action coupling, trigger gates, alarm-to-runtime contracts, runbook coverage, package identity, preflight isolation, recovery settings, and allowed invalid-input failures. |
-| Repository security workflow | Trivy configuration scans of each root, followed by [`scripts/compare_trivy_baseline.py`](../scripts/compare_trivy_baseline.py) against [`.github/trivy-terraform-baseline.yml`](../.github/trivy-terraform-baseline.yml) | Scanner failures and any unreviewed change in finding count, rule, severity, source path, or scan-root context. The baseline classifies findings and does not suppress them. |
+| Repository security workflow | Trivy configuration scans of bootstrap, central, preflight, and live-control, followed by [`scripts/compare_trivy_baseline.py`](../scripts/compare_trivy_baseline.py) against [`.github/trivy-terraform-baseline.yml`](../.github/trivy-terraform-baseline.yml) | Scanner failures and any unreviewed change in finding count, rule, severity, source path, or scan-root context. The baseline classifies findings and does not suppress them. |
 
 Local `terraform-check` and `tflint-check` print a skip and succeed when their binaries are missing. Set `REQUIRE_TERRAFORM=1` or `REQUIRE_TFLINT=1` to turn absence into a failure. CI requires both tools in its Terraform 1.10.0 job; the main quality job also runs `make check` with Terraform 1.15.8 required.
+
+Security workflow tests require one literal `TERRAFORM_ROOTS` assignment matching the immediate `infra/` directories containing `.tf` files. Scan commands, comparator inputs, and baseline roots must match that inventory. Tests also load the committed baseline, check classification rule IDs and statuses, restrict the preflight PITR exception, validate occurrence paths, and reject conditional or non-blocking security steps.
 
 Trivy is a CI check in [`.github/workflows/security.yml`](../.github/workflows/security.yml). It is not part of `make check`.
 
@@ -132,8 +148,8 @@ Security CI is defined in [`.github/workflows/security.yml`](../.github/workflow
 | --- | --- | --- |
 | Trivy dependency scan | [`requirements.txt`](../requirements.txt), [`requirements-dev.txt`](../requirements-dev.txt), and [`requirements-lambda.txt`](../requirements-lambda.txt) | A HIGH or CRITICAL vulnerability fails the job. [`trivy.yaml`](../trivy.yaml) adds both `requirements-*.txt` manifests to Trivy's standard pip-manifest discovery. |
 | Trivy secret scan | The checked-out repository tree | A HIGH or CRITICAL secret finding fails the job. |
-| Trivy Terraform scan | Each Terraform root as a separate scan, at LOW through CRITICAL severity | Each scan produces JSON without failing on findings. [`scripts/compare_trivy_baseline.py`](../scripts/compare_trivy_baseline.py) then fails on scanner errors or any unreviewed change in scanner version, count, rule, severity, path, or root context. |
-| Security workflow contract tests | The workflow, [`trivy.yaml`](../trivy.yaml), and the reviewed Terraform finding baseline | Changed triggers, permissions, action pins, Trivy version or arguments, manifest coverage, baseline totals, classification accounting, or required limitation text fail `make test`. |
+| Trivy Terraform scan | Bootstrap, central, preflight, and live-control as separate scans, at LOW through CRITICAL severity | Each scan produces JSON without failing on findings. [`scripts/compare_trivy_baseline.py`](../scripts/compare_trivy_baseline.py) then fails on scanner errors or any unreviewed change in scanner version, count, rule, severity, path, or root context. |
+| Security workflow contract tests | The workflow, [`trivy.yaml`](../trivy.yaml), and the reviewed Terraform finding baseline | Changed triggers, permissions, action pins, Trivy version or arguments, manifest coverage, Terraform root coverage, baseline totals, classification accounting, or required limitation text fail `make test`. |
 | GitHub Action pin tests | Every `uses:` entry in every workflow | Tags, shortened SHAs, missing readable version comments, and inconsistent commits for the same action fail `make test`. |
 | Agent boundary tests | [`.mcp.json`](../.mcp.json), [`.codex/config.toml`](../.codex/config.toml), [`.claude/settings.json`](../.claude/settings.json), [`AGENTS.md`](../AGENTS.md), and [`CLAUDE.md`](../CLAUDE.md) | Host configuration mismatch, non-HTTPS MCP endpoints, missing account-capable-tool denials, stale deny-server names, broken imports, or duplicated shared instructions fail `make test`. |
 | Runtime security tests | Acquisition, URL, TLS, parsing, credentials, Slack transport, release, storage, delivery, and Terraform modules | Unsafe hosts or addresses, redirects, entity expansion, unbounded inputs, credential-kind errors, secret leakage, ambiguous network outcomes, bad IAM coupling, route crossing, and other acceptance failures covered by the named test modules fail `make test`. |
@@ -179,7 +195,7 @@ flowchart TD
     main_push[Relevant push to main]
 
     subgraph quality[Repository quality]
-        quality_validate[Validate job<br/>site sync on PR + make check<br/>ADR index/count contract<br/>Terraform 1.15.8]
+        quality_validate[Validate job<br/>Lambda build + isolated imports<br/>site sync on PR + make check<br/>ADR index/count contract<br/>Terraform 1.15.8]
         quality_minimum[Terraform minimum job<br/>Terraform 1.10.0 + TFLint 0.64.0]
     end
 
@@ -191,7 +207,7 @@ flowchart TD
 
     subgraph security[Repository security]
         security_files[Trivy filesystem scan<br/>dependencies + secrets]
-        security_terraform[Trivy configuration scans<br/>3 roots + baseline comparison]
+        security_terraform[Trivy configuration scans<br/>4 roots + baseline comparison]
     end
 
     subgraph pages[Deploy GitHub Pages]
@@ -224,12 +240,36 @@ GitHub receives separate results from these jobs. The tracked workflows contain 
 
 | Workflow | Trigger | Checks |
 | --- | --- | --- |
-| [Repository quality](../.github/workflows/quality.yml) | Pull request or manual dispatch | Python 3.12 setup, diff-aware public-page sync on pull requests, `make check` with the ADR index/count contract and Terraform 1.15.8 required, then a separate Terraform 1.10.0 and TFLint 0.64.0 job with both tools required. |
+| [Repository quality](../.github/workflows/quality.yml) | Pull request or manual dispatch | Python 3.12 setup, Lambda target ZIP build and isolated handler imports, diff-aware public-page sync on pull requests, `make check` with the ADR index/count contract and Terraform 1.15.8 required, then a separate Terraform 1.10.0 and TFLint 0.64.0 job with both tools required. |
 | [Reference links](../.github/workflows/reference-links.yml) | Pull request, weekly schedule, or manual dispatch | Local reference validation on every run; Lychee on Markdown-changing pull requests and on scheduled or manual sweeps. |
 | [Repository security](../.github/workflows/security.yml) | Pull request or weekly schedule | Trivy dependency, secret, and root-scoped Terraform scans plus exact baseline comparison. |
 | [Deploy GitHub Pages](../.github/workflows/pages.yml) | Relevant push to `main` or manual dispatch | Public-site and ADR index/count validation before Pages upload and deployment. |
 
 All workflow `uses:` values are full commit SHAs with readable version comments, and `make test` enforces that contract.
+
+## Tools, libraries, and dependencies
+
+Versions below are the committed configuration as checked on 2026-09-13. CI uses Ubuntu 24.04 and Python 3.12; local validation requires Python 3.12 or newer, GNU-compatible Make, Git, and a shell for Make recipes. Install the Python validation environment with `python3 -m pip install -r requirements-dev.txt`.
+
+| Check or purpose | Tool and direct dependencies |
+| --- | --- |
+| Python formatting and lint | Ruff `0.16.5`; rules and formatter settings in [`pyproject.toml`](../pyproject.toml). |
+| YAML lint | yamllint `1.38.0` and PyYAML `6.0.3`; pip resolves the remaining transitive dependencies. |
+| Python type checks | mypy `2.3.1`, `types-jsonschema` `4.26.0.20260518`, and `types-PyYAML` `6.0.12.20260815`. |
+| Schema and semantic validation; corpus evaluation | jsonschema `4.26.0`, referencing `0.37.0`, PyYAML `6.0.3`, Python standard library, and repository validator/runtime modules. |
+| Unit and service-mock tests | Python `unittest`, boto3 `1.43.83` with its compatible botocore SDK dependencies, and `moto[s3]` `5.2.3`; other pinned development dependencies above support validator and contract tests. |
+| Local Markdown references and policy | Python standard library, including `tomllib`. |
+| Site, diagram, and media checks | Python standard-library HTML, XML, hash, ZIP, and binary parsing plus the canonical runtime renderer and runtime dependencies. Pages installs the Lambda dependency closure below. |
+| Online Markdown links | Lychee `0.24.2`, [`lychee.toml`](../lychee.toml), [`.lycheeignore`](../.lycheeignore), and network access. CI supplies `GITHUB_TOKEN` for GitHub links. |
+| Terraform format and validation | Terraform `1.15.8` in the main job and `1.10.0` in the minimum-version job; HashiCorp AWS provider locked to `6.58.0` in bootstrap/central/preflight and `6.63.0` in live-control. Initial provider installation needs registry access or a populated cache. |
+| Terraform lint | TFLint `0.64.0` and AWS ruleset plugin `0.48.0`; plugin initialization needs access to the plugin release or a populated cache. |
+| Vulnerabilities, secrets, and Terraform misconfiguration | Trivy `0.74.0`; vulnerability database and configuration checks, [`trivy.yaml`](../trivy.yaml), and the reviewed baseline. Baseline comparison uses PyYAML `6.0.3`. |
+| Lambda package build and isolated imports | Python 3.12, pip, `venv`, compatible binary wheels, Linux x86_64 for target imports, and the exact Lambda dependency closure below. |
+| Whitespace and workflow/source contracts | Git `diff --check` and Git for the site-sync commit range; Python tests with the pinned development environment. |
+
+The complete Lambda dependency closure is attrs `26.1.0`, boto3 `1.43.83`, botocore `1.43.83`, jmespath `1.1.0`, jsonschema `4.26.0`, jsonschema-specifications `2025.9.1`, python-dateutil `2.9.0.post0`, PyYAML `6.0.3`, referencing `0.37.0`, rpds-py `2026.6.3`, s3transfer `0.19.2`, six `1.17.0`, typing-extensions `4.16.0`, and urllib3 `2.7.0`.
+
+[`requirements-dev.txt`](../requirements-dev.txt) pins its ten direct entries; pip resolves their transitive dependencies. [`requirements-lambda.txt`](../requirements-lambda.txt) pins the complete deployment closure and is installed with `--no-deps`. Package metadata also declares `setuptools>=80` as its build backend dependency; the custom Lambda ZIP builder uses pip and standard-library archive code directly.
 
 ## Live and operator-only validation
 
@@ -238,6 +278,7 @@ These checks need network access, AWS access, or an explicit operator decision. 
 | Check | Purpose |
 | --- | --- |
 | `make references-online` | Check external Markdown links with Lychee after local reference validation. |
+| `make live-test`, `make live-unpark`, `make live-park`, `make live-status`, `make live-close`, and `make live-prune` | Drive bounded AWS live windows, inspect their state, verify terminal parking/closure, or preview and approve exact-version retirement through [`scripts/live_window.py`](../scripts/live_window.py). These targets require the configured operator boundary and are outside `make check`. |
 | `make screen-feeds` | Fetch the configured feeds through production acquisition and report matches for vocabulary review. |
 | `APCF_CONCURRENCY_BUCKET=... python -m unittest tests.test_s3_real_bucket` | Exercise S3 conditional writes and concurrent pointer promotion against the dedicated real bucket. These classes account for the environment-gated skips in the ordinary unit run. |
 | [`scripts/preflight_delivery.py`](../scripts/preflight_delivery.py) | Bind and verify the disabled-trigger delivery preflight before a real watcher, queue, worker, and Slack exercise. |
