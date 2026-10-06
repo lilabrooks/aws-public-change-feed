@@ -1,7 +1,7 @@
 # Production feed and matching policy
 
-Owner decision: Accepted on 2026-09-01. A matcher revision is proposed on
-2026-10-05 for owner review; see [Proposed 2026-10-05 revision](#proposed-2026-10-05-revision).
+Owner decision: Accepted on 2026-09-01. The owner accepted a matcher revision
+on 2026-10-06; see [Accepted 2026-10-05 revision](#accepted-2026-10-05-revision).
 
 ## Decision
 
@@ -19,7 +19,7 @@ gate.
 ## Exact inputs
 
 These digests bound the 2026-09-01 decision and its evaluation inputs. The
-proposed revision below supersedes them once accepted:
+accepted revision below supersedes them:
 
 | Input | SHA-256 |
 | --- | --- |
@@ -82,10 +82,12 @@ become large enough to justify an override under
 
 Any matcher or risk-term change still runs the corpus evaluator and the live
 feed screen required by the repository rules. The 2026-09-01 decision changed
-no matcher, risk term, release bytes, or runtime behavior; the proposed
+no matcher, risk term, release bytes, or runtime behavior; the accepted
 revision below removes three matcher literals.
 
-## Proposed 2026-10-05 revision
+## Accepted 2026-10-05 revision
+
+The repository owner accepted this revision on 2026-10-06.
 
 A live screen on 2026-10-05 (`make screen-feeds`) reported ten production
 matches with no corpus label. Each was labeled from its runtime-normalized
@@ -237,4 +239,4 @@ feeds were run through the runtime parser and matcher, and none was added:
 evidence concerns mechanics rather than which announcements match, so it is
 retained. The candidate counts it records came from the earlier policy. Its
 corpus and pair-disposition row describes that policy, and this section
-supersedes the row once the owner accepts it.
+supersedes that row.
