@@ -93,7 +93,7 @@ class SecurityWorkflowTests(unittest.TestCase):
         workflow_pins.assert_pinned(checkout["uses"], "actions/checkout")
         self.assertEqual(
             workflow_pins.assert_pinned(setup["uses"], "aquasecurity/setup-trivy"),
-            "3fb12ec12f41e471780db15c232d5dd185dcb514",
+            "81e514348e19b6112ce2a7e3ecbafe19c1e1f567",
         )
         self.assertEqual(setup["with"], {"version": "v0.74.0", "cache": True})
         workflow_pins.assert_pinned(python_setup["uses"], "actions/setup-python")

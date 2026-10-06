@@ -397,7 +397,7 @@ class ReferenceValidatorTests(unittest.TestCase):
         self.assertFalse(minimum_setup["with"]["terraform_wrapper"])
         self.assertEqual(
             workflow_pins.assert_pinned(tflint_setup["uses"], "terraform-linters/setup-tflint"),
-            "6e1e0642c0289bd619021bf6b34e3c08ed1e005a",
+            "1cf010d3c7aef302051ccdb68c14c5dc2efa34ef",
         )
         self.assertEqual(
             tflint_setup["with"],
