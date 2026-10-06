@@ -267,7 +267,7 @@ Versions below are the committed configuration as checked on 2026-09-13. CI uses
 | Lambda package build and isolated imports | Python 3.12, pip, `venv`, compatible binary wheels, Linux x86_64 for target imports, and the exact Lambda dependency closure below. |
 | Whitespace and workflow/source contracts | Git `diff --check` and Git for the site-sync commit range; Python tests with the pinned development environment. |
 
-The complete Lambda dependency closure is attrs `26.1.0`, boto3 `1.43.83`, botocore `1.43.83`, jmespath `1.1.0`, jsonschema `4.26.0`, jsonschema-specifications `2025.9.1`, python-dateutil `2.9.0.post0`, PyYAML `6.0.3`, referencing `0.37.0`, rpds-py `2026.6.3`, s3transfer `0.19.2`, six `1.17.0`, typing-extensions `4.16.0`, and urllib3 `2.7.0`.
+The complete Lambda dependency closure is attrs `26.1.0`, boto3 `1.43.83`, botocore `1.43.83`, jmespath `1.1.0`, jsonschema `4.26.0`, jsonschema-specifications `2025.9.1`, python-dateutil `2.9.0.post0`, PyYAML `6.0.3`, referencing `0.37.0`, rpds-py `2026.6.3`, s3transfer `0.19.2`, six `1.17.0`, typing-extensions `4.16.0`, and urllib3 `2.8.0`, updated on 2026-10-06 for CVE-2026-97687 and CVE-2026-97689.
 
 [`requirements-dev.txt`](../requirements-dev.txt) pins its ten direct entries; pip resolves their transitive dependencies. [`requirements-lambda.txt`](../requirements-lambda.txt) pins the complete deployment closure and is installed with `--no-deps`. Package metadata also declares `setuptools>=80` as its build backend dependency; the custom Lambda ZIP builder uses pip and standard-library archive code directly.
 

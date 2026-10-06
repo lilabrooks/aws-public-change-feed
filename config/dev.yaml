@@ -54,7 +54,6 @@ services:
     display_name: AWS Lambda
     aliases:
       - AWS Lambda
-      - Lambda function
     recommended_action: Review runtime support dates and plan function runtime updates.
 
 service_profiles:
@@ -79,7 +78,6 @@ risk_rules:
     match:
       any:
         - end of support
-        - end-of-support
         - end of life
         - end-of-life
         - support ending
@@ -124,7 +122,6 @@ risk_rules:
         - managed runtime
         - managed runtimes
         - engine version
-        - engine versions
         - cumulative update
         - cumulative updates
         - general distribution release

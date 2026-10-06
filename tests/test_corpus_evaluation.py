@@ -315,6 +315,28 @@ class CommittedCorpusTests(unittest.TestCase):
                 self.assertIn(expected.service_id, service_ids, entry.id)
                 self.assertIn(expected.risk_type, risk_types, entry.id)
 
+    def test_reviewed_false_positives_stay_unmatched_under_the_dev_policy(self):
+        # Each item is the regression case for one literal the 2026-10-05
+        # revision changed. The global floors tolerate a one-item regression
+        # (restoring the alias alone scores 0.972), so these are pinned by name.
+        # Every other label stays under the floors, as ADR-018 decides.
+        regression_cases = {
+            "aws-bulletin-connect-salesforce-lambda": "removed alias 'Lambda function'",
+            "aws-health-version-catalog": "removed term 'end-of-support'",
+            "aws-rds-amd-m8a-instances": "removed term 'engine versions'",
+            "aws-aurora-rds-amd-r8a-instances": "removed term 'engine versions'",
+        }
+        with (ROOT / harness.DEFAULT_CONFIG_PATH).open(encoding="utf-8") as handle:
+            configuration = yaml.safe_load(handle)
+        services = load_services(configuration)
+        rules = load_risk_rules(configuration)
+        entries = {entry.id: entry for entry in load_corpus(CORPUS_PATH)}
+        for item_id, guarded in regression_cases.items():
+            with self.subTest(item=item_id, guards=guarded):
+                entry = entries[item_id]
+                self.assertEqual(entry.expected_matches, ())
+                self.assertEqual(match_announcement(entry.announcement, services, rules), ())
+
     def test_committed_corpus_meets_the_approved_thresholds(self):
         result = subprocess.run(
             [sys.executable, "scripts/evaluate_corpus.py"],
