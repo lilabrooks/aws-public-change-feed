@@ -249,15 +249,15 @@ All workflow `uses:` values are full commit SHAs with readable version comments,
 
 ## Tools, libraries, and dependencies
 
-Versions below are the committed configuration as checked on 2026-09-13. CI uses Ubuntu 24.04 and Python 3.12; local validation requires Python 3.12 or newer, GNU-compatible Make, Git, and a shell for Make recipes. Install the Python validation environment with `python3 -m pip install -r requirements-dev.txt`.
+Versions below are the committed configuration as checked on 2026-09-13, with Python dependency pins updated on 2026-10-06. CI uses Ubuntu 24.04 and Python 3.12; local validation requires Python 3.12 or newer, GNU-compatible Make, Git, and a shell for Make recipes. Install the Python validation environment with `python3 -m pip install -r requirements-dev.txt`.
 
 | Check or purpose | Tool and direct dependencies |
 | --- | --- |
-| Python formatting and lint | Ruff `0.16.5`; rules and formatter settings in [`pyproject.toml`](../pyproject.toml). |
+| Python formatting and lint | Ruff `0.16.10`; rules and formatter settings in [`pyproject.toml`](../pyproject.toml). |
 | YAML lint | yamllint `1.38.0` and PyYAML `6.0.3`; pip resolves the remaining transitive dependencies. |
-| Python type checks | mypy `2.3.1`, `types-jsonschema` `4.26.0.20260518`, and `types-PyYAML` `6.0.12.20260815`. |
+| Python type checks | mypy `2.4.0`, `types-jsonschema` `4.26.0.20260518`, and `types-PyYAML` `6.0.12.20260906`. |
 | Schema and semantic validation; corpus evaluation | jsonschema `4.26.0`, referencing `0.37.0`, PyYAML `6.0.3`, Python standard library, and repository validator/runtime modules. |
-| Unit and service-mock tests | Python `unittest`, boto3 `1.43.83` with its compatible botocore SDK dependencies, and `moto[s3]` `5.2.3`; other pinned development dependencies above support validator and contract tests. |
+| Unit and service-mock tests | Python `unittest`, boto3 `1.43.108` with its compatible botocore SDK dependencies, and `moto[s3]` `5.2.3`; other pinned development dependencies above support validator and contract tests. |
 | Local Markdown references and policy | Python standard library, including `tomllib`. |
 | Site, diagram, and media checks | Python standard-library HTML, XML, hash, ZIP, and binary parsing plus the canonical runtime renderer and runtime dependencies. Pages installs the Lambda dependency closure below. |
 | Online Markdown links | Lychee `0.24.2`, [`lychee.toml`](../lychee.toml), [`.lycheeignore`](../.lycheeignore), and network access. CI supplies `GITHUB_TOKEN` for GitHub links. |
@@ -267,7 +267,7 @@ Versions below are the committed configuration as checked on 2026-09-13. CI uses
 | Lambda package build and isolated imports | Python 3.12, pip, `venv`, compatible binary wheels, Linux x86_64 for target imports, and the exact Lambda dependency closure below. |
 | Whitespace and workflow/source contracts | Git `diff --check` and Git for the site-sync commit range; Python tests with the pinned development environment. |
 
-The complete Lambda dependency closure is attrs `26.1.0`, boto3 `1.43.83`, botocore `1.43.83`, jmespath `1.1.0`, jsonschema `4.26.0`, jsonschema-specifications `2025.9.1`, python-dateutil `2.9.0.post0`, PyYAML `6.0.3`, referencing `0.37.0`, rpds-py `2026.6.3`, s3transfer `0.19.2`, six `1.17.0`, typing-extensions `4.16.0`, and urllib3 `2.8.0`, updated on 2026-10-06 for CVE-2026-97687 and CVE-2026-97689.
+The complete Lambda dependency closure is attrs `26.1.0`, boto3 `1.43.108`, botocore `1.43.108`, jmespath `1.1.0`, jsonschema `4.26.0`, jsonschema-specifications `2025.9.1`, python-dateutil `2.9.0.post0`, PyYAML `6.0.3`, referencing `0.37.0`, rpds-py `2026.6.3`, s3transfer `0.19.2`, six `1.17.0`, typing-extensions `4.16.0`, and urllib3 `2.8.0`, updated on 2026-10-06 for CVE-2026-97687 and CVE-2026-97689.
 
 [`requirements-dev.txt`](../requirements-dev.txt) pins its ten direct entries; pip resolves their transitive dependencies. [`requirements-lambda.txt`](../requirements-lambda.txt) pins the complete deployment closure and is installed with `--no-deps`. Package metadata also declares `setuptools>=80` as its build backend dependency; the custom Lambda ZIP builder uses pip and standard-library archive code directly.
 

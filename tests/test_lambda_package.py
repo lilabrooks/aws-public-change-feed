@@ -189,7 +189,7 @@ class LambdaPackageTests(unittest.TestCase):
         expected = {
             "builder_contract_sha256": "355323a1b2179ac6875d606337eb21fb4ebb78bd98dcf70e5958305b2945f8ed",
             "contract_version": 1,
-            "requirements_lambda_sha256": "71e3cc03969b3a3439da5cfe1fa89bc9600d303d98b0b69ff2d9a3d7d1992dc2",
+            "requirements_lambda_sha256": "993fce44938e73a0dca35467b61dc5c68c07b879d227efcedba77b8a7714c42e",
             "runtime_entrypoints": [
                 "aws_public_change_feed.dispatcher_runtime.lambda_handler",
                 "aws_public_change_feed.recovery_runtime.lambda_handler",
@@ -258,7 +258,7 @@ class LambdaPackageTests(unittest.TestCase):
 
         self.assertFalse(body.endswith(b"\n"))
         self.assertEqual(
-            hashlib.sha256(body).hexdigest(), "9351f61ad552f856f2849049c3842565731c1128ec33d19e6bfc7f6062ca8e47"
+            hashlib.sha256(body).hexdigest(), "53a4a3c55852b900e2c863e68a8669c15f4255681ce3ee518588523ad86226aa"
         )
 
     def test_archive_bytes_are_reproducible_and_have_fixed_metadata(self):
