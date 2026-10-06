@@ -496,9 +496,13 @@
         {
           "service_id": "rds",
           "risk_type": "security"
+        },
+        {
+          "service_id": "rds",
+          "risk_type": "service-version-update"
         }
       ],
-      "notes": "Runtime-normalized live-feed item whose upgrade guidance explicitly addresses known CVEs."
+      "notes": "Runtime-normalized live-feed item. New minor versions whose upgrade guidance explicitly addresses known CVEs, so both risk types apply. Minor engine releases are labeled service-version-update by meaning: a new engine version that operators are advised to adopt is review-worthy whether or not a configured term detects it."
     },
     {
       "id": "aws-rds-mysql-8411-cve-fixes",
@@ -511,9 +515,13 @@
         {
           "service_id": "rds",
           "risk_type": "security"
+        },
+        {
+          "service_id": "rds",
+          "risk_type": "service-version-update"
         }
       ],
-      "notes": "Runtime-normalized live-feed item whose upgrade guidance explicitly accepts fixes for prior CVEs."
+      "notes": "Runtime-normalized live-feed item. A new minor version whose guidance explicitly accepts fixes for prior CVEs, so both risk types apply. Minor engine releases are labeled service-version-update by meaning: a new engine version that operators are advised to adopt is review-worthy whether or not a configured term detects it."
     },
     {
       "id": "syn-overlapping-services",
@@ -616,9 +624,13 @@
         {
           "service_id": "rds",
           "risk_type": "security"
+        },
+        {
+          "service_id": "rds",
+          "risk_type": "service-version-update"
         }
       ],
-      "notes": "Runtime-normalized live-feed item whose upgrade guidance explicitly addresses known CVEs. 'minor versions' is not a version-update term, so security is the only expected pair, as in aws-aurora-postgresql-minor-cve-fixes."
+      "notes": "Runtime-normalized live-feed item. New minor versions whose upgrade guidance explicitly addresses known CVEs, so both risk types apply. Minor engine releases are labeled service-version-update by meaning: a new engine version that operators are advised to adopt is review-worthy whether or not a configured term detects it."
     },
     {
       "id": "aws-rds-postgresql-extended-support-cve-fixes",
@@ -631,9 +643,13 @@
         {
           "service_id": "rds",
           "risk_type": "security"
+        },
+        {
+          "service_id": "rds",
+          "risk_type": "service-version-update"
         }
       ],
-      "notes": "Extended Support minor versions that carry critical CVE fixes. 'end of standard support date' describes the Extended Support offering rather than announcing an end of support, so end-of-support is correctly absent."
+      "notes": "New Extended Support minor versions carrying critical CVE fixes, so both risk types apply. 'end of standard support date' describes the Extended Support offering rather than announcing an end of support, so end-of-support is absent. Minor engine releases are labeled service-version-update by meaning: a new engine version that operators are advised to adopt is review-worthy whether or not a configured term detects it."
     },
     {
       "id": "aws-rds-amd-m8a-instances",
@@ -643,7 +659,7 @@
       "title": "Amazon RDS now supports AMD-based M8a instances",
       "summary": "Amazon RDS for PostgreSQL, MySQL, and MariaDB now support M8a database instances powered by 5th generation AMD EPYC processors, expanding the choice available for your database workloads. Each vCPU in M8a database instances corresponds to a physical CPU core, which delivers consistent per-core performance. For workloads with high I/O requirements, M8a instances provide up to 75 Gbps of network bandwidth and 60 Gbps of Amazon EBS bandwidth. All instances are built on the AWS Nitro System using sixth-generation Nitro Cards. M8a database instances are available in US East (N. Virginia, Ohio), US West (Oregon), Asia Pacific (Mumbai, Tokyo, Hyderabad) and Europe (Ireland, Frankfurt, Spain) regions. You can get started with M8a database instances through the Amazon RDS Management Console or by using the AWS Command Line Interface (CLI). For the specific engine versions that support these instance classes, see the RDS documentation. For pricing , see the Amazon RDS pricing page .",
       "expected_matches": [],
-      "notes": "An instance-family launch. The closing pointer 'the specific engine versions that support these instance classes' is AWS boilerplate for instance launches, not a version update; the version rule excludes that phrase."
+      "notes": "An instance-family launch. The closing pointer to 'the specific engine versions that support these instance classes' is AWS boilerplate for instance launches, not a version update. The plural term 'engine versions' had no historical true positive and was removed."
     },
     {
       "id": "aws-aurora-rds-amd-r8a-instances",
@@ -653,7 +669,7 @@
       "title": "Amazon Aurora and RDS now support AMD-based R8a instances",
       "summary": "Amazon Aurora and Amazon RDS now support R8a database instances powered by 5th generation AMD EPYC processors, expanding the choice available for your database workloads. Each vCPU in R8a database instances corresponds to a physical CPU core, which delivers consistent per-core performance. For workloads with high I/O requirements, R8a instances provide up to 75 Gbps of network bandwidth and 60 Gbps of Amazon EBS bandwidth. All R8a instances are built on the AWS Nitro System using sixth-generation Nitro Cards. R8a database instances are supported for Amazon Aurora PostgreSQL-Compatible Edition, Amazon Aurora MySQL-Compatible Edition, RDS for PostgreSQL, MySQL and MariaDB. R8a database instances are available in US East (N. Virginia, Ohio), US West (Oregon), Canada (Central), Asia Pacific (Tokyo, Taipei) and Europe (Ireland, Frankfurt, Spain) regions. You can get started with R8a database instances through the Amazon RDS Management Console or by using the AWS Command Line Interface (CLI). For the specific engine versions that support these instance classes, see the Aurora and RDS documentation. For pricing, see the Amazon Aurora pricing page and the Amazon RDS pricing page .",
       "expected_matches": [],
-      "notes": "The same instance-launch boilerplate as aws-rds-amd-m8a-instances, here naming both Aurora and RDS. Two items carrying the identical sentence show it is a template rather than one announcement's wording."
+      "notes": "The same instance-launch boilerplate as aws-rds-amd-m8a-instances, here naming both Aurora and RDS. Two announcements carrying the identical sentence show it is a template."
     },
     {
       "id": "aws-eks-kubernetes-1-37",

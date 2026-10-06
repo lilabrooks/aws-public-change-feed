@@ -83,33 +83,62 @@ become large enough to justify an override under
 Any matcher or risk-term change still runs the corpus evaluator and the live
 feed screen required by the repository rules. The 2026-09-01 decision changed
 no matcher, risk term, release bytes, or runtime behavior; the proposed
-revision below changes three matcher literals.
+revision below removes three matcher literals.
 
 ## Proposed 2026-10-05 revision
 
 A live screen on 2026-10-05 (`make screen-feeds`) reported ten production
 matches with no corpus label. Each was labeled from its runtime-normalized
-text, against the nearest existing corpus precedent. Six were true positives
-and four were false positives. Labeled as reviewed, the unchanged policy
-scored precision 0.854 (35 true positives, 6 false positives), below the 0.950
-floor. The revision changes three matcher literals:
+text by what the announcement means, not by what the matcher detects. Six
+announce changes to watched services. Four are false positives. An independent
+review on 2026-10-05 reshaped the first draft, and the owner decided both
+label questions it raised.
 
-- **Remove the `Lambda function` alias from `lambda`.** No corpus positive
-  depended on it. It fired on bulletin 2026-115-AWS, which concerns an Amazon
-  Connect integration application implemented as Lambda functions rather than
-  the Lambda service.
-- **Remove the hyphenated `end-of-support` term.** It had no true positive in
-  the corpus. Its only matches were three false positives from one item: AWS
-  Health's version catalog launch, which lists RDS, EKS, and Lambda among the
-  services it covers without changing a support date. The repository rule
-  removes a term with no true positive and any false positive rather than
-  excluding it case by case. `end of support`, `end of life`, and
-  `end-of-life` remain.
-- **Add `that support these instance classes` to the version rule's `none`
-  list.** `engine versions` keeps a corpus positive, so it is excluded rather
-  than removed. The phrase is AWS's closing pointer in RDS instance-family
-  launches. It appeared identically in the M8a and R8a announcements and in no
-  other text available to the review.
+### Label decisions
+
+- **Minor engine releases are version updates.** A new minor engine version
+  that operators are advised to adopt is labeled `service-version-update`. It
+  is also labeled `security` when its text cites CVE fixes. The owner applied
+  this on 2026-10-05 to the two new PostgreSQL items and to the two earlier
+  items that shared their security-only label: Aurora PostgreSQL 18.4 and RDS
+  for MySQL 8.4.11. No configured term detects a minor release, so all four
+  are recorded as false negatives rather than relabeled to fit the matcher.
+- **The AWS Health version catalog is not an end-of-support announcement.**
+  It lists RDS, EKS, and Lambda among its covered services, but it changes no
+  support date. The owner decided this label.
+- **The Amazon Connect Salesforce Lambda bulletin is not a Lambda service
+  issue.** The vulnerable component is an Amazon Connect integration that is
+  implemented as Lambda functions. Client-library bulletins such as the JDBC
+  wrapper and Powertools for AWS Lambda remain positives, because those
+  components exist to serve the watched service. The owner decided this label.
+
+### Policy change
+
+Three literals are removed. Each one had no historical true positive and at
+least one false positive.
+
+- **The `lambda` alias `Lambda function`.** It had no true positive. Its one
+  false positive was bulletin 2026-115-AWS. It never matched the plural
+  `Lambda functions`.
+- **The end-of-support term `end-of-support`.** It had no true positive at
+  all. Its three false positives all came from the AWS Health catalog launch.
+  `end of support`, `end of life`, and `end-of-life` remain.
+- **The version term `engine versions`.** Its only true positive was
+  synthetic (`syn-rds-punctuation-variant`). Its two false positives were RDS
+  instance-family launches that close with a pointer to "the specific engine
+  versions that support these instance classes". The singular
+  `engine version` remains. It has two synthetic true positives and no false
+  positive.
+
+The first draft instead excluded the instance-launch pointer through the
+version rule's `none` list. The review measured removing the plural as a
+smaller alternative. A `none` entry suppresses the whole rule for an
+announcement, including clear version evidence elsewhere in its text. The review searched the corpus, today's 240 live announcements, and the 231
+announcements the eight candidate feeds yield through the runtime path. In
+all of that text, the plural occurred in a true-positive sense only in
+synthetic items. Its other real occurrences named
+DocumentDB and OpenSearch, which no configured service matches. The owner
+chose removal on 2026-10-05.
 
 Feeds, services, profiles, risk rules, and thresholds are otherwise unchanged.
 The release built from this policy has a different identity from the active dev
@@ -121,15 +150,17 @@ preflight refuses an active release whose configuration differs from
 
 | Input | SHA-256 |
 | --- | --- |
-| `config/dev.yaml` | `a948faafd748552b5a2ec158502f532b01cab26779bc697cd9c9b55a4a27ce15` |
-| `corpus/announcements.json` | `ed45f1af3051dd42dbda4441e1f208f768cc648213442220f4f0eb55b8f95089` |
+| `config/dev.yaml` | `d022094fbf852be0735ceffcf03fc3ff538cd4cd591d6261a95b533f2ce5bd55` |
+| `corpus/announcements.json` | `2fbef37cba1c0eaace88ca1e5aabebf6e88c50d7e3862d890ef07b908db56e0e` |
 | `corpus/thresholds.json` | `bbd6eb5d530fe6e3e1653a0b2f15508e33df7ccdb45f817f1f66a7a8ed21b25a` |
 
 ### Revised corpus result
 
 `make evaluate-corpus` passed on 2026-10-05 with 57 items: 42 historical and
-15 synthetic. It reported 35 true positives, no false positives, and no false
-negatives. Overall precision and recall were both 1.000.
+15 synthetic. It reported 34 true positives, no false positives, and 5 false
+negatives. Overall precision was 1.000 and recall 0.872, against floors of
+0.950 and 0.800. All five misses are `rds/service-version-update`: the four
+minor releases and the synthetic plural item.
 
 The selected disposition for every configured service and risk-type pair is
 **retain**. Columns have the same meaning as in the 2026-09-01 table.
@@ -148,34 +179,62 @@ The selected disposition for every configured service and risk-type pair is
 | `rds/breaking-change` | 0 | 0 | undefined | undefined |
 | `rds/end-of-support` | 0 | 4 | 1.000 | 1.000 |
 | `rds/security` | 10 | 0 | 1.000 | 1.000 |
-| `rds/service-version-update` | 1 | 3 | 1.000 | 1.000 |
+| `rds/service-version-update` | 5 | 3 | 1.000 | 0.375 |
 <!-- production-policy-pairs:end -->
 
 ### Revised evidence limits
 
-Five pairs now have no historical positive, four have one, and the remaining
-three have two, three, and ten. `lambda/security` gained its first historical
-positive.
+**Pair coverage.** Five pairs have no historical positive and three have one.
+The remaining four have two, three, five, and ten.
 
-The global floors alone do not guard these labels. Restoring each change in
-isolation scored 0.972 for the alias, 0.946 for the exclusion, and 0.921 for
-the hyphenated term: the alias regression passes the 0.950 floor, and the
-exclusion fails it by less than one false positive. A test therefore requires
-every corpus item to match exactly its labeled pairs. Each of the three
-restorations fails that test on the item it affects.
+**Version-update recall.** `rds/service-version-update` now has five
+historical positives and detects one of them, the SQL Server cumulative
+updates. Two synthetic items supply the rest of its 0.375 recall. ADR-018 records pair
+figures without gating on them, so this revision passes. The figure shows the
+pair's thin recall that the earlier security-only labels had hidden. A term
+for minor releases is the evident next candidate. It needs its own live
+screen and evaluation before adoption.
 
-Removing `end-of-support` narrows recall on hyphenated wording for the
-end-of-support pairs. EKS and RDS have no historical end-of-support positive,
-so the corpus cannot measure that loss in either direction. If AWS announces an
-end of support for a watched service using only the hyphenated form, the
-announcement will not match. That would be a reviewed false negative that
-reopens this decision.
+**What guards the removals.** The global floors alone do not guard them.
+Restoring each literal in isolation produced these results:
 
-The screen also re-checked the feed sources. All four URLs returned their
-feeds without redirects, with items published within the last four days.
-Eight other AWS feeds were run through the runtime parser and matcher; none
-was added. The three AWS blog feeds produced no match. The `docs.aws.amazon.com`
-history feeds need a host-allowlist change. Three exceed the 200-item parser
-limit, which rejects the whole feed. Their items mostly share one canonical
-URL, which the runtime uses as announcement identity: all 284 Aurora entries
-share one link, and 633 of 634 RDS entries share another.
+| Literal restored | Precision | Recall | Global gate |
+| --- | --- | --- | --- |
+| alias `Lambda function` | 0.971 | 0.872 | passes |
+| plural `engine versions` | 0.946 | 0.897 | fails, by less than one false positive |
+| term `end-of-support` | 0.919 | 0.872 | fails |
+
+A test therefore names the four false-positive items as regression cases.
+Each of the three restorations fails it on the item it guards. Every other
+label stays under the global floors, as ADR-018 decides. A missed match on an
+unrelated item does not fail the test.
+
+**Hyphenated end-of-support wording.** Removing `end-of-support` narrows
+recall on that wording for the end-of-support pairs. EKS and RDS have no
+historical end-of-support positive, so the corpus cannot measure that loss in
+either direction. AWS wording varies: one 2019 EKS documentation entry,
+"Announcing discontinuation of support of Kubernetes 1.10", matches no
+end-of-support term under either policy.
+
+**What the screen can show.** The clean live screen after this revision reuses
+the announcements that motivated it. It cannot show how the policy treats
+future wording.
+
+**Feed sources.** All four configured URLs returned their feeds without
+redirects, with items published within the last four days. Eight other AWS
+feeds were run through the runtime parser and matcher, and none was added:
+
+- The three AWS blog feeds produced no match.
+- The `docs.aws.amazon.com` history feeds need a host-allowlist change.
+- Three of them exceed the 200-item parser limit, which rejects the whole
+  feed.
+- Their items mostly share one canonical URL, which the runtime uses as
+  announcement identity. All 284 Aurora entries share one link, and 633 of
+  634 RDS entries share another.
+
+**M3 evidence.** The M3 readiness assessment of 2026-09-06 assessed the
+2026-09-01 policy. Its delivery, recovery, load, rollback, and operations
+evidence concerns mechanics rather than which announcements match, so it is
+retained. The candidate counts it records came from the earlier policy. Its
+corpus and pair-disposition row describes that policy, and this section
+supersedes the row once the owner accepts it.

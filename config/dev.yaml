@@ -122,7 +122,6 @@ risk_rules:
         - managed runtime
         - managed runtimes
         - engine version
-        - engine versions
         - cumulative update
         - cumulative updates
         - general distribution release
@@ -133,7 +132,6 @@ risk_rules:
       none:
         - now available in
         - available in the
-        - that support these instance classes
 
   - id: security-bulletin
     risk_type: security
