@@ -315,6 +315,19 @@ class CommittedCorpusTests(unittest.TestCase):
                 self.assertIn(expected.service_id, service_ids, entry.id)
                 self.assertIn(expected.risk_type, risk_types, entry.id)
 
+    def test_every_corpus_item_matches_exactly_its_labeled_pairs_under_the_dev_policy(self):
+        # The global floors tolerate one regression: a single false positive
+        # over 35 true positives still scores 0.972. Pinning each reviewed label
+        # keeps a removed alias or term from returning unnoticed.
+        with (ROOT / harness.DEFAULT_CONFIG_PATH).open(encoding="utf-8") as handle:
+            configuration = yaml.safe_load(handle)
+        services = load_services(configuration)
+        rules = load_risk_rules(configuration)
+        for entry in load_corpus(CORPUS_PATH):
+            with self.subTest(item=entry.id):
+                matches = match_announcement(entry.announcement, services, rules)
+                self.assertEqual({(match.service_id, match.risk_type) for match in matches}, set(entry.expected_pairs))
+
     def test_committed_corpus_meets_the_approved_thresholds(self):
         result = subprocess.run(
             [sys.executable, "scripts/evaluate_corpus.py"],
