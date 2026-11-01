@@ -1,10 +1,10 @@
-boto3==1.43.108
+boto3==1.43.121
 jsonschema==4.26.0
-moto[s3]==5.2.3
-mypy==2.4.0
+moto[s3]==5.2.5
+mypy==2.4.1
 PyYAML==6.0.3
 referencing==0.37.0
-ruff==0.16.10
-types-jsonschema==4.26.0.20260518
+ruff==0.17.3
+types-jsonschema==4.26.0.20261006
 types-PyYAML==6.0.12.20260906
 yamllint==1.38.0
